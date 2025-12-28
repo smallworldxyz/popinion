@@ -28,6 +28,20 @@ services:
       timeout: 5s
       retries: 5
 
+  # LightPanda headless browser for web scraping
+  lightpanda:
+    image: ghcr.io/nicxleo/nicecmd:latest
+    container_name: pubop-lightpanda
+    ports:
+      - "9222:9222" # Chrome DevTools Protocol
+    command: [ "--remote-debugging-port=9222", "--remote-debugging-address=0.0.0.0" ]
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -f http://localhost:9222/json/version || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
 volumes:
   neo4j_data:
   neo4j_logs:
