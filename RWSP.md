@@ -217,10 +217,10 @@ services:
 - [x] Create `backend/app/services/crawler/client.py`
 - [x] Create `backend/app/services/crawler/base.py`
 
-### Phase 2: Crawlers [P0] - 11h
-- [ ] Create `telegram.py` crawler
-- [ ] Create `twitter.py` crawler  
-- [ ] Create `facebook.py` crawler
+### Phase 2: Crawlers [P0] - 11h ✅
+- [x] Create `telegram.py` crawler
+- [x] Create `twitter.py` crawler  
+- [x] Create `facebook.py` crawler
 
 ### Phase 3: Integration [P1] - 6h
 - [ ] Create `pubop_bridge.py`
