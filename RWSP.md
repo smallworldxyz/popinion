@@ -1,4 +1,4 @@
-# pubop RWSP: Real-World Simulation Prediction
+# pubop: Real-World Simulation Prediction
 
 ## 🎯 Mission
 
@@ -7,159 +7,112 @@ Real Data  →  Simulation  →  Prediction
 (scrape)      (AI agents)    (forecasts)
 ```
 
-Collect real social media data, simulate public behavior, predict trends.
-
 ---
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                         pubop RWSP                              │
+│                           pubop                                 │
 ├─────────────┬─────────────────┬─────────────────────────────────┤
 │ REAL DATA   │   SIMULATION    │         PREDICTION              │
 ├─────────────┼─────────────────┼─────────────────────────────────┤
 │ LightPanda  │   OASIS         │   ReportAgent                   │
-│ (headless)  │   (multi-agent) │   (analysis)                    │
 │     ↓       │       ↓         │         ↓                       │
-│ Crawlers    │   Agent         │   Trend forecasts               │
-│ (per-plat)  │   behaviors     │   Sentiment shifts              │
-│     ↓       │       ↓         │   Viral predictions             │
-│ Posts/Users │   Simulated     │   Decision support              │
-│ Trends      │   interactions  │                                 │
+│ Crawlers    │   Profiles      │   Real vs Simulated             │
+│     ↓       │       ↓         │   Trend forecasts               │
+│ Posts/Users │   Behaviors     │   Decision support              │
 └─────────────┴─────────────────┴─────────────────────────────────┘
 ```
 
 ---
 
-## Implementation Tasks
+## File Structure
+
+```
+backend/app/
+├── models/
+│   └── pubop.py                 # Scraped data models
+├── services/
+│   ├── crawler/                 # NEW: LightPanda + scrapers
+│   │   ├── __init__.py
+│   │   ├── client.py            # CDP connection
+│   │   ├── base.py              # Abstract interface
+│   │   ├── telegram.py
+│   │   ├── twitter.py
+│   │   └── facebook.py
+│   ├── pubop_bridge.py          # NEW: Real data → simulation
+│   ├── oasis_profile_generator.py  # MOD: Add from_scraped_users()
+│   └── simulation_config_generator.py  # MOD: Add real_data_seed
+```
+
+---
+
+## Tasks
 
 ### Phase 1: Infrastructure [P0]
 
-| Task | Priority | Est. Hours | Status |
-|------|----------|------------|--------|
-| Add LightPanda to docker-compose.yml | P0 | 0.5 | TODO |
-| Create `crawler/` module structure | P0 | 1 | TODO |
-| Build LightPanda CDP client | P0 | 2 | TODO |
-| Write connection tests | P0 | 1 | TODO |
+| Task | Hours | Status |
+|------|-------|--------|
+| Add LightPanda to docker-compose | 0.5 | TODO |
+| Create `crawler/` module | 1 | TODO |
+| Build CDP client | 2 | TODO |
 
-**Files to create:**
-```
-backend/app/services/crawler/
-├── __init__.py
-├── client.py          # LightPanda CDP connection
-└── base.py            # Abstract crawler interface
-```
+### Phase 2: Crawlers [P0]
 
----
+| Task | Hours | Status |
+|------|-------|--------|
+| Telegram crawler | 3 | TODO |
+| X/Twitter crawler | 4 | TODO |
+| Facebook crawler | 4 | TODO |
 
-### Phase 2: Platform Crawlers [P0]
+### Phase 3: Integration [P1]
 
-| Task | Priority | Est. Hours | Status |
-|------|----------|------------|--------|
-| Telegram channel crawler | P0 | 3 | TODO |
-| X/Twitter scraper | P0 | 4 | TODO |
-| Facebook public pages crawler | P0 | 4 | TODO |
-
-**Files to create:**
-```
-backend/app/services/crawler/
-├── telegram.py        # Telegram web scraper
-├── twitter.py         # X/Twitter scraper
-└── facebook.py        # Facebook Graph API + scrape
-```
-
----
-
-### Phase 3: Data Bridge [P1]
-
-| Task | Priority | Est. Hours | Status |
-|------|----------|------------|--------|
-| Create data models for scraped content | P1 | 2 | TODO |
-| Build bridge service (scraped → profiles) | P1 | 3 | TODO |
-| Simulation seeding from real data | P1 | 3 | TODO |
-
-**Files to create:**
-```
-backend/app/services/
-├── rwsp_models.py     # Scraped data models
-└── rwsp_bridge.py     # Real data → simulation bridge
-```
-
----
+| Task | Hours | Status |
+|------|-------|--------|
+| `pubop.py` models | 2 | TODO |
+| `pubop_bridge.py` service | 3 | TODO |
+| Modify `oasis_profile_generator.py` | 2 | TODO |
+| Modify `simulation_config_generator.py` | 1 | TODO |
 
 ### Phase 4: Enhanced Prediction [P2]
 
-| Task | Priority | Est. Hours | Status |
-|------|----------|------------|--------|
-| Compare simulated vs real trends | P2 | 3 | TODO |
-| Add prediction confidence scores | P2 | 2 | TODO |
-| Real-time data refresh during simulation | P2 | 4 | TODO |
+| Task | Hours | Status |
+|------|-------|--------|
+| Real vs simulated comparison tools | 3 | TODO |
+| Prediction confidence scores | 2 | TODO |
 
 ---
 
-## Target Platforms
+## Integration Points
 
-| Platform | Method | Priority | Notes |
-|----------|--------|----------|-------|
-| **Telegram** | Web + Bot API | P0 | Easiest, official API available |
-| **X/Twitter** | Web scrape | P0 | No API access needed |
-| **Facebook** | Graph API + Web | P0 | For public pages/groups |
-| YouTube | Data API v3 | P1 | Comments & trends |
-| Reddit | API | P2 | Already in OASIS |
+1. **OasisProfileGenerator** → Add `generate_profiles_from_scraped_users()`
+2. **SimulationConfigGenerator** → Add `initial_posts_from_real` parameter
+3. **ReportAgent** → Add real vs simulated comparison tools
 
 ---
 
-## Tech Stack
-
-- **Scraping**: LightPanda (self-hosted headless browser)
-- **Protocol**: Chrome DevTools Protocol (CDP)
-- **Driver**: Playwright/Puppeteer compatible
-- **Simulation**: OASIS multi-agent framework
-- **Reports**: ReportAgent with LLM
-
----
-
-## Docker Setup
+## Docker
 
 ```yaml
-# Add to docker-compose.yml
 services:
   lightpanda:
     image: lightpanda/lightpanda:latest
     container_name: pubop-lightpanda
     ports:
       - "9222:9222"
-    restart: unless-stopped
 ```
 
 ---
 
-## Priority Legend
+## Platforms (P0)
 
-| Priority | Meaning |
-|----------|---------|
-| P0 | Critical - must have for MVP |
-| P1 | Important - needed for full functionality |
-| P2 | Nice to have - enhances experience |
-
----
-
-## Estimated Total Effort
-
-| Phase | Hours |
-|-------|-------|
-| Phase 1: Infrastructure | ~4.5 |
-| Phase 2: Crawlers | ~11 |
-| Phase 3: Data Bridge | ~8 |
-| Phase 4: Prediction | ~9 |
-| **Total** | **~32.5 hours** |
+| Platform | Method |
+|----------|--------|
+| Telegram | Web + Bot API |
+| X/Twitter | Web scrape |
+| Facebook | Graph API + Web |
 
 ---
 
-## Success Criteria
-
-1. ✅ Can scrape real posts from Telegram, X, Facebook
-2. ✅ Real data seeds agent profiles and initial posts
-3. ✅ Simulation produces behavior based on real patterns
-4. ✅ Reports compare predictions against real outcomes
+**Total: ~27.5 hours**
