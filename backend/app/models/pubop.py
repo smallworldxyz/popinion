@@ -3,6 +3,7 @@ pubop Data Models
 Models for scraped social media data used in Real-World Simulation Prediction
 """
 
+import json
 from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Any
 from datetime import datetime
@@ -55,6 +56,29 @@ class ScrapedPost:
             "hashtags": self.hashtags,
             "mentions": self.mentions,
         }
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'ScrapedPost':
+        """Create from dictionary"""
+        timestamp = data.get("timestamp")
+        if timestamp and isinstance(timestamp, str):
+            timestamp = datetime.fromisoformat(timestamp)
+        return cls(
+            platform=data["platform"],
+            post_id=data["post_id"],
+            content=data.get("content", ""),
+            author_id=data["author_id"],
+            author_name=data.get("author_name", ""),
+            timestamp=timestamp or datetime.now(),
+            url=data.get("url"),
+            likes=data.get("likes", 0),
+            shares=data.get("shares", 0),
+            comments=data.get("comments", 0),
+            views=data.get("views", 0),
+            media_urls=data.get("media_urls", []),
+            hashtags=data.get("hashtags", []),
+            mentions=data.get("mentions", []),
+        )
 
 
 @dataclass
@@ -90,6 +114,27 @@ class ScrapedUser:
             "verified": self.verified,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'ScrapedUser':
+        """Create from dictionary"""
+        created_at = data.get("created_at")
+        if created_at and isinstance(created_at, str):
+            created_at = datetime.fromisoformat(created_at)
+        return cls(
+            platform=data["platform"],
+            user_id=data["user_id"],
+            username=data.get("username", ""),
+            display_name=data.get("display_name", ""),
+            bio=data.get("bio", ""),
+            profile_url=data.get("profile_url"),
+            avatar_url=data.get("avatar_url"),
+            followers=data.get("followers", 0),
+            following=data.get("following", 0),
+            post_count=data.get("post_count", 0),
+            verified=data.get("verified", False),
+            created_at=created_at,
+        )
 
 
 @dataclass
@@ -112,6 +157,21 @@ class ScrapedTrend:
             "url": self.url,
             "category": self.category,
         }
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'ScrapedTrend':
+        """Create from dictionary"""
+        timestamp = data.get("timestamp")
+        if timestamp and isinstance(timestamp, str):
+            timestamp = datetime.fromisoformat(timestamp)
+        return cls(
+            platform=data["platform"],
+            topic=data["topic"],
+            post_count=data.get("post_count", 0),
+            timestamp=timestamp or datetime.now(),
+            url=data.get("url"),
+            category=data.get("category"),
+        )
 
 
 @dataclass
@@ -138,3 +198,38 @@ class CrawlResult:
             "success": self.success,
             "error": self.error,
         }
+    
+    def to_json(self, indent: int = 2) -> str:
+        """Serialize to JSON string"""
+        return json.dumps(self.to_dict(), ensure_ascii=False, indent=indent)
+    
+    def save(self, filepath: str) -> None:
+        """Save to JSON file"""
+        with open(filepath, 'w', encoding='utf-8') as f:
+            f.write(self.to_json())
+    
+    @classmethod
+    def load(cls, filepath: str) -> 'CrawlResult':
+        """Load from JSON file"""
+        with open(filepath, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        return cls.from_dict(data)
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'CrawlResult':
+        """Create from dictionary"""
+        crawled_at = data.get("crawled_at")
+        if crawled_at and isinstance(crawled_at, str):
+            crawled_at = datetime.fromisoformat(crawled_at)
+        
+        return cls(
+            platform=data["platform"],
+            query=data.get("query"),
+            posts=[ScrapedPost.from_dict(p) for p in data.get("posts", [])],
+            users=[ScrapedUser.from_dict(u) for u in data.get("users", [])],
+            trends=[ScrapedTrend.from_dict(t) for t in data.get("trends", [])],
+            crawled_at=crawled_at or datetime.now(),
+            success=data.get("success", True),
+            error=data.get("error"),
+        )
+
