@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   neo4j:
     image: neo4j:5.23.0
@@ -28,16 +26,20 @@ services:
       timeout: 5s
       retries: 5
 
-  # LightPanda headless browser for web scraping
-  lightpanda:
-    image: ghcr.io/nicxleo/nicecmd:latest
-    container_name: pubop-lightpanda
+  # Headless Chrome for web scraping via CDP
+  # Alternative to LightPanda - uses Browserless (reliable, well-maintained)
+  chrome:
+    image: browserless/chrome:latest
+    container_name: pubop-chrome
     ports:
-      - "9222:9222" # Chrome DevTools Protocol
-    command: [ "--remote-debugging-port=9222", "--remote-debugging-address=0.0.0.0" ]
+      - "9222:3000" # CDP endpoint mapped to 9222 for compatibility
+    environment:
+      - CONNECTION_TIMEOUT=300000
+      - MAX_CONCURRENT_SESSIONS=5
+      - ENABLE_DEBUGGER=true
     restart: unless-stopped
     healthcheck:
-      test: [ "CMD-SHELL", "curl -f http://localhost:9222/json/version || exit 1" ]
+      test: [ "CMD-SHELL", "curl -f http://localhost:3000/json/version || exit 1" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -47,3 +49,5 @@ volumes:
   neo4j_logs:
   neo4j_import:
   neo4j_plugins:
+
+

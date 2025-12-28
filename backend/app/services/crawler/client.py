@@ -45,28 +45,58 @@ class LightPandaClient:
         self._connected = False
     
     async def connect(self) -> None:
-        """Connect to LightPanda via CDP"""
+        """Connect to headless browser via CDP"""
         if self._connected:
-            logger.warning("Already connected to LightPanda")
+            logger.warning("Already connected to headless browser")
             return
         
         try:
             # Import playwright here to avoid import errors if not installed
             from playwright.async_api import async_playwright
+            import aiohttp
             
-            logger.info(f"Connecting to LightPanda at {self.endpoint}")
+            # Get WebSocket URL from CDP endpoint
+            ws_url = await self._get_websocket_url()
+            
+            logger.info(f"Connecting to headless browser at {ws_url}")
             self._playwright = await async_playwright().start()
             self._browser = await self._playwright.chromium.connect_over_cdp(
-                self.endpoint,
+                ws_url,
                 timeout=self.timeout
             )
             self._connected = True
-            logger.info("Successfully connected to LightPanda")
+            logger.info("Successfully connected to headless browser")
             
         except Exception as e:
-            logger.error(f"Failed to connect to LightPanda: {e}")
+            logger.error(f"Failed to connect to headless browser: {e}")
             await self.close()
-            raise ConnectionError(f"Failed to connect to LightPanda at {self.endpoint}: {e}")
+            raise ConnectionError(f"Failed to connect to headless browser at {self.endpoint}: {e}")
+    
+    async def _get_websocket_url(self) -> str:
+        """Get WebSocket URL from CDP endpoint"""
+        import aiohttp
+        
+        # Try to get WS URL from /json/version endpoint
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(f"{self.endpoint}/json/version") as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        ws_url = data.get("webSocketDebuggerUrl", "")
+                        if ws_url:
+                            # Fix localhost reference for Docker
+                            if "localhost:9222" not in ws_url and "localhost:3000" in ws_url:
+                                ws_url = ws_url.replace("localhost:3000", "localhost:9222")
+                            logger.info(f"Discovered WebSocket URL: {ws_url}")
+                            return ws_url
+        except Exception as e:
+            logger.warning(f"Could not get WS URL from /json/version: {e}")
+        
+        # Fallback: assume it's a direct WS URL or construct one
+        if self.endpoint.startswith("ws://") or self.endpoint.startswith("wss://"):
+            return self.endpoint
+        
+        return f"ws://{self.endpoint.replace('http://', '').replace('https://', '')}"
     
     async def close(self) -> None:
         """Close connection to LightPanda"""
