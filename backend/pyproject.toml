@@ -1,32 +1,35 @@
 [project]
-name = "mirofish-backend"
-version = "0.1.0"
-description = "MiroFish - 简洁通用的群体智能引擎，预测万物"
+name = "pubop-backend"
+version = "0.3.0"
+description = "pubop - Global Public Opinion Analysis Platform powered by AI Simulation"
 requires-python = ">=3.11"
-license = { text = "AGPL-3.0" }
+license = { text = "MIT" }
 authors = [
-    { name = "MiroFish Team" }
+    { name = "pubop Team" }
 ]
 
 dependencies = [
-    # 核心框架
+    # Core framework
     "flask>=3.0.0",
     "flask-cors>=6.0.0",
     
-    # LLM 相关
+    # LLM
     "openai>=1.0.0",
     
     # Neo4j Graph Database
     "neo4j>=5.23.0",
     
-    # OASIS 社交媒体模拟
+    # OASIS social simulation
     "camel-oasis==0.2.5",
     "camel-ai==0.2.78",
     
-    # 文件处理
+    # File processing
     "PyMuPDF>=1.24.0",
     
-    # 工具库
+    # Web scraping (LightPanda CDP client)
+    "playwright>=1.40.0",
+    
+    # Utilities
     "python-dotenv>=1.0.0",
     "pydantic>=2.0.0",
 ]
@@ -35,7 +38,6 @@ dependencies = [
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
-    "pipreqs>=0.5.0",
 ]
 
 [build-system]
@@ -50,3 +52,7 @@ dev = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["app"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
