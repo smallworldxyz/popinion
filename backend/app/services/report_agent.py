@@ -29,7 +29,7 @@ from .neo4j_tools import (
     InterviewResult
 )
 
-logger = get_logger('fishi.report_agent')
+logger = get_logger('pubop.report_agent')
 
 
 class ReportLogger:
@@ -355,8 +355,8 @@ class ReportConsoleLogger:
         
         # Attach to report_agent related loggers
         loggers_to_attach = [
-            'fishi.report_agent',
-            'fishi.neo4j_tools',
+            'pubop.report_agent',
+            'pubop.neo4j_tools',
         ]
         
         for logger_name in loggers_to_attach:
@@ -371,8 +371,8 @@ class ReportConsoleLogger:
         
         if self._file_handler:
             loggers_to_detach = [
-                'fishi.report_agent',
-                'fishi.neo4j_tools',
+                'pubop.report_agent',
+                'pubop.neo4j_tools',
             ]
             
             for logger_name in loggers_to_detach:

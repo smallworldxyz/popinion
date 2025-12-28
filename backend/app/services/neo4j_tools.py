@@ -18,7 +18,7 @@ from ..utils.logger import get_logger
 from ..utils.llm_client import LLMClient
 from .neo4j_service import Neo4jService
 
-logger = get_logger('fishi.neo4j_tools')
+logger = get_logger('pubop.neo4j_tools')
 
 
 @dataclass

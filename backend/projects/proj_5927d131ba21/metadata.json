@@ -1,0 +1,378 @@
+{
+  "project_id": "proj_5927d131ba21",
+  "name": "Unnamed Project",
+  "status": "graph_built",
+  "created_at": "2025-12-26T20:56:03.442416",
+  "updated_at": "2025-12-26T20:56:44.666022",
+  "ontology": {
+    "entity_types": [
+      {
+        "name": "Politician",
+        "description": "Elected officials or party leaders involved in Thai domestic politics and legislative processes.",
+        "attributes": [
+          {
+            "name": "full_name",
+            "type": "text",
+            "description": "The complete name of the politician"
+          },
+          {
+            "name": "political_party",
+            "type": "text",
+            "description": "The party the politician is currently affiliated with"
+          },
+          {
+            "name": "current_office",
+            "type": "text",
+            "description": "The specific government or legislative position held"
+          }
+        ],
+        "examples": [
+          "Paetongtarn Shinawatra",
+          "Pita Limjaroenrat"
+        ]
+      },
+      {
+        "name": "Diplomat",
+        "description": "Officials representing Thailand or Cambodia in international relations and border negotiations.",
+        "attributes": [
+          {
+            "name": "full_name",
+            "type": "text",
+            "description": "The complete name of the diplomat"
+          },
+          {
+            "name": "assigned_country",
+            "type": "text",
+            "description": "The country where the diplomat is stationed or represents"
+          },
+          {
+            "name": "diplomatic_rank",
+            "type": "text",
+            "description": "The official rank such as Ambassador or Consul"
+          }
+        ],
+        "examples": [
+          "Thai Ambassador to Cambodia",
+          "Minister of Foreign Affairs"
+        ]
+      },
+      {
+        "name": "MilitaryOfficer",
+        "description": "High-ranking personnel in the armed forces involved in border security and national defense.",
+        "attributes": [
+          {
+            "name": "full_name",
+            "type": "text",
+            "description": "The complete name and rank of the officer"
+          },
+          {
+            "name": "command_unit",
+            "type": "text",
+            "description": "The specific military unit or region under their command"
+          },
+          {
+            "name": "military_branch",
+            "type": "text",
+            "description": "Army, Navy, or Air Force"
+          }
+        ],
+        "examples": [
+          "Commander of the Second Army Region",
+          "Chief of Defense Forces"
+        ]
+      },
+      {
+        "name": "Economist",
+        "description": "Experts and analysts who comment on Thai economic trends, trade, and currency stability.",
+        "attributes": [
+          {
+            "name": "full_name",
+            "type": "text",
+            "description": "The complete name of the economist"
+          },
+          {
+            "name": "institution",
+            "type": "text",
+            "description": "The university, bank, or research institute they belong to"
+          },
+          {
+            "name": "expertise_area",
+            "type": "text",
+            "description": "Specific focus like macroeconomics or trade policy"
+          }
+        ],
+        "examples": [
+          "Bank of Thailand Analyst",
+          "TDRI Researcher"
+        ]
+      },
+      {
+        "name": "Journalist",
+        "description": "Media professionals reporting on political developments and the Thai-Cambodian conflict.",
+        "attributes": [
+          {
+            "name": "full_name",
+            "type": "text",
+            "description": "The complete name of the journalist"
+          },
+          {
+            "name": "media_affiliation",
+            "type": "text",
+            "description": "The news outlet or platform they work for"
+          },
+          {
+            "name": "reporting_beat",
+            "type": "text",
+            "description": "The specific topic they cover, e.g., Foreign Affairs"
+          }
+        ],
+        "examples": [
+          "Bangkok Post Reporter",
+          "Independent Political Blogger"
+        ]
+      },
+      {
+        "name": "PoliticalParty",
+        "description": "Formal organizations competing for power in the 2026 Thai elections.",
+        "attributes": [
+          {
+            "name": "org_name",
+            "type": "text",
+            "description": "The official name of the political party"
+          },
+          {
+            "name": "ideology",
+            "type": "text",
+            "description": "The primary political or economic stance of the party"
+          },
+          {
+            "name": "headquarters_location",
+            "type": "text",
+            "description": "The main office location"
+          }
+        ],
+        "examples": [
+          "Pheu Thai Party",
+          "People's Party"
+        ]
+      },
+      {
+        "name": "GovernmentAgency",
+        "description": "State institutions responsible for policy implementation and international affairs.",
+        "attributes": [
+          {
+            "name": "org_name",
+            "type": "text",
+            "description": "The official name of the agency"
+          },
+          {
+            "name": "jurisdiction",
+            "type": "text",
+            "description": "The area of governance they control"
+          },
+          {
+            "name": "head_official",
+            "type": "text",
+            "description": "The current leader of the agency"
+          }
+        ],
+        "examples": [
+          "Ministry of Foreign Affairs",
+          "National Economic and Social Development Council"
+        ]
+      },
+      {
+        "name": "Activist",
+        "description": "Individuals or group leaders advocating for social change or nationalist causes.",
+        "attributes": [
+          {
+            "name": "full_name",
+            "type": "text",
+            "description": "The name of the activist or group leader"
+          },
+          {
+            "name": "primary_cause",
+            "type": "text",
+            "description": "The main issue they are campaigning for"
+          },
+          {
+            "name": "affiliation_group",
+            "type": "text",
+            "description": "The movement or NGO they represent"
+          }
+        ],
+        "examples": [
+          "Pro-democracy protest leader",
+          "Border sovereignty activist"
+        ]
+      },
+      {
+        "name": "Person",
+        "description": "General individuals, netizens, or citizens participating in social media discourse.",
+        "attributes": [
+          {
+            "name": "full_name",
+            "type": "text",
+            "description": "The name or handle of the individual"
+          },
+          {
+            "name": "location_city",
+            "type": "text",
+            "description": "The city or province where they reside"
+          },
+          {
+            "name": "user_bio",
+            "type": "text",
+            "description": "Short description of the person's interests"
+          }
+        ],
+        "examples": [
+          "Somchai the Netizen",
+          "Local Shop Owner"
+        ]
+      },
+      {
+        "name": "Organization",
+        "description": "General groups, small businesses, or NGOs not covered by specific categories.",
+        "attributes": [
+          {
+            "name": "org_name",
+            "type": "text",
+            "description": "The name of the organization"
+          },
+          {
+            "name": "sector_type",
+            "type": "text",
+            "description": "The industry or social sector they operate in"
+          },
+          {
+            "name": "mission_statement",
+            "type": "text",
+            "description": "The primary goal of the organization"
+          }
+        ],
+        "examples": [
+          "Thai Chamber of Commerce",
+          "Border Relief NGO"
+        ]
+      }
+    ],
+    "edge_types": [
+      {
+        "name": "MEMBER_OF",
+        "description": "Indicates a person belongs to a specific political or organizational group.",
+        "source_targets": [
+          {
+            "source": "Politician",
+            "target": "PoliticalParty"
+          },
+          {
+            "source": "Activist",
+            "target": "Organization"
+          }
+        ],
+        "attributes": []
+      },
+      {
+        "name": "REPORTS_ON",
+        "description": "A journalist or media entity providing information about a subject.",
+        "source_targets": [
+          {
+            "source": "Journalist",
+            "target": "Politician"
+          },
+          {
+            "source": "Journalist",
+            "target": "GovernmentAgency"
+          }
+        ],
+        "attributes": []
+      },
+      {
+        "name": "NEGOTIATES_WITH",
+        "description": "Formal diplomatic or political discussions between two parties.",
+        "source_targets": [
+          {
+            "source": "Diplomat",
+            "target": "Diplomat"
+          },
+          {
+            "source": "GovernmentAgency",
+            "target": "GovernmentAgency"
+          }
+        ],
+        "attributes": []
+      },
+      {
+        "name": "CRITICIZES",
+        "description": "Public expression of disapproval or opposition on social media.",
+        "source_targets": [
+          {
+            "source": "Activist",
+            "target": "Politician"
+          },
+          {
+            "source": "Person",
+            "target": "GovernmentAgency"
+          }
+        ],
+        "attributes": []
+      },
+      {
+        "name": "ADVISES",
+        "description": "Providing expert opinion or guidance on policy or economics.",
+        "source_targets": [
+          {
+            "source": "Economist",
+            "target": "GovernmentAgency"
+          },
+          {
+            "source": "Economist",
+            "target": "Politician"
+          }
+        ],
+        "attributes": []
+      },
+      {
+        "name": "SUPPORTS",
+        "description": "Expressing agreement or providing resources to a cause or party.",
+        "source_targets": [
+          {
+            "source": "Person",
+            "target": "PoliticalParty"
+          },
+          {
+            "source": "Organization",
+            "target": "Politician"
+          }
+        ],
+        "attributes": []
+      },
+      {
+        "name": "MONITORS",
+        "description": "Observing actions, particularly regarding border security or economic shifts.",
+        "source_targets": [
+          {
+            "source": "MilitaryOfficer",
+            "target": "Organization"
+          },
+          {
+            "source": "GovernmentAgency",
+            "target": "Organization"
+          }
+        ],
+        "attributes": []
+      }
+    ]
+  },
+  "analysis_summary": "The ontology is designed to simulate the complex interplay between Thai domestic politics, economic forecasting for 2026, and the geopolitical tension with Cambodia. It focuses on key actors like politicians, diplomats, and military officers who drive official narratives, while including journalists, economists, and activists who shape public opinion and social media discourse. Fallback types ensure all social media participants can be categorized.",
+  "total_text_length": 13,
+  "graph_id": "fishi_1c2fce42d5684b38",
+  "node_count": null,
+  "edge_count": null,
+  "simulation_requirement": "analyze and predict thai politics and economics 2026 and the conflict with Cambodia",
+  "additional_context": null,
+  "simulation_id": null,
+  "simulation_config": null,
+  "files": []
+}

@@ -22,7 +22,7 @@ from ..config import Config
 from ..utils.logger import get_logger
 from .neo4j_entity_reader import EntityNode, Neo4jEntityReader
 
-logger = get_logger('fishi.simulation_config')
+logger = get_logger('pubop.simulation_config')
 
 # Chinese daily routine time configuration (Beijing Time)
 # Can be adapted for other timezones, but default behavior follows this pattern

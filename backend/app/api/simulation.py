@@ -16,7 +16,7 @@ from ..services.simulation_runner import SimulationRunner, RunnerStatus
 from ..utils.logger import get_logger
 from ..models.project import ProjectManager
 
-logger = get_logger('fishi.api.simulation')
+logger = get_logger('pubop.api.simulation')
 
 
 # Interview prompt optimization prefix
@@ -171,7 +171,7 @@ def create_simulation():
     request（JSON）：
         {
             "project_id": "proj_xxxx",      // 必填
-            "graph_id": "fishi_xxxx",    //  can 选，such asnot提供则fromprojectget
+            "graph_id": "pubop_xxxx",    //  can 选，such asnot提供则fromprojectget
             "enable_twitter": true,          //  can 选，default true
             "enable_reddit": true            //  can 选，default true
         }
@@ -182,7 +182,7 @@ def create_simulation():
             "data": {
                 "simulation_id": "sim_xxxx",
                 "project_id": "proj_xxxx",
-                "graph_id": "fishi_xxxx",
+                "graph_id": "pubop_xxxx",
                 "status": "created",
                 "enable_twitter": true,
                 "enable_reddit": true,
@@ -1203,7 +1203,7 @@ def generate_profiles():
     
     request（JSON）：
         {
-            "graph_id": "fishi_xxxx",     // 必填
+            "graph_id": "pubop_xxxx",     // 必填
             "entity_types": ["Student"],      //  can 选
             "use_llm": true,                  //  can 选
             "platform": "reddit"              //  can 选

@@ -18,7 +18,7 @@ from .neo4j_entity_reader import Neo4jEntityReader, FilteredEntities
 from .oasis_profile_generator import OasisProfileGenerator, OasisAgentProfile
 from .simulation_config_generator import SimulationConfigGenerator, SimulationParameters
 
-logger = get_logger('fishi.simulation')
+logger = get_logger('pubop.simulation')
 
 
 class SimulationStatus(str, Enum):
@@ -514,7 +514,7 @@ class SimulationManager:
                 "parallel": f"python {scripts_dir}/run_parallel_simulation.py --config {config_path}",
             },
             "instructions": (
-                f"1. Activate conda environment: conda activate fishi\n"
+                f"1. Activate conda environment: conda activate pubop\n"
                 f"2. Run simulation (scripts located at {scripts_dir}):\n"
                 f"   - Run Twitter only: python {scripts_dir}/run_twitter_simulation.py --config {config_path}\n"
                 f"   - Run Reddit only: python {scripts_dir}/run_reddit_simulation.py --config {config_path}\n"

@@ -83,7 +83,7 @@ class LLMClient:
             Parsed JSON object
         """
         from ..utils.logger import get_logger
-        logger = get_logger('fishi.llm_client')
+        logger = get_logger('pubop.llm_client')
         
         try:
             logger.debug(f"Calling LLM API: model={self.model}, base_url={self.base_url}")

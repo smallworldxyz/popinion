@@ -23,7 +23,7 @@ from ..utils.logger import get_logger
 from .neo4j_graph_memory_updater import Neo4jGraphMemoryManager
 from .simulation_ipc import SimulationIPCClient, CommandType, IPCResponse
 
-logger = get_logger('fishi.simulation_runner')
+logger = get_logger('pubop.simulation_runner')
 
 # Flag to verify cleanup function registration
 _cleanup_registered = False

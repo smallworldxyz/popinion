@@ -1,0 +1,430 @@
+{
+  "project_id": "proj_6d5c0f03f622",
+  "name": "Unnamed Project",
+  "status": "graph_built",
+  "created_at": "2025-12-26T23:46:24.938588",
+  "updated_at": "2025-12-27T00:02:53.278359",
+  "ontology": {
+    "entity_types": [
+      {
+        "name": "Politician",
+        "description": "Elected officials or party leaders involved in national governance and political strategy.",
+        "attributes": [
+          {
+            "name": "full_name",
+            "type": "text",
+            "description": "The full name of the politician"
+          },
+          {
+            "name": "political_alignment",
+            "type": "text",
+            "description": "The ideological or party alignment (e.g., Conservative, Reformist)"
+          },
+          {
+            "name": "current_role",
+            "type": "text",
+            "description": "The current position held, such as Party Leader or Caretaker PM"
+          }
+        ],
+        "examples": [
+          "Anutin Charnvirakul",
+          "Paetongtarn Shinawatra",
+          "Natthaphong Ruengpanyawut"
+        ]
+      },
+      {
+        "name": "PoliticalParty",
+        "description": "Organized groups that contest elections and hold seats in the Thai Parliament.",
+        "attributes": [
+          {
+            "name": "party_name",
+            "type": "text",
+            "description": "The official name of the political party"
+          },
+          {
+            "name": "ideology",
+            "type": "text",
+            "description": "The core political beliefs of the party"
+          },
+          {
+            "name": "seat_count",
+            "type": "text",
+            "description": "Number of seats held prior to dissolution"
+          }
+        ],
+        "examples": [
+          "Bhumjaithai Party",
+          "People's Party",
+          "Pheu Thai"
+        ]
+      },
+      {
+        "name": "GovernmentOfficial",
+        "description": "Non-elected technocrats, ministers, or heads of regulatory and economic agencies.",
+        "attributes": [
+          {
+            "name": "full_name",
+            "type": "text",
+            "description": "The full name of the official"
+          },
+          {
+            "name": "department",
+            "type": "text",
+            "description": "The government ministry or agency they lead"
+          },
+          {
+            "name": "expertise_area",
+            "type": "text",
+            "description": "The professional focus, such as Finance or Foreign Affairs"
+          }
+        ],
+        "examples": [
+          "Ekniti Nitithanprapas",
+          "Sihasak Phuangketkeow"
+        ]
+      },
+      {
+        "name": "MilitaryLeader",
+        "description": "High-ranking officers in the armed forces involved in border security and internal stability.",
+        "attributes": [
+          {
+            "name": "full_name",
+            "type": "text",
+            "description": "The full name of the military officer"
+          },
+          {
+            "name": "military_rank",
+            "type": "text",
+            "description": "The official rank held"
+          },
+          {
+            "name": "command_unit",
+            "type": "text",
+            "description": "The specific army area or division under their command"
+          }
+        ],
+        "examples": [
+          "General Boonsin Padklang"
+        ]
+      },
+      {
+        "name": "MediaOutlet",
+        "description": "Organizations that report news and shape public opinion through social media and broadcasting.",
+        "attributes": [
+          {
+            "name": "outlet_name",
+            "type": "text",
+            "description": "The name of the media organization"
+          },
+          {
+            "name": "editorial_bias",
+            "type": "text",
+            "description": "The perceived political leaning of the outlet"
+          },
+          {
+            "name": "primary_platform",
+            "type": "text",
+            "description": "The main channel for information dissemination"
+          }
+        ],
+        "examples": [
+          "Bangkok Post",
+          "Thai PBS World",
+          "Khaosod English"
+        ]
+      },
+      {
+        "name": "Diplomat",
+        "description": "International representatives and foreign ministers involved in mediation and geopolitical relati...",
+        "attributes": [
+          {
+            "name": "full_name",
+            "type": "text",
+            "description": "The full name of the diplomat"
+          },
+          {
+            "name": "representing_country",
+            "type": "text",
+            "description": "The nation or international body they represent"
+          },
+          {
+            "name": "diplomatic_mission",
+            "type": "text",
+            "description": "The specific goal or accord they are working on"
+          }
+        ],
+        "examples": [
+          "Wang Yi",
+          "Anwar Ibrahim",
+          "Donald Trump"
+        ]
+      },
+      {
+        "name": "AcademicExpert",
+        "description": "Scholars, economists, and analysts who provide commentary on the polycrisis.",
+        "attributes": [
+          {
+            "name": "full_name",
+            "type": "text",
+            "description": "The full name of the expert"
+          },
+          {
+            "name": "field_of_expertise",
+            "type": "text",
+            "description": "The subject area, such as Macroeconomics or Political Science"
+          },
+          {
+            "name": "affiliated_institution",
+            "type": "text",
+            "description": "The university or research institute they belong to"
+          }
+        ],
+        "examples": [
+          "Tita Sanglee",
+          "NESDC Analysts"
+        ]
+      },
+      {
+        "name": "BusinessLeader",
+        "description": "Executives and representatives of industry associations affected by economic stagnation.",
+        "attributes": [
+          {
+            "name": "full_name",
+            "type": "text",
+            "description": "The full name of the business figure"
+          },
+          {
+            "name": "industry_sector",
+            "type": "text",
+            "description": "The specific sector, such as Tourism or Manufacturing"
+          },
+          {
+            "name": "business_role",
+            "type": "text",
+            "description": "Their position, such as CEO or Association President"
+          }
+        ],
+        "examples": [
+          "ATTA President",
+          "Chamber of Commerce Head"
+        ]
+      },
+      {
+        "name": "Person",
+        "description": "Fallback type for natural persons including netizens, protesters, and individual citizens.",
+        "attributes": [
+          {
+            "name": "full_name",
+            "type": "text",
+            "description": "The name or handle of the individual"
+          },
+          {
+            "name": "location_province",
+            "type": "text",
+            "description": "The province where the person is based"
+          },
+          {
+            "name": "social_identity",
+            "type": "text",
+            "description": "The role they play in the simulation, e.g., Netizen, Farmer"
+          }
+        ],
+        "examples": [
+          "Jirat Thongsuwan",
+          "Urban Middle Class Voter",
+          "Trat Province Resident"
+        ]
+      },
+      {
+        "name": "Organization",
+        "description": "Fallback type for any group, NGO, or international body not specifically categorized.",
+        "attributes": [
+          {
+            "name": "org_name",
+            "type": "text",
+            "description": "The name of the organization"
+          },
+          {
+            "name": "org_type",
+            "type": "text",
+            "description": "The nature of the group, e.g., NGO, International Body"
+          },
+          {
+            "name": "focus_issue",
+            "type": "text",
+            "description": "The primary concern, such as Human Rights or Environment"
+          }
+        ],
+        "examples": [
+          "Constitutional Court",
+          "ASEAN",
+          "World Bank"
+        ]
+      }
+    ],
+    "edge_types": [
+      {
+        "name": "CRITICIZES",
+        "description": "Publicly expresses disapproval or challenges the actions of another entity.",
+        "source_targets": [
+          {
+            "source": "Politician",
+            "target": "Politician"
+          },
+          {
+            "source": "MediaOutlet",
+            "target": "GovernmentOfficial"
+          },
+          {
+            "source": "Person",
+            "target": "PoliticalParty"
+          }
+        ],
+        "attributes": []
+      },
+      {
+        "name": "SUPPORTS",
+        "description": "Publicly endorses or aligns with the viewpoints/actions of another entity.",
+        "source_targets": [
+          {
+            "source": "PoliticalParty",
+            "target": "Politician"
+          },
+          {
+            "source": "Person",
+            "target": "Politician"
+          },
+          {
+            "source": "BusinessLeader",
+            "target": "GovernmentOfficial"
+          }
+        ],
+        "attributes": []
+      },
+      {
+        "name": "REPORTS_ON",
+        "description": "Disseminates information or news regarding the activities of an entity.",
+        "source_targets": [
+          {
+            "source": "MediaOutlet",
+            "target": "Politician"
+          },
+          {
+            "source": "MediaOutlet",
+            "target": "MilitaryLeader"
+          },
+          {
+            "source": "MediaOutlet",
+            "target": "Organization"
+          }
+        ],
+        "attributes": []
+      },
+      {
+        "name": "ADVOCATES_FOR",
+        "description": "Promotes a specific policy, reform, or social cause.",
+        "source_targets": [
+          {
+            "source": "PoliticalParty",
+            "target": "Organization"
+          },
+          {
+            "source": "AcademicExpert",
+            "target": "GovernmentOfficial"
+          },
+          {
+            "source": "Organization",
+            "target": "Person"
+          }
+        ],
+        "attributes": []
+      },
+      {
+        "name": "NEGOTIATES_WITH",
+        "description": "Engages in formal or informal dialogue to resolve conflicts or reach accords.",
+        "source_targets": [
+          {
+            "source": "Diplomat",
+            "target": "Diplomat"
+          },
+          {
+            "source": "Politician",
+            "target": "MilitaryLeader"
+          },
+          {
+            "source": "GovernmentOfficial",
+            "target": "Organization"
+          }
+        ],
+        "attributes": []
+      },
+      {
+        "name": "WORKS_FOR",
+        "description": "Indicates employment or official affiliation with an organization or party.",
+        "source_targets": [
+          {
+            "source": "GovernmentOfficial",
+            "target": "Organization"
+          },
+          {
+            "source": "MilitaryLeader",
+            "target": "Organization"
+          },
+          {
+            "source": "Politician",
+            "target": "PoliticalParty"
+          }
+        ],
+        "attributes": []
+      },
+      {
+        "name": "INFLUENCES",
+        "description": "Exerts power or shapes the decision-making process of another entity.",
+        "source_targets": [
+          {
+            "source": "Organization",
+            "target": "Politician"
+          },
+          {
+            "source": "Diplomat",
+            "target": "GovernmentOfficial"
+          },
+          {
+            "source": "AcademicExpert",
+            "target": "MediaOutlet"
+          }
+        ],
+        "attributes": []
+      },
+      {
+        "name": "OPPOSES",
+        "description": "Actively works against the interests or survival of another entity.",
+        "source_targets": [
+          {
+            "source": "PoliticalParty",
+            "target": "PoliticalParty"
+          },
+          {
+            "source": "MilitaryLeader",
+            "target": "Organization"
+          },
+          {
+            "source": "Person",
+            "target": "GovernmentOfficial"
+          }
+        ],
+        "attributes": []
+      }
+    ]
+  },
+  "analysis_summary": "The ontology is designed to simulate the complex social media interactions surrounding Thailand's 2025 polycrisis. It captures the tension between the 'Blue' conservative establishment (BJT), the reformist opposition (PP), and the military, alongside the economic and environmental anxieties of the public. Entity types focus on the key actors mentioned—politicians, diplomats, and media—while relationships reflect the 'lawfare', nationalist rhetoric, and diplomatic maneuvering described in the text.",
+  "total_text_length": 37708,
+  "graph_id": "fishi_7a5e2414fcad417b",
+  "node_count": null,
+  "edge_count": null,
+  "simulation_requirement": "public opinion",
+  "additional_context": null,
+  "simulation_id": null,
+  "simulation_config": null,
+  "files": []
+}

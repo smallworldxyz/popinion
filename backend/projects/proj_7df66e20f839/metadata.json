@@ -1,0 +1,343 @@
+{
+  "project_id": "proj_7df66e20f839",
+  "name": "Unnamed Project",
+  "status": "graph_built",
+  "created_at": "2025-12-27T09:44:46.422949",
+  "updated_at": "2025-12-27T09:47:40.029473",
+  "ontology": {
+    "entity_types": [
+      {
+        "name": "GovernmentOfficial",
+        "description": "High-level political figures and decision-makers involved in statecraft and national policy.",
+        "attributes": [
+          {
+            "name": "official_title",
+            "type": "text",
+            "description": "The specific rank or position held within the government."
+          },
+          {
+            "name": "political_affiliation",
+            "type": "text",
+            "description": "The political party or faction the official belongs to."
+          }
+        ],
+        "examples": [
+          "Prime Minister of Thailand",
+          "Cambodian Foreign Minister"
+        ]
+      },
+      {
+        "name": "MilitaryCommander",
+        "description": "Leaders of armed forces responsible for border security, discipline, and tactical operations.",
+        "attributes": [
+          {
+            "name": "military_rank",
+            "type": "text",
+            "description": "The formal rank held by the commander."
+          },
+          {
+            "name": "operational_zone",
+            "type": "text",
+            "description": "The specific geographic area or border sector under their command."
+          }
+        ],
+        "examples": [
+          "Border Task Force Commander",
+          "General of the Royal Cambodian Army"
+        ]
+      },
+      {
+        "name": "Diplomat",
+        "description": "Representatives tasked with international relations, negotiations, and managing the global image.",
+        "attributes": [
+          {
+            "name": "mission_location",
+            "type": "text",
+            "description": "The country or international body where the diplomat is stationed."
+          },
+          {
+            "name": "diplomatic_specialty",
+            "type": "text",
+            "description": "The specific area of focus, such as border disputes or trade."
+          }
+        ],
+        "examples": [
+          "Ambassador to the UN",
+          "Special Envoy for Border Affairs"
+        ]
+      },
+      {
+        "name": "Journalist",
+        "description": "Media professionals who report on leaks, military clashes, and political developments.",
+        "attributes": [
+          {
+            "name": "media_outlet",
+            "type": "text",
+            "description": "The news organization or platform the journalist writes for."
+          },
+          {
+            "name": "reporting_focus",
+            "type": "text",
+            "description": "The primary subject matter covered by the journalist."
+          }
+        ],
+        "examples": [
+          "Investigative Reporter",
+          "Political Correspondent"
+        ]
+      },
+      {
+        "name": "CulturalInfluencer",
+        "description": "Public figures who shape opinion on shared heritage, national pride, and historical identity.",
+        "attributes": [
+          {
+            "name": "influence_platform",
+            "type": "text",
+            "description": "The primary social media platform used by the influencer."
+          },
+          {
+            "name": "cultural_niche",
+            "type": "text",
+            "description": "The specific aspect of culture or history they focus on."
+          }
+        ],
+        "examples": [
+          "Heritage Blogger",
+          "Nationalist Content Creator"
+        ]
+      },
+      {
+        "name": "BusinessLeader",
+        "description": "Individuals managing enterprises, including those in border zones or controversial sectors.",
+        "attributes": [
+          {
+            "name": "industry_type",
+            "type": "text",
+            "description": "The sector of the economy the leader operates in."
+          },
+          {
+            "name": "business_region",
+            "type": "text",
+            "description": "The primary geographic area of business operations."
+          }
+        ],
+        "examples": [
+          "Casino Owner",
+          "Tech Park Developer"
+        ]
+      },
+      {
+        "name": "AcademicScholar",
+        "description": "Experts in history, archaeology, and political science who analyze civilizational roots.",
+        "attributes": [
+          {
+            "name": "field_of_expertise",
+            "type": "text",
+            "description": "The specific academic discipline of the scholar."
+          },
+          {
+            "name": "institutional_affiliation",
+            "type": "text",
+            "description": "The university or research center they are associated with."
+          }
+        ],
+        "examples": [
+          "Historian of the Khmer Empire",
+          "Political Scientist"
+        ]
+      },
+      {
+        "name": "Activist",
+        "description": "Individuals or group leaders advocating for accountability, peace, or specific national causes.",
+        "attributes": [
+          {
+            "name": "advocacy_goal",
+            "type": "text",
+            "description": "The primary objective or change the activist is seeking."
+          },
+          {
+            "name": "movement_name",
+            "type": "text",
+            "description": "The name of the organization or movement they lead."
+          }
+        ],
+        "examples": [
+          "Peace Advocate",
+          "Anti-Scam Campaigner"
+        ]
+      },
+      {
+        "name": "Person",
+        "description": "Fallback type for any natural person not fitting specific categories, such as netizens.",
+        "attributes": [
+          {
+            "name": "full_name",
+            "type": "text",
+            "description": "The full name of the individual."
+          },
+          {
+            "name": "bio_description",
+            "type": "text",
+            "description": "A brief biography or self-description."
+          }
+        ],
+        "examples": [
+          "Social Media User",
+          "Local Resident"
+        ]
+      },
+      {
+        "name": "Organization",
+        "description": "Fallback type for any group, NGO, or entity not fitting specific categories.",
+        "attributes": [
+          {
+            "name": "org_name",
+            "type": "text",
+            "description": "The formal name of the organization."
+          },
+          {
+            "name": "headquarters_location",
+            "type": "text",
+            "description": "The city or country where the organization is based."
+          }
+        ],
+        "examples": [
+          "Regional NGO",
+          "Local Community Group"
+        ]
+      }
+    ],
+    "edge_types": [
+      {
+        "name": "CRITICIZES",
+        "description": "Expresses disapproval or points out faults in another entity's actions or statements.",
+        "source_targets": [
+          {
+            "source": "Activist",
+            "target": "GovernmentOfficial"
+          },
+          {
+            "source": "Journalist",
+            "target": "MilitaryCommander"
+          }
+        ],
+        "attributes": []
+      },
+      {
+        "name": "NEGOTIATES_WITH",
+        "description": "Engages in formal or informal discussions to resolve conflicts or reach agreements.",
+        "source_targets": [
+          {
+            "source": "Diplomat",
+            "target": "Diplomat"
+          },
+          {
+            "source": "GovernmentOfficial",
+            "target": "GovernmentOfficial"
+          }
+        ],
+        "attributes": []
+      },
+      {
+        "name": "ACCUSES",
+        "description": "Claims that another entity is responsible for a specific wrongdoing or mistake.",
+        "source_targets": [
+          {
+            "source": "GovernmentOfficial",
+            "target": "GovernmentOfficial"
+          },
+          {
+            "source": "MilitaryCommander",
+            "target": "MilitaryCommander"
+          }
+        ],
+        "attributes": []
+      },
+      {
+        "name": "REPORTS_ON",
+        "description": "Provides news coverage or factual accounts regarding an entity or event.",
+        "source_targets": [
+          {
+            "source": "Journalist",
+            "target": "MilitaryCommander"
+          },
+          {
+            "source": "Journalist",
+            "target": "BusinessLeader"
+          }
+        ],
+        "attributes": []
+      },
+      {
+        "name": "ADVOCATES_FOR",
+        "description": "Publicly supports a cause, policy, or specific entity's position.",
+        "source_targets": [
+          {
+            "source": "Activist",
+            "target": "Organization"
+          },
+          {
+            "source": "CulturalInfluencer",
+            "target": "AcademicScholar"
+          }
+        ],
+        "attributes": []
+      },
+      {
+        "name": "WORKS_FOR",
+        "description": "Indicates employment or official service within an organization or government.",
+        "source_targets": [
+          {
+            "source": "MilitaryCommander",
+            "target": "Organization"
+          },
+          {
+            "source": "Diplomat",
+            "target": "Organization"
+          }
+        ],
+        "attributes": []
+      },
+      {
+        "name": "APPEALS_TO",
+        "description": "Makes a request or plea to another entity based on shared values or universal truths.",
+        "source_targets": [
+          {
+            "source": "Person",
+            "target": "GovernmentOfficial"
+          },
+          {
+            "source": "Activist",
+            "target": "Person"
+          }
+        ],
+        "attributes": []
+      },
+      {
+        "name": "REPRESENTS",
+        "description": "Acts as the official voice or agent for a larger group or nation.",
+        "source_targets": [
+          {
+            "source": "GovernmentOfficial",
+            "target": "Organization"
+          },
+          {
+            "source": "Diplomat",
+            "target": "Organization"
+          }
+        ],
+        "attributes": []
+      }
+    ]
+  },
+  "analysis_summary": "The ontology is designed to simulate the complex Thailand-Cambodia relationship in 2026, focusing on the tension between military conflict, diplomatic negotiation, and shared cultural history. It includes specific roles for those involved in border clashes (MilitaryCommander), the 'scam center' controversy (BusinessLeader), and the historical/cultural debate (AcademicScholar, CulturalInfluencer). The relationships focus on the 'he-said she-said' loop of accusations and the proposed shift toward accountability and soft diplomacy.",
+  "total_text_length": 8625,
+  "graph_id": "fishi_2d1a9bb3c0b44b91",
+  "node_count": null,
+  "edge_count": null,
+  "simulation_requirement": "anayalyse Thailand Cambodia politic and relationship 2026",
+  "additional_context": null,
+  "simulation_id": null,
+  "simulation_config": null,
+  "files": []
+}

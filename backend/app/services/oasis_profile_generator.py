@@ -22,7 +22,7 @@ from ..utils.logger import get_logger
 from .neo4j_entity_reader import EntityNode, Neo4jEntityReader
 from .neo4j_tools import Neo4jToolsService
 
-logger = get_logger('fishi.oasis_profile')
+logger = get_logger('pubop.oasis_profile')
 
 
 @dataclass

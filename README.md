@@ -1,21 +1,21 @@
-# Fishi
+# pubop
 
-> **Fishi** is a fork of [MiroFish](https://github.com/rithythul/mirofish) with self-hosted **Neo4j** graph database for enhanced privacy and control. 
+> **pubop** (Public Opinion) is a fork of [MiroFish](https://github.com/rithythul/mirofish) - a global public opinion analysis platform powered by AI simulation.
 > 
-> **Planned Integrations:** Facebook, Instagram, TikTok, and other social media platforms for comprehensive social simulation.
+> **Features:** Real-world data collection from global social platforms + AI agent simulation + Prediction.
 
 ---
 
 ## ⚡ Overview
 
-**Fishi** is a next-generation AI prediction engine powered by multi-agent technology. By extracting seed information from the real world (such as breaking news, policy drafts, or financial signals), it automatically constructs a high-fidelity parallel digital world. Within this space, thousands of intelligent agents with independent personalities, long-term memory, and behavioral logic freely interact and undergo social evolution. You can inject variables dynamically from a "God's-eye view" to precisely deduce future trajectories — **rehearse the future in a digital sandbox, and win decisions after countless simulations**.
+**pubop** is a next-generation AI prediction engine powered by multi-agent technology. By extracting seed information from the real world (such as breaking news, policy drafts, or social media trends), it automatically constructs a high-fidelity parallel digital world. Within this space, thousands of intelligent agents with independent personalities, long-term memory, and behavioral logic freely interact and undergo social evolution. You can inject variables dynamically from a "God's-eye view" to precisely deduce future trajectories — **rehearse the future in a digital sandbox, and win decisions after countless simulations**.
 
-> You only need to: Upload seed materials (data analysis reports or interesting novel stories) and describe your prediction requirements in natural language</br>
-> Fishi will return: A detailed prediction report and a deeply interactive high-fidelity digital world
+> You only need to: Upload seed materials (data analysis reports or social media data) and describe your prediction requirements in natural language</br>
+> pubop will return: A detailed prediction report and a deeply interactive high-fidelity digital world
 
 ### Our Vision
 
-Fishi is dedicated to creating a swarm intelligence mirror that maps reality. By capturing the collective emergence triggered by individual interactions, we break through the limitations of traditional prediction:
+pubop is dedicated to creating a swarm intelligence mirror that maps reality. By capturing the collective emergence triggered by individual interactions, we break through the limitations of traditional prediction:
 
 - **At the Macro Level**: We are a rehearsal laboratory for decision-makers, allowing policies and public relations to be tested at zero risk
 - **At the Micro Level**: We are a creative sandbox for individual users — whether deducing novel endings or exploring imaginative scenarios, everything can be fun, playful, and accessible
@@ -34,7 +34,7 @@ From serious predictions to playful simulations, we let every "what if" see its 
 
 ### Prerequisites
 
-> Note: Fishi was developed and tested on Mac and Linux. Windows compatibility is experimental.
+> Note: pubop was developed and tested on Mac and Linux. Windows compatibility is experimental.
 
 | Tool | Version | Description | Check Installation |
 |------|---------|-------------|-------------------|
@@ -50,7 +50,7 @@ From serious predictions to playful simulations, we let every "what if" see its 
 docker-compose up -d
 
 # Neo4j Browser available at: http://localhost:7474
-# Default credentials: neo4j / mirofish123
+# Default credentials: neo4j / pubop123
 ```
 
 ### 2. Configure Environment Variables
@@ -75,7 +75,7 @@ LLM_MODEL_NAME=gpt-4
 # Use Docker Compose to start local Neo4j: docker-compose up -d
 NEO4J_URI=bolt://localhost:7687
 NEO4J_USERNAME=neo4j
-NEO4J_PASSWORD=mirofish123
+NEO4J_PASSWORD=pubop123
 NEO4J_DATABASE=neo4j
 ```
 
@@ -124,7 +124,7 @@ bun run frontend  # Start frontend only
 
 ## 📄 Acknowledgments
 
-Fishi's core simulation engine is powered by **[OASIS (Open Agent Social Interaction Simulations)](https://github.com/camel-ai/oasis)**. OASIS is a high-performance social media simulation framework developed by the [CAMEL-AI](https://github.com/camel-ai) team, supporting million-scale agent interaction simulations, providing a solid technical foundation for Fishi's swarm intelligence emergence. We sincerely thank the CAMEL-AI team for their open-source contributions!
+pubop's core simulation engine is powered by **[OASIS (Open Agent Social Interaction Simulations)](https://github.com/camel-ai/oasis)**. OASIS is a high-performance social media simulation framework developed by the [CAMEL-AI](https://github.com/camel-ai) team, supporting million-scale agent interaction simulations, providing a solid technical foundation for pubop's swarm intelligence emergence. We sincerely thank the CAMEL-AI team for their open-source contributions!
 
 ## 📝 License
 

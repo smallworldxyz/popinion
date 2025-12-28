@@ -9,7 +9,7 @@ import functools
 from typing import Callable, Any, Optional, Type, Tuple
 from ..utils.logger import get_logger
 
-logger = get_logger('fishi.retry')
+logger = get_logger('pubop.retry')
 
 
 def retry_with_backoff(

@@ -18,7 +18,7 @@ from .neo4j_service import Neo4jService
 from .llm_entity_extractor import LLMEntityExtractor
 from ..utils.logger import get_logger
 
-logger = get_logger('fishi.graph_builder')
+logger = get_logger('pubop.graph_builder')
 
 
 @dataclass
@@ -197,7 +197,7 @@ class GraphBuilderService:
         Returns:
             Graph ID
         """
-        graph_id = f"fishi_{uuid.uuid4().hex[:16]}"
+        graph_id = f"pubop_{uuid.uuid4().hex[:16]}"
         
         # Create graph metadata node
         self.neo4j.create_node(

@@ -27,7 +27,7 @@ def create_app(config_class=Config):
         app.json.ensure_ascii = False
     
     # Setup logger
-    logger = setup_logger('fishi')
+    logger = setup_logger('pubop')
     
     # Only print startup information in reloader child process (avoid printing twice in debug mode)
     is_reloader_process = os.environ.get('WERKZEUG_RUN_MAIN') == 'true'
@@ -51,14 +51,14 @@ def create_app(config_class=Config):
     # Request logging middleware
     @app.before_request
     def log_request():
-        logger = get_logger('fishi.request')
+        logger = get_logger('pubop.request')
         logger.debug(f"request: {request.method} {request.path}")
         if request.content_type and 'json' in request.content_type:
             logger.debug(f"request body: {request.get_json(silent=True)}")
     
     @app.after_request
     def log_response(response):
-        logger = get_logger('fishi.request')
+        logger = get_logger('pubop.request')
         logger.debug(f"response: {response.status_code}")
         return response
     

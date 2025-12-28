@@ -19,7 +19,7 @@ from ..models.task import TaskManager, TaskStatus
 from ..models.project import ProjectManager, ProjectStatus
 
 # Get logger
-logger = get_logger('fishi.api')
+logger = get_logger('pubop.api')
 
 
 def allowed_file(filename: str) -> bool:
@@ -125,24 +125,36 @@ def generate_ontology():
     try:
         logger.info("=== Starting ontology generation ===")
         
+        # Debug: Log request details
+        logger.info(f"Request content type: {request.content_type}")
+        logger.info(f"Request content length: {request.content_length}")
+        logger.info(f"Request files keys: {list(request.files.keys())}")
+        logger.info(f"Request form keys: {list(request.form.keys())}")
+        
         # Get form data
         files = request.files.getlist('files')
         simulation_requirement = request.form.get('simulation_requirement', '').strip()
         additional_context = request.form.get('additional_context', '').strip()
         project_name = request.form.get('project_name', 'Unnamed Project').strip()
         
-        logger.debug(f"Project name: {project_name}")
-        logger.debug(f"Simulation requirement: {simulation_requirement}")
-        logger.debug(f"Files count: {len(files)}")
+        logger.info(f"Project name: {project_name}")
+        logger.info(f"Simulation requirement length: {len(simulation_requirement)}")
+        logger.info(f"Files received: {len(files)}")
+        
+        # Log each file info
+        for i, f in enumerate(files):
+            logger.info(f"File {i}: filename='{f.filename}', content_type='{f.content_type}'")
         
         # Validate parameters
         if not files:
+            logger.error("No files in request")
             return jsonify({
                 "success": False,
                 "error": "At least one file required"
             }), 400
         
         if not simulation_requirement:
+            logger.error("No simulation requirement provided")
             return jsonify({
                 "success": False,
                 "error": "Simulation requirement is required"
@@ -157,11 +169,15 @@ def generate_ontology():
         
         # Extract file text
         document_texts = []
-        for file in files:
+        for idx, file in enumerate(files):
+            logger.info(f"Processing file {idx}: filename='{file.filename}'")
+            
             if not file or not file.filename:
+                logger.warning(f"Skipping file {idx}: empty file or filename")
                 continue
             
             if not allowed_file(file.filename):
+                logger.error(f"File type not supported: {file.filename}")
                 return jsonify({
                     "success": False,
                     "error": f"File type not supported: {file.filename}"
@@ -172,7 +188,25 @@ def generate_ontology():
                 temp_dir = Config.UPLOAD_FOLDER
                 os.makedirs(temp_dir, exist_ok=True)
                 temp_path = os.path.join(temp_dir, file.filename)
-                file.save(temp_path)
+                
+                # Reset file stream position and read bytes to avoid corruption
+                file.stream.seek(0)
+                file_bytes = file.stream.read()
+                
+                logger.info(f"File {file.filename}: read {len(file_bytes)} bytes from stream")
+                
+                if len(file_bytes) == 0:
+                    logger.error(f"File {file.filename} has 0 bytes - stream may be corrupted")
+                    return jsonify({
+                        "success": False,
+                        "error": f"File {file.filename} is empty or corrupted during upload"
+                    }), 400
+                
+                # Write bytes directly to file
+                with open(temp_path, 'wb') as f:
+                    f.write(file_bytes)
+                
+                logger.info(f"Saved file {file.filename} to {temp_path}")
                 
                 # Extract text using FileParser
                 text = FileParser.extract_text(temp_path)
@@ -182,15 +216,19 @@ def generate_ontology():
                 
                 if text:
                     document_texts.append(text)
-                    logger.debug(f"Extracted text from {file.filename}: {len(text)} characters")
+                    logger.info(f"Extracted {len(text)} characters from {file.filename}")
+                else:
+                    logger.warning(f"No text extracted from {file.filename}")
             except Exception as e:
                 logger.error(f"Failed to extract text from {file.filename}: {e}")
+                logger.error(f"Traceback: {traceback.format_exc()}")
                 return jsonify({
                     "success": False,
                     "error": f"Failed to parse file {file.filename}: {str(e)}"
                 }), 500
         
         if not document_texts:
+            logger.error("No valid text extracted from any files")
             return jsonify({
                 "success": False,
                 "error": "No valid text extracted from uploaded files"

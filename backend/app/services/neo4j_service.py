@@ -13,7 +13,7 @@ from neo4j.exceptions import ServiceUnavailable, TransientError
 from ..config import Config
 from ..utils.logger import get_logger
 
-logger = get_logger('fishi.neo4j_service')
+logger = get_logger('pubop.neo4j_service')
 
 T = TypeVar('T')
 

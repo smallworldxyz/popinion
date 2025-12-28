@@ -7,7 +7,7 @@ import os
 from dotenv import load_dotenv
 
 # Load .env file from project root
-# Path: Fishi/.env (relative to backend/app/config.py)
+# Path: pubop/.env (relative to backend/app/config.py)
 project_root_env = os.path.join(os.path.dirname(__file__), '../../.env')
 
 if os.path.exists(project_root_env):
@@ -21,7 +21,7 @@ class Config:
     """Flask configuration class"""
     
     # Flask configuration
-    SECRET_KEY = os.environ.get('SECRET_KEY', 'fishi-secret-key')
+    SECRET_KEY = os.environ.get('SECRET_KEY', 'pubop-secret-key')
     DEBUG = os.environ.get('FLASK_DEBUG', 'True').lower() == 'true'
     
     # JSON configuration - Disable ASCII escaping for direct text display (not \uXXXX format)
@@ -35,7 +35,7 @@ class Config:
     # Neo4j Configuration
     NEO4J_URI = os.environ.get('NEO4J_URI', 'bolt://localhost:7687')
     NEO4J_USERNAME = os.environ.get('NEO4J_USERNAME', 'neo4j')
-    NEO4J_PASSWORD = os.environ.get('NEO4J_PASSWORD', 'fishi123')
+    NEO4J_PASSWORD = os.environ.get('NEO4J_PASSWORD', 'pubop123')
     NEO4J_DATABASE = os.environ.get('NEO4J_DATABASE', 'neo4j')
     
     # File upload configuration

@@ -11,7 +11,7 @@ from ..config import Config
 from ..utils.logger import get_logger
 from .neo4j_service import Neo4jService
 
-logger = get_logger('fishi.neo4j_entity_reader')
+logger = get_logger('pubop.neo4j_entity_reader')
 
 # For generic return type
 T = TypeVar('T')

@@ -2,9 +2,9 @@
   <div class="home-container">
     <!-- Top navigation bar -->
     <nav class="navbar">
-      <div class="nav-brand">FISHI</div>
+      <div class="nav-brand">PUBOP</div>
       <div class="nav-links">
-        <a href="https://github.com/rithythul/FISHI" target="_blank" class="github-link">
+        <a href="https://github.com/rithythul/pubop" target="_blank" class="github-link">
           Visit our GitHub <span class="arrow">↗</span>
         </a>
       </div>
@@ -73,7 +73,7 @@
                 rows="6"
                 :disabled="loading"
               ></textarea>
-              <div class="model-badge">Engine: Fishi-V1.0</div>
+              <div class="model-badge">Engine: pubop-V1.0</div>
             </div>
           </div>
 
