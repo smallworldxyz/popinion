@@ -222,10 +222,10 @@ services:
 - [x] Create `twitter.py` crawler  
 - [x] Create `facebook.py` crawler
 
-### Phase 3: Integration [P1] - 6h
-- [ ] Create `pubop_bridge.py`
-- [ ] Add `generate_profiles_from_scraped_users()` to `oasis_profile_generator.py`
-- [ ] Add `initial_posts_from_real` to `simulation_config_generator.py`
+### Phase 3: Integration [P1] - 6h ✅
+- [x] Create `pubop_bridge.py`
+- [x] Add `generate_profiles_from_scraped_users()` to `oasis_profile_generator.py`
+- [x] Add `inject_real_data_seed()` to `simulation_config_generator.py`
 
 ### Phase 4: Prediction [P2] - 5h
 - [ ] Add comparison tools to ReportAgent

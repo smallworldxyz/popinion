@@ -892,3 +892,65 @@ Return JSON Format Only (No Markdown):
                 "stance": "neutral",
                 "influence_weight": 1.0
             }
+    
+    def inject_real_data_seed(
+        self,
+        params: SimulationParameters,
+        initial_posts_from_real: List[Dict[str, Any]],
+        trending_topics: Optional[List[str]] = None,
+        merge_mode: str = "prepend"
+    ) -> SimulationParameters:
+        """
+        Inject real-world scraped data into simulation parameters.
+        
+        This is the key integration point for RWSP (Real-World Simulation Prediction).
+        
+        Args:
+            params: Existing simulation parameters
+            initial_posts_from_real: List of posts from PubopBridge.posts_to_initial_posts()
+            trending_topics: Optional list of trending topics to add
+            merge_mode: How to merge with existing initial_posts
+                - "prepend": Add real posts before generated posts
+                - "append": Add real posts after generated posts
+                - "replace": Replace generated posts with real posts
+                
+        Returns:
+            Updated SimulationParameters with real data injected
+        """
+        logger.info(
+            f"Injecting real data: {len(initial_posts_from_real)} posts, "
+            f"{len(trending_topics or [])} trends, mode={merge_mode}"
+        )
+        
+        # Merge initial posts based on mode
+        existing_posts = params.event_config.initial_posts or []
+        
+        if merge_mode == "prepend":
+            merged_posts = initial_posts_from_real + existing_posts
+        elif merge_mode == "append":
+            merged_posts = existing_posts + initial_posts_from_real
+        elif merge_mode == "replace":
+            merged_posts = initial_posts_from_real
+        else:
+            logger.warning(f"Unknown merge_mode '{merge_mode}', using prepend")
+            merged_posts = initial_posts_from_real + existing_posts
+        
+        params.event_config.initial_posts = merged_posts
+        
+        # Add trending topics
+        if trending_topics:
+            existing_topics = params.event_config.hot_topics or []
+            # Deduplicate and merge
+            all_topics = list(dict.fromkeys(trending_topics + existing_topics))
+            params.event_config.hot_topics = all_topics[:20]  # Limit to 20 topics
+        
+        # Update generation reasoning
+        params.generation_reasoning += f" | Real data injected: {len(initial_posts_from_real)} posts"
+        
+        logger.info(
+            f"After injection: {len(params.event_config.initial_posts)} total initial posts, "
+            f"{len(params.event_config.hot_topics)} hot topics"
+        )
+        
+        return params
+

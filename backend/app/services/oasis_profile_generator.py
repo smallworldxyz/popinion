@@ -334,6 +334,160 @@ class OasisProfileGenerator:
                     self.save_profiles(profiles, realtime_output_path, output_platform)
         
         return profiles
+    
+    def generate_profiles_from_scraped_users(
+        self,
+        users: 'List[ScrapedUser]',
+        use_llm: bool = False,
+        progress_callback: Optional[Callable[[int, int, str], None]] = None,
+        anonymize: bool = True,
+    ) -> List[OasisAgentProfile]:
+        """
+        Generate Agent Profiles from scraped social media users.
+        
+        This method bridges real-world scraped data into OASIS simulation profiles.
+        
+        Args:
+            users: List of ScrapedUser objects from crawlers
+            use_llm: Whether to use LLM to enhance personas (slower but richer)
+            progress_callback: Progress callback function
+            anonymize: Whether to anonymize usernames
+            
+        Returns:
+            List of OasisAgentProfile objects
+        """
+        from ..models.pubop import ScrapedUser
+        
+        profiles = []
+        total = len(users)
+        
+        for i, user in enumerate(users):
+            try:
+                if progress_callback:
+                    progress_callback(i + 1, total, f"Generating profile from {user.platform} user...")
+                
+                # Generate user_id from original ID
+                user_id = abs(hash(user.user_id)) % 100000000
+                
+                # Anonymize if requested
+                if anonymize:
+                    username = f"user_{i:05d}"
+                    display_name = f"User {i}"
+                else:
+                    username = self._sanitize_username(user.username)
+                    display_name = user.display_name or username
+                
+                # Build persona from bio
+                if use_llm and user.bio:
+                    persona = self._generate_persona_with_llm_from_bio(user.bio, user.platform)
+                else:
+                    persona = self._generate_simple_persona(user)
+                
+                # Extract topics from bio
+                topics = self._extract_topics_from_bio(user.bio) if user.bio else []
+                
+                profile = OasisAgentProfile(
+                    user_id=user_id,
+                    user_name=username,
+                    name=display_name,
+                    bio=user.bio[:500] if user.bio else "",
+                    persona=persona,
+                    follower_count=user.followers,
+                    friend_count=user.following,
+                    statuses_count=user.post_count,
+                    interested_topics=topics,
+                    mbti=random.choice(self.MBTI_TYPES),
+                    source_entity_uuid=user.user_id,
+                    source_entity_type=f"{user.platform}_user",
+                )
+                
+                profiles.append(profile)
+                
+            except Exception as e:
+                logger.error(f"Failed to generate profile for user {user.user_id}: {e}")
+                continue
+        
+        logger.info(f"Generated {len(profiles)} profiles from scraped users")
+        return profiles
+    
+    def _sanitize_username(self, username: str) -> str:
+        """Sanitize username for simulation"""
+        import re
+        clean = re.sub(r'[^\w]', '_', username)
+        clean = re.sub(r'_+', '_', clean).strip('_')
+        return clean[:30] or "user"
+    
+    def _generate_simple_persona(self, user: 'ScrapedUser') -> str:
+        """Generate simple persona without LLM"""
+        from ..models.pubop import ScrapedUser
+        
+        persona_parts = [f"A real {user.platform} user"]
+        
+        if user.followers > 10000:
+            persona_parts.append("with a large following")
+        elif user.followers > 1000:
+            persona_parts.append("with a moderate following")
+        
+        if user.bio:
+            bio_snippet = user.bio[:100].strip()
+            persona_parts.append(f"who describes themselves as: '{bio_snippet}'")
+        
+        persona_parts.append("Behaves authentically based on their observed online patterns.")
+        
+        return ". ".join(persona_parts)
+    
+    def _generate_persona_with_llm_from_bio(self, bio: str, platform: str) -> str:
+        """Generate rich persona from bio using LLM"""
+        try:
+            prompt = f"""Based on this {platform} user's bio, generate a detailed persona description:
+
+Bio: {bio[:500]}
+
+Generate a 2-3 sentence persona describing:
+1. Their likely background and interests
+2. Their communication style on social media
+3. Topics they would engage with
+
+Keep it concise and authentic."""
+
+            response = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=[
+                    {"role": "system", "content": "You are a persona analyst. Generate realistic social media user personas."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=200,
+                temperature=0.7
+            )
+            
+            return response.choices[0].message.content.strip()
+            
+        except Exception as e:
+            logger.warning(f"LLM persona generation failed: {e}")
+            return f"A {platform} user. {bio[:200] if bio else 'Active on social media.'}"
+    
+    def _extract_topics_from_bio(self, bio: str) -> List[str]:
+        """Extract interested topics from bio text"""
+        if not bio:
+            return []
+        
+        bio_lower = bio.lower()
+        topics = []
+        
+        topic_keywords = {
+            'technology': ['tech', 'developer', 'coding', 'ai', 'software'],
+            'politics': ['politics', 'democracy', 'rights', 'activist'],
+            'business': ['entrepreneur', 'startup', 'business', 'investing'],
+            'entertainment': ['music', 'movies', 'gaming', 'art'],
+            'sports': ['sports', 'fitness', 'football', 'basketball'],
+            'education': ['teacher', 'student', 'university', 'learning'],
+        }
+        
+        for topic, keywords in topic_keywords.items():
+            if any(kw in bio_lower for kw in keywords):
+                topics.append(topic)
+        
+        return topics[:5]
 
     def save_profiles(
         self, 
