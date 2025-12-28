@@ -210,12 +210,12 @@ services:
 
 ## Tasks
 
-### Phase 1: Infrastructure [P0] - 3.5h
-- [ ] Add LightPanda to docker-compose.yml
-- [ ] Create `backend/app/models/pubop.py`
-- [ ] Create `backend/app/services/crawler/__init__.py`
-- [ ] Create `backend/app/services/crawler/client.py`
-- [ ] Create `backend/app/services/crawler/base.py`
+### Phase 1: Infrastructure [P0] - 3.5h ✅
+- [x] Add LightPanda to docker-compose.yml
+- [x] Create `backend/app/models/pubop.py`
+- [x] Create `backend/app/services/crawler/__init__.py`
+- [x] Create `backend/app/services/crawler/client.py`
+- [x] Create `backend/app/services/crawler/base.py`
 
 ### Phase 2: Crawlers [P0] - 11h
 - [ ] Create `telegram.py` crawler
