@@ -227,9 +227,11 @@ services:
 - [x] Add `generate_profiles_from_scraped_users()` to `oasis_profile_generator.py`
 - [x] Add `inject_real_data_seed()` to `simulation_config_generator.py`
 
-### Phase 4: Prediction [P2] - 5h
-- [ ] Add comparison tools to ReportAgent
+### Phase 4: Prediction [P2] - 5h ✅
+- [x] Create `rwsp_comparison.py` with comparison tools
+- [x] Add `compare_predictions` tool to ReportAgent
+- [x] Add `set_real_data_seed()` method to ReportAgent
 
 ---
 
-**Total: ~25.5 hours**
+**Total: ~25.5 hours** ✅ ALL PHASES COMPLETE

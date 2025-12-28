@@ -28,6 +28,7 @@ from .neo4j_tools import (
     PanoramaResult,
     InterviewResult
 )
+from .rwsp_comparison import RWSPComparisonTools, ComparisonMetrics
 
 logger = get_logger('pubop.report_agent')
 
@@ -518,6 +519,10 @@ class ReportAgent:
         self.llm = llm_client or LLMClient()
         self.neo4j_tools = neo4j_tools or Neo4jToolsService()
         
+        # RWSP comparison tools
+        self.rwsp_tools = RWSPComparisonTools()
+        self.real_data_seed = None  # Set via set_real_data_seed() for validation
+        
         self.tools = self._define_tools()
         
         # Loggers (initialized in generate_report)
@@ -626,6 +631,35 @@ Workflow:
                     "max_agents": "Max agents to interview (optional, default 5)"
                 },
                 "priority": "high"
+            },
+            "compare_predictions": {
+                "name": "compare_predictions",
+                "description": """[RWSP Prediction Comparison - Validate Against Real Data]
+Compare simulation predictions with real-world data to measure accuracy.
+Only available when real data seed is set.
+
+Workflow:
+1. Compare simulation topics with real trending topics
+2. Analyze sentiment prediction accuracy
+3. Compare engagement predictions
+4. Validate entity predictions
+
+[Usage Scenario]
+- Validate if simulation predictions match reality
+- Generate prediction accuracy report
+- Identify what simulation got right/wrong
+
+[Returns]
+- Overall accuracy score
+- Topic overlap analysis
+- Sentiment comparison
+- Engagement accuracy
+- Prediction validation details""",
+                "parameters": {
+                    "simulation_topics": "Comma-separated list of topics predicted in simulation",
+                    "predictions": "Comma-separated list of specific predictions to validate (optional)"
+                },
+                "priority": "medium"
             }
         }
     
@@ -719,12 +753,95 @@ Workflow:
                 result = [n.to_dict() for n in nodes]
                 return json.dumps(result, ensure_ascii=False, indent=2)
             
+            elif tool_name == "compare_predictions":
+                # RWSP: Compare simulation predictions with real data
+                if not self.real_data_seed:
+                    return "No real data seed available. Use set_real_data_seed() to provide real crawl data for comparison."
+                
+                # Parse topics from comma-separated string
+                topics_str = parameters.get("simulation_topics", "")
+                topics = [t.strip() for t in topics_str.split(",") if t.strip()]
+                
+                # Parse predictions if provided
+                predictions_str = parameters.get("predictions", "")
+                predictions = [p.strip() for p in predictions_str.split(",") if p.strip()]
+                
+                # Get simulation posts (from initial_posts if available)
+                simulation_posts = self.real_data_seed.initial_posts if hasattr(self.real_data_seed, 'initial_posts') else []
+                
+                # Build CrawlResult from seed for comparison
+                from ..models.pubop import CrawlResult, ScrapedPost
+                real_crawl = CrawlResult(
+                    platform=self.real_data_seed.platform,
+                    posts=[],  # Will be populated from original crawl
+                )
+                
+                # If real_data_seed has the original crawl data
+                if hasattr(self.real_data_seed, '_original_crawl'):
+                    real_crawl = self.real_data_seed._original_crawl
+                
+                # Perform comparison
+                metrics = self.rwsp_tools.compare_with_real_data(
+                    simulation_topics=topics,
+                    simulation_posts=simulation_posts,
+                    real_crawl=real_crawl,
+                )
+                
+                # Validate specific predictions if provided
+                validations = []
+                if predictions and real_crawl.posts:
+                    validations = self.rwsp_tools.validate_predictions(
+                        predictions=predictions,
+                        real_posts=real_crawl.posts,
+                    )
+                
+                # Generate report
+                report = self.rwsp_tools.generate_comparison_report(
+                    metrics=metrics,
+                    validations=validations if validations else None,
+                )
+                
+                return report
+            
             else:
-                return f"Unknown tool: {tool_name}. Please use: insight_forge, panorama_search, quick_search, interview_agents"
+                return f"Unknown tool: {tool_name}. Please use: insight_forge, panorama_search, quick_search, interview_agents, compare_predictions"
                 
         except Exception as e:
             logger.error(f"Tool execution failed: {tool_name}, error: {str(e)}")
             return f"Tool execution failed: {str(e)}"
+    
+    def set_real_data_seed(
+        self, 
+        seed: 'RealDataSeed',
+        original_crawl: Optional['CrawlResult'] = None
+    ):
+        """
+        Set real-world data seed for RWSP prediction validation.
+        
+        Call this before generate_report() to enable compare_predictions tool.
+        
+        Args:
+            seed: RealDataSeed from PubopBridge.create_seed_from_crawl()
+            original_crawl: Optional original CrawlResult for detailed comparison
+            
+        Example:
+            # After crawling real data
+            bridge = PubopBridge()
+            seed = bridge.create_seed_from_crawl(crawl_result)
+            
+            # Set on report agent
+            agent.set_real_data_seed(seed, original_crawl=crawl_result)
+        """
+        self.real_data_seed = seed
+        
+        # Store original crawl if provided
+        if original_crawl:
+            self.real_data_seed._original_crawl = original_crawl
+        
+        logger.info(
+            f"Real data seed set: platform={seed.platform}, "
+            f"profiles={len(seed.profiles)}, posts={len(seed.initial_posts)}"
+        )
     
     def _parse_tool_calls(self, response: str) -> List[Dict[str, Any]]:
         """Parse tool calls from LLM response"""
