@@ -442,7 +442,11 @@ class Neo4jToolsService:
                 edge_query = """
                 MATCH (source:GraphNode)-[r]->(target:GraphNode)
                 WHERE r.graph_id = $graph_id
-                  AND (toLower(r.fact) CONTAINS $query_lower OR toLower(r.name) CONTAINS $query_lower)
+                  AND (
+                      toLower(r.fact) CONTAINS $query_lower 
+                      OR toLower(r.name) CONTAINS $query_lower
+                      OR any(k IN $keywords WHERE toLower(r.fact) CONTAINS k)
+                  )
                 RETURN r.uuid AS uuid, r.name AS name, r.fact AS fact,
                        source.uuid AS source_uuid, target.uuid AS target_uuid,
                        source.name AS source_name, target.name AS target_name,
@@ -455,6 +459,7 @@ class Neo4jToolsService:
                     func=lambda: self.neo4j.execute_query(edge_query, {
                         "graph_id": graph_id,
                         "query_lower": query_lower,
+                        "keywords": keywords,
                         "limit": limit
                     }),
                     operation_name=f"edge search(graph={graph_id})"

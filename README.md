@@ -1,36 +1,43 @@
 # Popinion
 
-> **Popinion** (Public Opinion) is a fork of [MiroFish](https://github.com/rithythul/mirofish) - a global public opinion analysis platform powered by AI simulation.
-> 
-> **Features:** AI-driven Real-world data collection + "Ghost" Agent Injection + AI agent simulation + Prediction.
+> **Popinion** (Public Opinion) — Don't guess the future. Rehearse it.
+
 
 ---
 
 ## ⚡ Overview
 
-**Popinion** is a next-generation AI prediction engine powered by multi-agent technology. By extracting seed information from the real world (such as breaking news, policy drafts, or social media trends), it automatically constructs a high-fidelity parallel digital world. Within this space, thousands of intelligent agents with independent personalities, long-term memory, and behavioral logic freely interact and undergo social evolution. You can inject variables dynamically from a "God's-eye view" to precisely deduce future trajectories — **rehearse the future in a digital sandbox, and win decisions after countless simulations**.
+**Popinion** is an AI prediction engine. It creates a "Digital Mirror World" — a simulation of your society where thousands of AI agents react to your ideas. Test a policy, a message, or a strategy here first. See how the world might react. Then act with confidence.
 
-> You only need to: Upload seed materials (data analysis reports or social media data) and describe your prediction requirements in natural language</br>
-> Popinion will return: A detailed prediction report and a deeply interactive high-fidelity digital world
+### Core Capabilities
+
+| Feature | Description |
+|---------|-------------|
+| **Smart Scraping** | AI-driven search planning with specialized crawlers (Telegram, News, etc.) |
+| **Ghost Injection** | Inject real-world data as a "World Agent" to seed simulations |
+| **Swarm Simulation** | Thousands of autonomous agents with memory, personality, and social behavior |
+| **Prediction Reports** | Deep analysis with agent interviews and trend forecasting |
+
+> **Input:** Upload seed materials (news, reports, social data) + describe your prediction scenario  
+> **Output:** A detailed prediction report + an interactive digital world you can query
 
 ### Our Vision
 
-### Our Vision
+Popinion enables **High-Stakes Social Wargaming**:
 
-Popinion is dedicated to creating a swarm intelligence mirror that maps reality. By capturing the collective emergence triggered by individual interactions, we break through the limitations of traditional prediction:
+- **Policy Crash Testing**: Test laws and announcements before they hit headlines
+- **Diplomatic Save Game**: Simulate negotiation outcomes before entering the room
+- **Cognitive Vaccination**: Pre-test counter-narratives against disinformation
 
-- **At the Macro Level**: We are a rehearsal laboratory for decision-makers, allowing policies and public relations to be tested at zero risk
-- **At the Micro Level**: We are a creative sandbox for individual users — whether deducing novel endings or exploring imaginative scenarios, everything can be fun, playful, and accessible
-
-From serious predictions to playful simulations, we let every "what if" see its outcome, making it possible to predict anything.
+From serious predictions to playful simulations, we let every "what if" see its outcome.
 
 ## 🔄 Workflow
 
-1. **Graph Building**: Seed extraction & AI-driven Search Planning & Real-world data injection (World Agent 99999) & GraphRAG construction
-2. **Environment Setup**: Entity relationship extraction & Persona generation & Agent configuration injection
-3. **Simulation**: Dual-platform parallel simulation with Real-Data Context & Auto-parse prediction requirements & Dynamic temporal memory updates
-4. **Report Generation**: ReportAgent with rich toolset for deep interaction with post-simulation environment
-5. **Deep Interaction**: Chat with any agent in the simulated world & Interact with ReportAgent
+1. **Graph Building**: Seed extraction → AI Search Planning → Smart Scraping (Telegram, News, etc.) → GraphRAG construction
+2. **Environment Setup**: Entity extraction → Persona generation → Agent configuration
+3. **Simulation**: Dual-platform (Twitter + Reddit) parallel evolution with dynamic memory
+4. **Report Generation**: ReportAgent with Deep Insight, Panorama Search, and Agent Interview tools
+5. **Deep Interaction**: Chat with any agent or query the ReportAgent for custom analysis
 
 ## 🚀 Quick Start
 
@@ -126,7 +133,15 @@ bun run frontend  # Start frontend only
 
 ## 📄 Acknowledgments
 
-Popinion's core simulation engine is powered by **[OASIS (Open Agent Social Interaction Simulations)](https://github.com/camel-ai/oasis)**. OASIS is a high-performance social media simulation framework developed by the [CAMEL-AI](https://github.com/camel-ai) team, supporting million-scale agent interaction simulations, providing a solid technical foundation for Popinion's swarm intelligence emergence. We sincerely thank the CAMEL-AI team for their open-source contributions!
+Popinion stands on the shoulders of giants:
+
+| Project | Contribution |
+|---------|--------------|
+| **[OASIS](https://github.com/camel-ai/oasis)** | Core multi-agent simulation engine (by [CAMEL-AI](https://github.com/camel-ai)) |
+| **[MiroFish](https://github.com/rithythul/mirofish)** | Social simulation architecture & workflow design |
+| **[BettaFish](https://github.com/rithythul/bettafish)** | Real-world data extraction & scraping framework |
+
+We are grateful to these open-source communities for making Popinion possible.
 
 ## 📝 License
 

@@ -440,7 +440,7 @@
             <div class="rounds-header">
               <div class="header-left">
                 <span class="section-title">Simulation Rounds Count Setting</span>
-                <span class="section-desc">Fishi automatically simulates <span class="desc-highlight">{{ simulationConfig?.time_config?.total_simulation_hours || '-' }}</span> hours, each round represents real-world <span class="desc-highlight">{{ simulationConfig?.time_config?.minutes_per_round || '-' }}</span> minutes time elapsed</span>
+                <span class="section-desc">Popinion automatically simulates <span class="desc-highlight">{{ simulationConfig?.time_config?.total_simulation_hours || '-' }}</span> hours, each round represents real-world <span class="desc-highlight">{{ simulationConfig?.time_config?.minutes_per_round || '-' }}</span> minutes time elapsed</span>
               </div>
               <label class="switch-control">
                 <input type="checkbox" v-model="useCustomRounds">

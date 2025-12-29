@@ -924,7 +924,7 @@ Write a "Future Prediction Report" answering:
 - ❌ This is NOT a generic public opinion summary.
 
 [Section Constraints]
-- Min 2 main sections, Max 5 main sections.
+- Min 4 main sections, Max 8 main sections.
 - Each section can have 0-2 subsections.
 - Content must be concise, focused on core prediction findings.
 - Section structure should be autonomously designed by you based on prediction results.
@@ -944,7 +944,7 @@ Please output JSON format report outline:
     ]
 }
 
-Note: sections array min 2, max 5 items! ALL TEXT MUST BE IN ENGLISH."""
+Note: sections array min 4, max 8 items! ALL TEXT MUST BE IN ENGLISH."""
 
         user_prompt = f"""[Prediction Scenario Set]
 Variables injected (Simulation Requirement): {self.simulation_requirement}
