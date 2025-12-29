@@ -1,6 +1,6 @@
 # What is Popinion? ("Public Opinion")
 
-**Popinion** is a powerful AI tool that helps leaders see the future. It creates a "Digital Mirror World"—a simulation of your country or society inside a computer. 
+**Popinion** is a powerful AI tool that helps leaders anticipate potential futures. It creates a "Digital Mirror World"—a simulation of your country or society inside a computer. 
 
 In this digital world, thousands of AI agents act like real people. By testing ideas in this safe digital world first, leaders can make better decisions in the real world.
 
@@ -34,7 +34,7 @@ It serves as a "Digital Wind Tunnel" for three critical scenarios:
 
 Leaders today are often flying blind. Whether you are launching a national policy, negotiating a trade deal, or fighting disinformation, you often only get **one shot**. If you are wrong, the cost is chaos, riots, or economic collapse. Traditional polls are too slow, and intuition is too risky.
 
-**Popinion is the world's first Social Wind Tunnel.**
+**Popinion acts as a "Social Wind Tunnel" for decision-making.**
 
 Just as engineers test a plane in a virtual wind tunnel before it flies, Popinion lets you test your decisions in a high-fidelity **Digital Mirror World** before you touch reality.
 
