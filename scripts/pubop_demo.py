@@ -45,9 +45,14 @@ async def crawl_telegram(channel: str, max_posts: int = 50, save: bool = True) -
     
     async with LightPandaClient() as client:
         crawler = TelegramCrawler(client)
-        result = await crawler.scrape_channel(channel, max_posts=max_posts)
+        posts = await crawler.scrape_channel(channel, limit=max_posts)
+        result = CrawlResult(
+            platform="telegram",
+            query=channel,
+            posts=posts
+        )
     
-    print(f"   ✅ Found {len(result.posts)} posts, {len(result.users)} users")
+    print(f"   ✅ Found {len(result.posts)} posts")
     
     if save:
         filename = f"telegram_{channel}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
@@ -68,7 +73,7 @@ async def crawl_twitter(query: str = None, username: str = None, max_posts: int 
         crawler = TwitterCrawler(client)
         
         if username:
-            posts = await crawler.scrape_posts(username, max_posts=max_posts)
+            posts = await crawler.scrape_posts(username, limit=max_posts)
             user = await crawler.scrape_user(username)
             result = CrawlResult(
                 platform="twitter",
@@ -77,7 +82,7 @@ async def crawl_twitter(query: str = None, username: str = None, max_posts: int 
                 users=[user] if user else []
             )
         else:
-            posts = await crawler.scrape_posts(query, max_posts=max_posts)
+            posts = await crawler.scrape_posts(query, limit=max_posts)
             result = CrawlResult(
                 platform="twitter",
                 query=query,
@@ -103,7 +108,12 @@ async def crawl_facebook(page: str, max_posts: int = 50, save: bool = True) -> C
     
     async with LightPandaClient() as client:
         crawler = FacebookCrawler(client)
-        result = await crawler.scrape_channel(page, max_posts=max_posts)
+        posts = await crawler.scrape_channel(page, limit=max_posts)
+        result = CrawlResult(
+            platform="facebook",
+            query=page,
+            posts=posts
+        )
     
     print(f"   ✅ Found {len(result.posts)} posts")
     
