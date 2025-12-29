@@ -9,6 +9,7 @@ Provides:
 - TelegramCrawler: Scrapes public Telegram channels
 - TwitterCrawler: Scrapes Twitter/X search and profiles
 - FacebookCrawler: Scrapes public Facebook pages
+- InstagramCrawler: Scrapes public Instagram profiles
 
 Example:
     from app.services.crawler import LightPandaClient, TelegramCrawler
@@ -33,6 +34,7 @@ from .base import BaseCrawler
 from .telegram import TelegramCrawler
 from .twitter import TwitterCrawler
 from .facebook import FacebookCrawler
+from .instagram import InstagramCrawler
 
 __all__ = [
     # Core
@@ -44,5 +46,7 @@ __all__ = [
     "TelegramCrawler",
     "TwitterCrawler", 
     "FacebookCrawler",
+    "InstagramCrawler",
 ]
+
 

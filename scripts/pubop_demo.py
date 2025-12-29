@@ -27,7 +27,7 @@ from datetime import datetime
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
 from app.models.pubop import CrawlResult
-from app.services.crawler import LightPandaClient, TelegramCrawler, TwitterCrawler, FacebookCrawler
+from app.services.crawler import LightPandaClient, TelegramCrawler, TwitterCrawler, FacebookCrawler, InstagramCrawler
 from app.services.pubop_bridge import PubopBridge, RealDataSeed
 
 
@@ -148,6 +148,41 @@ async def crawl_facebook(page: str, max_posts: int = 50, save: bool = True, engi
     return result
 
 
+async def crawl_instagram(username: str = None, hashtag: str = None, max_posts: int = 20, save: bool = True, engine: str = None) -> CrawlResult:
+    """Crawl Instagram profile or hashtag"""
+    target = f"@{username}" if username else f"#{hashtag}"
+    print(f"\n📸 Crawling Instagram: {target}")
+    print(f"   Max posts: {max_posts}")
+    
+    # Instagram needs Browserless due to complex JS
+    engine = engine or "browserless"
+    async with LightPandaClient(engine=engine) as client:
+        print(f"   Engine: {client.engine}")
+        crawler = InstagramCrawler(client)
+        
+        if username:
+            posts = await crawler.scrape_channel(username, limit=max_posts)
+        else:
+            posts = await crawler.scrape_posts(hashtag, limit=max_posts)
+        
+        result = CrawlResult(
+            platform="instagram",
+            query=target,
+            posts=posts
+        )
+    
+    print(f"   ✅ Found {len(result.posts)} posts")
+    
+    if save and len(result.posts) > 0:
+        safe_name = (username or hashtag).replace(" ", "_")[:30]
+        filename = f"instagram_{safe_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        filepath = os.path.join(get_data_dir(), filename)
+        result.save(filepath)
+        print(f"   💾 Saved to: {filepath}")
+    
+    return result
+
+
 def bridge_to_seed(result: CrawlResult, anonymize: bool = True, max_profiles: int = 100) -> RealDataSeed:
     """Bridge crawl result to simulation seed"""
     print(f"\n🔗 Bridging to simulation format...")
@@ -247,6 +282,13 @@ def main():
     fb_parser.add_argument("--max-posts", type=int, default=50, help="Max posts to crawl")
     fb_parser.add_argument("--no-save", action="store_true", help="Don't save to file")
     
+    # Instagram command
+    ig_parser = subparsers.add_parser("instagram", help="Crawl Instagram profile")
+    ig_parser.add_argument("--username", help="Profile username (without @)")
+    ig_parser.add_argument("--hashtag", help="Hashtag to search (without #)")
+    ig_parser.add_argument("--max-posts", type=int, default=20, help="Max posts to crawl")
+    ig_parser.add_argument("--no-save", action="store_true", help="Don't save to file")
+    
     # Bridge command
     bridge_parser = subparsers.add_parser("bridge", help="Bridge crawl result to simulation")
     bridge_parser.add_argument("--input", required=True, help="Input crawl result JSON file")
@@ -278,6 +320,12 @@ def main():
         
         elif args.command == "facebook":
             asyncio.run(crawl_facebook(args.page, args.max_posts, save=not args.no_save))
+        
+        elif args.command == "instagram":
+            if not args.username and not args.hashtag:
+                print("❌ Either --username or --hashtag is required")
+                return
+            asyncio.run(crawl_instagram(args.username, args.hashtag, args.max_posts, save=not args.no_save))
         
         elif args.command == "bridge":
             result = CrawlResult.load(args.input)
