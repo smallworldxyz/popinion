@@ -11,23 +11,7 @@ Provides:
 - FacebookCrawler: Scrapes public Facebook pages
 - InstagramCrawler: Scrapes public Instagram profiles
 - TikTokCrawler: Scrapes public TikTok profiles and hashtags
-
-Example:
-    from app.services.crawler import LightPandaClient, TelegramCrawler
-    
-    async with LightPandaClient() as client:
-        crawler = TelegramCrawler(client)
-        posts = await crawler.scrape_channel("dulorov", limit=100)
-        
-        for post in posts:
-            print(f"{post.author_name}: {post.content[:50]}...")
-    
-    # With proxy rotation
-    from app.services.crawler import ProxyConfig
-    
-    proxy = ProxyConfig.from_env()  # or ProxyConfig(server="http://proxy:8080")
-    async with LightPandaClient(proxy=proxy) as client:
-        ...
+- YouTubeCrawler: Scrapes public YouTube channels and videos
 """
 
 from .client import LightPandaClient, ProxyConfig, get_lightpanda_client
@@ -37,6 +21,7 @@ from .twitter import TwitterCrawler
 from .facebook import FacebookCrawler
 from .instagram import InstagramCrawler
 from .tiktok import TikTokCrawler
+from .youtube import YouTubeCrawler
 
 __all__ = [
     # Core
@@ -50,7 +35,9 @@ __all__ = [
     "FacebookCrawler",
     "InstagramCrawler",
     "TikTokCrawler",
+    "YouTubeCrawler",
 ]
+
 
 
 
