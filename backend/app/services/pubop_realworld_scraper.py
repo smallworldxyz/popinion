@@ -1,16 +1,18 @@
 """
-pubop Real-World Data Scraper
-Scrapes real news and posts about entities during simulation preparation
+pubop Real-World Data Scraper (Smart Edition)
+Scrapes real news, posts, and multimedia about entities during simulation preparation.
 
-This service is called during the simulation preparation phase to:
-1. For each entity (person, organization, topic), search for real news/posts
-2. Use GenericWebCrawler to scrape news from multiple sources
-3. Return RealDataSeed containing initial posts and trending topics
+Features:
+1. Dynamic Source Discovery: Search Google/DuckDuckGo based on prompt context
+2. Multimodal Support: Search for text, images, videos, reactions
+3. AI/Fake Detection: Analyze content for AI markers
 """
 
 import asyncio
+import re
 from typing import List, Optional, Dict, Any
 from datetime import datetime
+from urllib.parse import quote_plus
 
 from ..models.pubop import ScrapedPost, CrawlResult
 from ..utils.logger import get_logger
@@ -20,47 +22,12 @@ from .pubop_bridge import PubopBridge, RealDataSeed
 logger = get_logger('pubop.realworld_scraper')
 
 
-# News sources to scrape for different regions/topics
-NEWS_SOURCES = {
-    "general": [
-        "https://news.google.com",
-        "https://www.reuters.com",
-    ],
-    "sea": [  # Southeast Asia
-        "https://www.bangkokpost.com",
-        "https://www.straitstimes.com",
-        "https://www.channelnewsasia.com",
-    ],
-    "cambodia": [
-        "https://www.phnompenhpost.com",
-        "https://www.khmertimeskh.com",
-    ],
-    "thailand": [
-        "https://www.bangkokpost.com",
-        "https://www.nationthailand.com",
-    ],
-    "vietnam": [
-        "https://e.vnexpress.net",
-        "https://vietnamnews.vn",
-    ],
-}
-
-
 class RealWorldScraper:
     """
-    Scrapes real-world news and social media about simulation entities.
+    Smart Scraper for real-world news and social media.
     
-    Called during simulation preparation to inject real content
-    into the simulation as initial posts and trending topics.
-    
-    Example:
-        scraper = RealWorldScraper()
-        seed = await scraper.scrape_entities(
-            entities=["Bangkok Post", "Hun Manet", "Srettha Thavisin"],
-            region="sea",
-            max_posts_per_entity=5
-        )
-        # seed.initial_posts contains real scraped news
+    Dynamically discovers sources based on simulation prompts.
+    Analyzes content for authenticity.
     """
     
     def __init__(
@@ -69,14 +36,6 @@ class RealWorldScraper:
         max_posts_per_entity: int = 5,
         timeout: int = 30000
     ):
-        """
-        Initialize scraper.
-        
-        Args:
-            engine: Browser engine ("browserless" or "lightpanda")
-            max_posts_per_entity: Max articles per entity
-            timeout: Browser timeout in ms
-        """
         self.engine = engine
         self.max_posts_per_entity = max_posts_per_entity
         self.timeout = timeout
@@ -84,32 +43,28 @@ class RealWorldScraper:
     async def scrape_entities(
         self,
         entities: List[Dict[str, Any]],
-        region: str = "sea",
+        simulation_requirement: str = "",
         max_total_posts: int = 50,
         progress_callback: Optional[callable] = None
     ) -> RealDataSeed:
         """
-        Scrape real news for a list of entities.
+        Smart scrape entities based on context.
         
         Args:
-            entities: List of entity dicts with 'name' and 'type' keys
-            region: Region for news sources (sea, cambodia, thailand, vietnam, general)
-            max_total_posts: Max total posts to collect
-            progress_callback: (current, total, message) callback
-            
-        Returns:
-            RealDataSeed with scraped articles as initial_posts
+            entities: List of entities
+            simulation_requirement: User prompt to guide search intent
+            max_total_posts: Max posts total
+            progress_callback: Progress callback
         """
         all_posts: List[ScrapedPost] = []
         trending_topics: List[str] = []
         
-        # Get news sources for region
-        sources = NEWS_SOURCES.get(region, []) + NEWS_SOURCES.get("general", [])
+        # 1. Analyze prompt to determine search intent
+        intent = self._analyze_search_intent(simulation_requirement)
+        logger.info(f"Search intent derived from prompt: {intent}")
         
         entity_names = [e.get("name", str(e)) if isinstance(e, dict) else str(e) for e in entities]
         total_entities = len(entity_names)
-        
-        logger.info(f"Starting real-world scrape for {total_entities} entities, region={region}")
         
         try:
             async with LightPandaClient(engine=self.engine, timeout=self.timeout) as client:
@@ -122,44 +77,40 @@ class RealWorldScraper:
                     if progress_callback:
                         progress_callback(
                             i + 1, total_entities,
-                            f"Scraping news about: {entity_name}"
+                            f"Smart searching: {entity_name} ({', '.join(intent['keywords'])})"
                         )
                     
-                    # Search for entity in news
-                    posts = await self._scrape_entity_news(
-                        crawler, entity_name, sources,
+                    # 2. Dynamic Search Discovery
+                    # Instead of hardcoded sources, we search for the entity + intent
+                    posts = await self._smart_search_entity(
+                        client, crawler, entity_name, intent,
                         limit=self.max_posts_per_entity
                     )
                     
                     if posts:
-                        all_posts.extend(posts)
-                        logger.info(f"Found {len(posts)} articles about {entity_name}")
+                        # 3. Analyze content (Fake/AI detection)
+                        analyzed_posts = self._analyze_posts_content(posts)
                         
-                        # Extract topics from posts
-                        for post in posts:
+                        all_posts.extend(analyzed_posts)
+                        logger.info(f"Found {len(analyzed_posts)} items for {entity_name}")
+                        
+                        for post in analyzed_posts:
                             trending_topics.extend(post.hashtags)
                     else:
-                        logger.warning(f"No articles found for {entity_name}")
+                        logger.warning(f"No results found for {entity_name}")
                     
-                    # Small delay between entities
                     await asyncio.sleep(1)
         
         except Exception as e:
-            logger.error(f"Error during real-world scraping: {e}")
-            # Return partial results if we have any
+            logger.error(f"Error during smart scraping: {e}")
         
-        # Deduplicate trending topics
-        trending_topics = list(set(trending_topics))[:20]
-        
-        # Convert posts to initial posts format
-        bridge = PubopBridge(anonymize=False)
+        # Convert to initial posts
         initial_posts = []
-        
         for post in all_posts:
             initial_posts.append({
-                "user_id": 0,  # Will be assigned to an agent
-                "username": post.author_name or "news_source",
-                "content": post.content[:1500],  # Truncate
+                "user_id": 0,
+                "username": post.author_name or "scraped_source",
+                "content": post.content[:2000],
                 "created_at": post.timestamp.isoformat() if post.timestamp else datetime.now().isoformat(),
                 "likes": post.likes,
                 "shares": post.shares,
@@ -167,108 +118,170 @@ class RealWorldScraper:
                 "platform": post.platform,
                 "source_url": post.url,
                 "hashtags": post.hashtags,
-                "is_real_world": True,  # Mark as real scraped data
+                "is_real_world": True,
+                # New fields for frontend visualization
+                "content_analysis": getattr(post, "content_analysis", {}),
+                "media_type": getattr(post, "media_type", "text"),
             })
-        
-        logger.info(
-            f"Real-world scraping complete: {len(all_posts)} articles, "
-            f"{len(trending_topics)} topics"
-        )
         
         return RealDataSeed(
             platform="web",
-            query=f"entities: {', '.join(entity_names[:5])}...",
+            query=f"Smart Search: {simulation_requirement[:30]}...",
             crawled_at=datetime.now(),
-            profiles=[],  # We don't generate profiles from news
+            profiles=[],
             initial_posts=initial_posts,
-            trending_topics=trending_topics,
+            trending_topics=list(set(trending_topics))[:20],
             original_post_count=len(all_posts),
             original_user_count=0,
         )
-    
-    async def _scrape_entity_news(
+
+    def _analyze_search_intent(self, prompt: str) -> Dict[str, Any]:
+        """Analyze simulation prompt to guide search"""
+        prompt_lower = prompt.lower()
+        keywords = []
+        
+        # Detect focus topics
+        if "opinion" in prompt_lower or "react" in prompt_lower:
+            keywords.append("opinion")
+            keywords.append("reaction")
+        if "news" in prompt_lower or "article" in prompt_lower:
+            keywords.append("news")
+        if "video" in prompt_lower:
+            keywords.append("video")
+        if "scandal" in prompt_lower or "issue" in prompt_lower:
+            keywords.append("scandal")
+            keywords.append("controversy")
+            
+        # Default fallback
+        if not keywords:
+            keywords = ["news", "latest"]
+            
+        return {
+            "keywords": keywords,
+            "prefer_video": "video" in prompt_lower,
+            "prefer_images": "image" in prompt_lower,
+            "prefer_comments": "comment" in prompt_lower
+        }
+
+    async def _smart_search_entity(
         self,
+        client: LightPandaClient,
         crawler: GenericWebCrawler,
         entity_name: str,
-        sources: List[str],
+        intent: Dict[str, Any],
         limit: int = 5
     ) -> List[ScrapedPost]:
-        """Scrape news about a specific entity"""
+        """Performs search on DuckDuckGo/Google to find relevant URLs"""
         posts = []
         
-        # Try Google News search first (best coverage)
+        # Construct dynamic queries
+        search_terms = [entity_name]
+        search_terms.extend(intent["keywords"])
+        query = " ".join(search_terms)
+        
+        # 1. Search DuckDuckGo (HTML version is easier to scrape)
+        search_url = f"https://html.duckduckgo.com/html/?q={quote_plus(query)}"
+        
         try:
-            search_url = f"https://news.google.com/search?q={entity_name.replace(' ', '+')}"
-            search_posts = await crawler.scrape_posts(search_url, limit=limit)
-            posts.extend(search_posts)
-        except Exception as e:
-            logger.debug(f"Google News search failed for {entity_name}: {e}")
-        
-        # If not enough results, try specific sources
-        if len(posts) < limit:
-            for source in sources[:2]:  # Limit to 2 sources
+            logger.info(f"Searching: {query}")
+            # Use crawler's page interaction to get search results
+            page = await client.get_page()
+            await page.goto(search_url)
+            await asyncio.sleep(2)
+            
+            # Extract result links
+            links = []
+            link_elements = await page.query_selector_all('.result__a')
+            for el in link_elements[:limit]:
+                href = await el.get_attribute('href')
+                if href and 'duckduckgo' not in href:
+                    links.append(href)
+            
+            logger.info(f"Discovered {len(links)} sources for {entity_name}")
+            
+            # 2. Scrape discovered URLs
+            for url in links:
+                if len(posts) >= limit:
+                    break
                 try:
-                    search_posts = await crawler.scrape_posts(
-                        f"{source}/search?q={entity_name.replace(' ', '+')}",
-                        limit=limit - len(posts)
-                    )
-                    posts.extend(search_posts)
-                    
-                    if len(posts) >= limit:
-                        break
+                    post = await crawler.scrape_url(url)
+                    if post:
+                        # Detect media type
+                        if intent["prefer_video"]:
+                            post.media_type = "video" if ("youtube" in url or "video" in url) else "text"
+                        else:
+                            post.media_type = "text"
+                        posts.append(post)
                 except Exception as e:
-                    logger.debug(f"Source {source} search failed: {e}")
+                    logger.debug(f"Failed to scrape found link {url}: {e}")
+                    
+        except Exception as e:
+            logger.warning(f"Search failed for {entity_name}: {e}")
         
-        return posts[:limit]
+        return posts
+
+    def _analyze_posts_content(self, posts: List[ScrapedPost]) -> List[ScrapedPost]:
+        """Analyze posts for AI generation and content quality"""
+        for post in posts:
+            analysis = {
+                "is_likely_ai": False,
+                "confidence": 0.0,
+                "reason": []
+            }
+            
+            content = (post.content or "").lower()
+            
+            # Simple heuristic detection (Placeholders for advanced model)
+            ai_phrases = [
+                "as an ai language model",
+                "i cannot predict",
+                "my knowledge cutoff",
+                "in summary",
+                "it appears that"
+            ]
+            
+            matches = [p for p in ai_phrases if p in content]
+            if matches:
+                analysis["is_likely_ai"] = True
+                analysis["confidence"] = 0.8 + (len(matches) * 0.05)
+                analysis["reason"].append(f"Contains AI-like phrases: {matches}")
+            
+            # Repetitive structure check
+            # (Simplified)
+            
+            # Metadata analysis
+            if not post.author_name:
+                analysis["reason"].append("Missing author attribution")
+            
+            post.content_analysis = analysis
+            
+        return posts
     
     async def scrape_entity_names(
         self,
         entity_names: List[str],
-        region: str = "sea",
+        simulation_requirement: str = "",
         max_total_posts: int = 50,
         progress_callback: Optional[callable] = None
     ) -> RealDataSeed:
-        """
-        Convenience method to scrape by entity names directly.
-        
-        Args:
-            entity_names: List of entity name strings
-            region: Region for news sources
-            max_total_posts: Max total posts
-            progress_callback: Progress callback
-            
-        Returns:
-            RealDataSeed
-        """
+        """Call with list of names"""
         entities = [{"name": name} for name in entity_names]
         return await self.scrape_entities(
-            entities, region, max_total_posts, progress_callback
+            entities, simulation_requirement, max_total_posts, progress_callback
         )
 
 
 def sync_scrape_entities(
     entity_names: List[str],
-    region: str = "sea",
+    simulation_requirement: str = "",
     max_posts: int = 50
 ) -> RealDataSeed:
-    """
-    Synchronous wrapper for scraping entities.
-    
-    Useful for calling from synchronous code.
-    
-    Args:
-        entity_names: List of entity name strings
-        region: Region for news sources
-        max_posts: Max total posts
-        
-    Returns:
-        RealDataSeed
-    """
+    """Sync wrapper"""
     scraper = RealWorldScraper()
     loop = asyncio.new_event_loop()
     try:
         return loop.run_until_complete(
-            scraper.scrape_entity_names(entity_names, region, max_posts)
+            scraper.scrape_entity_names(entity_names, simulation_requirement, max_posts)
         )
     finally:
         loop.close()

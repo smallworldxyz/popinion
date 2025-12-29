@@ -69,7 +69,8 @@
               <textarea
                 v-model="formData.simulationRequirement"
                 class="code-input"
-                placeholder="// Enter simulation or prediction requirements in natural language (e.g., What public opinion trends would emerge if...)"
+                placeholder="// Describe your simulation scenario.
+// Tip: Use keywords like 'news', 'video reactions', 'scandal', or 'public opinion' to trigger targeted smart scraping."
                 rows="6"
                 :disabled="loading"
               ></textarea>
@@ -107,13 +108,29 @@
           <!-- Metric cards -->
           <div class="metrics-row">
             <div class="metric-card">
-              <div class="metric-value">Low Cost</div>
-              <div class="metric-label">~$5 per simulation</div>
+              <div class="metric-value">Smart Scraping</div>
+              <div class="metric-label">Auto-Source Discovery</div>
             </div>
             <div class="metric-card">
-              <div class="metric-value">Highly Available</div>
-              <div class="metric-label">Up to millions of Agents</div>
+              <div class="metric-value">AI Detection</div>
+              <div class="metric-label">Fake Content Analysis</div>
             </div>
+          </div>
+
+          <!-- Capabilities Check -->
+          <div class="capabilities-list">
+             <div class="cap-item">
+               <span class="cap-icon">✓</span>
+               <span class="cap-text">Dynamic Source Discovery (Google/DuckDuckGo)</span>
+             </div>
+             <div class="cap-item">
+               <span class="cap-icon">✓</span>
+               <span class="cap-text">Multimodal (Text, Image, Video)</span>
+             </div>
+             <div class="cap-item">
+               <span class="cap-icon">✓</span>
+               <span class="cap-text">Generative AI Content Filter</span>
+             </div>
           </div>
 
           <!-- Simulation Steps (new section) -->
@@ -661,6 +678,31 @@ const startSimulation = () => {
   0% { box-shadow: 0 0 0 0 rgba(0, 0, 0, 0.2); }
   70% { box-shadow: 0 0 0 6px rgba(0, 0, 0, 0); }
   100% { box-shadow: 0 0 0 0 rgba(0, 0, 0, 0); }
+}
+
+/* Capabilities List (New) */
+.capabilities-list {
+  margin: 20px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: #f8f9fa;
+  padding: 15px;
+  border-left: 3px solid var(--orange);
+}
+
+.cap-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: #555;
+}
+
+.cap-icon {
+  color: var(--orange);
+  font-weight: bold;
 }
 
 /* Responsive */

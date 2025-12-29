@@ -236,8 +236,7 @@ class SimulationManager:
         progress_callback: Optional[callable] = None,
         parallel_profile_count: int = 3,
         enable_realworld_scraping: bool = True,
-        realworld_max_posts: int = 30,
-        realworld_region: str = "sea"
+        realworld_max_posts: int = 30
     ) -> SimulationState:
         """
         Prepare simulation environment (fully automated)
@@ -260,7 +259,6 @@ class SimulationManager:
             parallel_profile_count: Number of profiles to generate in parallel, default 3
             enable_realworld_scraping: Whether to scrape real news about entities (pubop feature)
             realworld_max_posts: Max posts to scrape in real-world phase
-            realworld_region: Region for news sources (sea, cambodia, thailand, vietnam, general)
             
         Returns:
             SimulationState
@@ -314,7 +312,7 @@ class SimulationManager:
                 if progress_callback:
                     progress_callback(
                         "scraping_realworld", 0,
-                        "Starting real-world news scraping...",
+                        "Starting smart real-world scraping...",
                         current=0,
                         total=len(filtered.entities)
                     )
@@ -345,7 +343,7 @@ class SimulationManager:
                         real_data_seed = loop.run_until_complete(
                             scraper.scrape_entity_names(
                                 entity_names,
-                                region=realworld_region,
+                                simulation_requirement=simulation_requirement,
                                 max_total_posts=realworld_max_posts,
                                 progress_callback=scrape_progress
                             )
@@ -356,7 +354,7 @@ class SimulationManager:
                     if progress_callback:
                         progress_callback(
                             "scraping_realworld", 100,
-                            f"Scraped {len(real_data_seed.initial_posts)} real articles",
+                            f"Smart Scraped {len(real_data_seed.initial_posts)} real articles",
                             current=len(filtered.entities),
                             total=len(filtered.entities)
                         )
