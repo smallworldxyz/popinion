@@ -1,10 +1,12 @@
 """
 LightPanda CDP Client
-Chrome DevTools Protocol client for connecting to LightPanda headless browser
+Chrome DevTools Protocol client for connecting to headless browser (Browserless Chrome)
 """
 
+import os
 import asyncio
-from typing import Optional, Any
+import random
+from typing import Optional, Any, List, Dict
 from contextlib import asynccontextmanager
 
 from ...utils.logger import get_logger
@@ -12,37 +14,177 @@ from ...utils.logger import get_logger
 logger = get_logger('pubop.crawler.client')
 
 
+class ProxyConfig:
+    """
+    Proxy configuration for anti-bot protection.
+    
+    Supports single proxy or proxy rotation pool.
+    
+    Usage:
+        # Single proxy
+        proxy = ProxyConfig(server="http://proxy.example.com:8080")
+        
+        # Proxy with auth
+        proxy = ProxyConfig(
+            server="http://proxy.example.com:8080",
+            username="user",
+            password="pass"
+        )
+        
+        # Proxy rotation pool
+        proxy = ProxyConfig(pool=[
+            "http://proxy1.example.com:8080",
+            "http://proxy2.example.com:8080",
+        ])
+        
+        # From environment
+        proxy = ProxyConfig.from_env()
+    """
+    
+    def __init__(
+        self,
+        server: Optional[str] = None,
+        username: Optional[str] = None,
+        password: Optional[str] = None,
+        pool: Optional[List[str]] = None,
+    ):
+        self.server = server
+        self.username = username
+        self.password = password
+        self.pool = pool or []
+        self._current_index = 0
+    
+    @classmethod
+    def from_env(cls) -> Optional['ProxyConfig']:
+        """
+        Create ProxyConfig from environment variables.
+        
+        Environment variables:
+            CRAWLER_PROXY_SERVER: Single proxy server URL
+            CRAWLER_PROXY_USERNAME: Proxy username (optional)
+            CRAWLER_PROXY_PASSWORD: Proxy password (optional)
+            CRAWLER_PROXY_POOL: Comma-separated list of proxy servers
+        """
+        server = os.getenv("CRAWLER_PROXY_SERVER")
+        pool_str = os.getenv("CRAWLER_PROXY_POOL", "")
+        
+        if not server and not pool_str:
+            return None
+        
+        pool = [p.strip() for p in pool_str.split(",") if p.strip()] if pool_str else []
+        
+        return cls(
+            server=server,
+            username=os.getenv("CRAWLER_PROXY_USERNAME"),
+            password=os.getenv("CRAWLER_PROXY_PASSWORD"),
+            pool=pool,
+        )
+    
+    def get_proxy(self, rotate: bool = True) -> Optional[Dict[str, str]]:
+        """
+        Get proxy configuration for Playwright.
+        
+        Args:
+            rotate: If True and pool exists, rotate to next proxy
+            
+        Returns:
+            Dict with server, username, password for Playwright context
+        """
+        server = self.server
+        
+        # Use pool if available
+        if self.pool:
+            if rotate:
+                self._current_index = (self._current_index + 1) % len(self.pool)
+            server = self.pool[self._current_index]
+        
+        if not server:
+            return None
+        
+        config = {"server": server}
+        if self.username:
+            config["username"] = self.username
+        if self.password:
+            config["password"] = self.password
+        
+        return config
+    
+    def get_random_proxy(self) -> Optional[Dict[str, str]]:
+        """Get a random proxy from pool"""
+        if self.pool:
+            server = random.choice(self.pool)
+            config = {"server": server}
+            if self.username:
+                config["username"] = self.username
+            if self.password:
+                config["password"] = self.password
+            return config
+        return self.get_proxy(rotate=False)
+
+
 class LightPandaClient:
     """
-    Chrome DevTools Protocol client for LightPanda headless browser.
+    Chrome DevTools Protocol client for headless browser.
     
     Provides async connection management and page creation for web scraping.
     Uses Playwright for CDP communication.
     
     Usage:
+        # Basic usage
         async with LightPandaClient() as client:
             page = await client.new_page()
             await page.goto("https://example.com")
             content = await page.content()
+        
+        # With proxy
+        proxy = ProxyConfig(server="http://proxy:8080")
+        async with LightPandaClient(proxy=proxy) as client:
+            page = await client.new_page()
+            ...
+        
+        # With proxy from environment
+        async with LightPandaClient(proxy=ProxyConfig.from_env()) as client:
+            ...
     """
+    
+    # User agent pool for rotation
+    USER_AGENTS = [
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    ]
     
     def __init__(
         self, 
-        endpoint: str = "http://localhost:9222",
-        timeout: int = 30000
+        endpoint: str = None,
+        timeout: int = 30000,
+        proxy: Optional[ProxyConfig] = None,
+        rotate_user_agent: bool = True,
     ):
         """
-        Initialize LightPanda client.
+        Initialize client.
         
         Args:
-            endpoint: CDP WebSocket endpoint URL
+            endpoint: CDP WebSocket endpoint URL (default from env or localhost:9222)
             timeout: Default timeout for operations in milliseconds
+            proxy: Optional ProxyConfig for anti-bot protection
+            rotate_user_agent: Rotate user agent for each context
         """
-        self.endpoint = endpoint
+        self.endpoint = endpoint or os.getenv("CRAWLER_CDP_ENDPOINT", "http://localhost:9222")
         self.timeout = timeout
+        self.proxy = proxy
+        self.rotate_user_agent = rotate_user_agent
         self._playwright = None
         self._browser = None
         self._connected = False
+    
+    def _get_user_agent(self) -> str:
+        """Get user agent (random if rotating)"""
+        if self.rotate_user_agent:
+            return random.choice(self.USER_AGENTS)
+        return self.USER_AGENTS[0]
     
     async def connect(self) -> None:
         """Connect to headless browser via CDP"""
@@ -99,7 +241,7 @@ class LightPandaClient:
         return f"ws://{self.endpoint.replace('http://', '').replace('https://', '')}"
     
     async def close(self) -> None:
-        """Close connection to LightPanda"""
+        """Close connection"""
         if self._browser:
             try:
                 await self._browser.close()
@@ -115,42 +257,64 @@ class LightPandaClient:
             self._playwright = None
         
         self._connected = False
-        logger.info("Disconnected from LightPanda")
+        logger.info("Disconnected from headless browser")
     
-    async def new_page(self) -> Any:
+    async def new_page(self, use_proxy: bool = True) -> Any:
         """
         Create a new browser page.
+        
+        Args:
+            use_proxy: Whether to use proxy if configured
         
         Returns:
             Playwright Page object
         """
         if not self._connected or not self._browser:
-            raise ConnectionError("Not connected to LightPanda. Call connect() first.")
+            raise ConnectionError("Not connected. Call connect() first.")
         
-        context = await self._browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-        )
+        context_kwargs = {
+            "user_agent": self._get_user_agent()
+        }
+        
+        # Add proxy if configured
+        if use_proxy and self.proxy:
+            proxy_config = self.proxy.get_proxy(rotate=True)
+            if proxy_config:
+                context_kwargs["proxy"] = proxy_config
+                logger.debug(f"Using proxy: {proxy_config['server']}")
+        
+        context = await self._browser.new_context(**context_kwargs)
         page = await context.new_page()
         page.set_default_timeout(self.timeout)
         return page
     
-    async def new_context(self) -> Any:
+    async def new_context(self, use_proxy: bool = True) -> Any:
         """
         Create a new browser context.
+        
+        Args:
+            use_proxy: Whether to use proxy if configured
         
         Returns:
             Playwright BrowserContext object
         """
         if not self._connected or not self._browser:
-            raise ConnectionError("Not connected to LightPanda. Call connect() first.")
+            raise ConnectionError("Not connected. Call connect() first.")
         
-        return await self._browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-        )
+        context_kwargs = {
+            "user_agent": self._get_user_agent()
+        }
+        
+        if use_proxy and self.proxy:
+            proxy_config = self.proxy.get_proxy(rotate=True)
+            if proxy_config:
+                context_kwargs["proxy"] = proxy_config
+        
+        return await self._browser.new_context(**context_kwargs)
     
     @property
     def is_connected(self) -> bool:
-        """Check if connected to LightPanda"""
+        """Check if connected"""
         return self._connected
     
     async def __aenter__(self) -> "LightPandaClient":
@@ -165,20 +329,26 @@ class LightPandaClient:
 
 @asynccontextmanager
 async def get_lightpanda_client(
-    endpoint: str = "http://localhost:9222",
-    timeout: int = 30000
+    endpoint: str = None,
+    timeout: int = 30000,
+    proxy: Optional[ProxyConfig] = None,
 ):
     """
-    Context manager for LightPanda client.
+    Context manager for headless browser client.
     
     Usage:
         async with get_lightpanda_client() as client:
             page = await client.new_page()
             ...
+        
+        # With proxy from environment
+        async with get_lightpanda_client(proxy=ProxyConfig.from_env()) as client:
+            ...
     """
-    client = LightPandaClient(endpoint=endpoint, timeout=timeout)
+    client = LightPandaClient(endpoint=endpoint, timeout=timeout, proxy=proxy)
     try:
         await client.connect()
         yield client
     finally:
         await client.close()
+

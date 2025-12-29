@@ -19,7 +19,7 @@ export default defineConfig({
     port: 4173,
     proxy: {
       '/api': {
-        target: 'http://localhost:5001',
+        target: 'https://api-fishi.tunnel.koompi.cloud',
         changeOrigin: true,
         secure: false
       }

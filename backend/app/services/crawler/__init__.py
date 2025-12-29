@@ -3,7 +3,8 @@ pubop Crawler Module
 Web scraping infrastructure for Real-World Simulation Prediction
 
 Provides:
-- LightPandaClient: CDP connection to LightPanda headless browser
+- LightPandaClient: CDP connection to headless browser (Browserless Chrome)
+- ProxyConfig: Proxy configuration with rotation pool
 - BaseCrawler: Abstract base class for platform crawlers
 - TelegramCrawler: Scrapes public Telegram channels
 - TwitterCrawler: Scrapes Twitter/X search and profiles
@@ -18,9 +19,16 @@ Example:
         
         for post in posts:
             print(f"{post.author_name}: {post.content[:50]}...")
+    
+    # With proxy rotation
+    from app.services.crawler import ProxyConfig
+    
+    proxy = ProxyConfig.from_env()  # or ProxyConfig(server="http://proxy:8080")
+    async with LightPandaClient(proxy=proxy) as client:
+        ...
 """
 
-from .client import LightPandaClient, get_lightpanda_client
+from .client import LightPandaClient, ProxyConfig, get_lightpanda_client
 from .base import BaseCrawler
 from .telegram import TelegramCrawler
 from .twitter import TwitterCrawler
@@ -29,6 +37,7 @@ from .facebook import FacebookCrawler
 __all__ = [
     # Core
     "LightPandaClient",
+    "ProxyConfig",
     "get_lightpanda_client",
     "BaseCrawler",
     # Platform crawlers
@@ -36,3 +45,4 @@ __all__ = [
     "TwitterCrawler", 
     "FacebookCrawler",
 ]
+
