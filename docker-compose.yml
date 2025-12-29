@@ -26,13 +26,29 @@ services:
       timeout: 5s
       retries: 5
 
-  # Headless Chrome for web scraping via CDP
-  # Alternative to LightPanda - uses Browserless (reliable, well-maintained)
+  # Primary: LightPanda - 10x faster, 10x less RAM
+  # https://lightpanda.io - AI-native headless browser
+  lightpanda:
+    image: lightpanda/browser:nightly
+    container_name: pubop-lightpanda
+    ports:
+      - "9222:9222" # Primary CDP endpoint
+    environment:
+      - LIGHTPANDA_DISABLE_TELEMETRY=true
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -f http://localhost:9222/json/version || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Fallback: Browserless Chrome - full compatibility for complex JS
+  # Use when LightPanda fails on JS-heavy sites (Twitter, Facebook)
   chrome:
     image: browserless/chrome:latest
     container_name: pubop-chrome
     ports:
-      - "9222:3000" # CDP endpoint mapped to 9222 for compatibility
+      - "9223:3000" # Fallback CDP endpoint
     environment:
       - CONNECTION_TIMEOUT=300000
       - MAX_CONCURRENT_SESSIONS=5

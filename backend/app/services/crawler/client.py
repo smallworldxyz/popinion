@@ -130,22 +130,28 @@ class LightPandaClient:
     Uses Playwright for CDP communication.
     
     Usage:
-        # Basic usage
+        # Basic usage (LightPanda by default)
         async with LightPandaClient() as client:
             page = await client.new_page()
             await page.goto("https://example.com")
             content = await page.content()
+        
+        # Use Browserless fallback
+        async with LightPandaClient(engine="browserless") as client:
+            ...
         
         # With proxy
         proxy = ProxyConfig(server="http://proxy:8080")
         async with LightPandaClient(proxy=proxy) as client:
             page = await client.new_page()
             ...
-        
-        # With proxy from environment
-        async with LightPandaClient(proxy=ProxyConfig.from_env()) as client:
-            ...
     """
+    
+    # Engine endpoints
+    ENGINES = {
+        "lightpanda": "http://localhost:9222",
+        "browserless": "http://localhost:9223",
+    }
     
     # User agent pool for rotation
     USER_AGENTS = [
@@ -162,17 +168,38 @@ class LightPandaClient:
         timeout: int = 30000,
         proxy: Optional[ProxyConfig] = None,
         rotate_user_agent: bool = True,
+        engine: str = None,
+        fallback_endpoint: str = None,
     ):
         """
         Initialize client.
         
         Args:
-            endpoint: CDP WebSocket endpoint URL (default from env or localhost:9222)
+            endpoint: CDP WebSocket endpoint URL (overrides engine)
             timeout: Default timeout for operations in milliseconds
             proxy: Optional ProxyConfig for anti-bot protection
             rotate_user_agent: Rotate user agent for each context
+            engine: Browser engine to use: "lightpanda" (default) or "browserless"
+            fallback_endpoint: Fallback CDP endpoint if primary fails
         """
-        self.endpoint = endpoint or os.getenv("CRAWLER_CDP_ENDPOINT", "http://localhost:9222")
+        # Determine engine from environment or default
+        engine = engine or os.getenv("CRAWLER_ENGINE", "lightpanda")
+        
+        # Set endpoint based on engine or explicit override
+        if endpoint:
+            self.endpoint = endpoint
+        else:
+            self.endpoint = os.getenv("CRAWLER_CDP_ENDPOINT") or self.ENGINES.get(engine, self.ENGINES["lightpanda"])
+        
+        # Fallback endpoint (default to browserless if using lightpanda)
+        if fallback_endpoint:
+            self.fallback_endpoint = fallback_endpoint
+        elif engine == "lightpanda":
+            self.fallback_endpoint = self.ENGINES["browserless"]
+        else:
+            self.fallback_endpoint = None
+        
+        self.engine = engine
         self.timeout = timeout
         self.proxy = proxy
         self.rotate_user_agent = rotate_user_agent
@@ -272,12 +299,14 @@ class LightPandaClient:
         if not self._connected or not self._browser:
             raise ConnectionError("Not connected. Call connect() first.")
         
-        context_kwargs = {
-            "user_agent": self._get_user_agent()
-        }
+        context_kwargs = {}
         
-        # Add proxy if configured
-        if use_proxy and self.proxy:
+        # LightPanda doesn't support setUserAgentOverride
+        if self.engine != "lightpanda":
+            context_kwargs["user_agent"] = self._get_user_agent()
+        
+        # Add proxy if configured (may not work with LightPanda)
+        if use_proxy and self.proxy and self.engine != "lightpanda":
             proxy_config = self.proxy.get_proxy(rotate=True)
             if proxy_config:
                 context_kwargs["proxy"] = proxy_config
@@ -301,11 +330,13 @@ class LightPandaClient:
         if not self._connected or not self._browser:
             raise ConnectionError("Not connected. Call connect() first.")
         
-        context_kwargs = {
-            "user_agent": self._get_user_agent()
-        }
+        context_kwargs = {}
         
-        if use_proxy and self.proxy:
+        # LightPanda doesn't support setUserAgentOverride
+        if self.engine != "lightpanda":
+            context_kwargs["user_agent"] = self._get_user_agent()
+        
+        if use_proxy and self.proxy and self.engine != "lightpanda":
             proxy_config = self.proxy.get_proxy(rotate=True)
             if proxy_config:
                 context_kwargs["proxy"] = proxy_config
