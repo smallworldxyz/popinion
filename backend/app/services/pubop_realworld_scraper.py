@@ -144,7 +144,7 @@ class RealWorldScraper:
         initial_posts = []
         for post in all_posts:
             initial_posts.append({
-                "user_id": 0,
+                "poster_agent_id": 99999,  # Use special ID for "World/System" content
                 "username": post.author_name or "scraped_source",
                 "content": post.content[:2000],
                 "created_at": post.timestamp.isoformat() if post.timestamp else datetime.now().isoformat(),

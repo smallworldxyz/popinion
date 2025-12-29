@@ -944,6 +944,77 @@ def _get_comment_info(
     return None
 
 
+def inject_world_posts(db_path: str, posts: List[Dict[str, Any]], platform: str):
+    """
+    Inject real-world posts directly into DB with a special user ID (99999).
+    These represent external news/world events that agents can see but didn't create.
+    """
+    if not posts:
+        return
+        
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        
+        # 1. Create World User if not exists
+        world_user_id = 99999
+        cursor.execute("SELECT user_id FROM user WHERE user_id = ?", (world_user_id,))
+        if not cursor.fetchone():
+            try:
+                # Try inserting minimal user
+                cursor.execute(
+                    "INSERT INTO user (user_id, name, user_name, bio) VALUES (?, ?, ?, ?)",
+                    (world_user_id, "World News", "world_news", "Real-world news & events")
+                )
+            except Exception:
+                # Fallback if bio column missing or other schema difference
+                cursor.execute(
+                    "INSERT INTO user (user_id, name, user_name) VALUES (?, ?, ?)",
+                    (world_user_id, "World News", "world_news")
+                )
+            
+        # 2. Insert posts
+        count = 0
+        for post in posts:
+            content = post.get("content", "")
+            created_at = post.get("created_at", datetime.now().isoformat())
+            
+            try:
+                # Try insert with counts defaults (assuming schema has them or they are nullable)
+                # Platform specific schemas might vary, so we try specific columns if needed
+                if platform == "twitter":
+                    cursor.execute(
+                        """INSERT INTO post (user_id, content, created_at, like_count, quote_count, repost_count) 
+                           VALUES (?, ?, ?, 0, 0, 0)""",
+                        (world_user_id, content, created_at)
+                    )
+                else: # Reddit usually has downvotes/comments
+                    cursor.execute(
+                        """INSERT INTO post (user_id, content, created_at, like_count, dislike_count, comment_count) 
+                           VALUES (?, ?, ?, 0, 0, 0)""",
+                        (world_user_id, content, created_at)
+                    )
+                count += 1
+            except Exception:
+                try:
+                    # Fallback to minimal insert
+                    cursor.execute(
+                        "INSERT INTO post (user_id, content, created_at) VALUES (?, ?, ?)",
+                        (world_user_id, content, created_at)
+                    )
+                    count += 1
+                except Exception as e:
+                    print(f"[{platform}] Failed to insert post item: {e}")
+                
+        conn.commit()
+        conn.close()
+        if count > 0:
+            print(f"[{platform}] Injected {count} background world posts.")
+        
+    except Exception as e:
+        print(f"[{platform}] World post injection failed: {e}")
+
+
 def create_model(config: Dict[str, Any], use_boost: bool = False):
     """
     创建LLM模型
@@ -1168,6 +1239,12 @@ async def run_twitter_simulation(
         if initial_actions:
             await result.env.step(initial_actions)
             log_info(f"已发布 {len(initial_actions)} 条初始帖子")
+            
+    # Inject background world posts (from real-world scraping)
+    world_posts = [p for p in initial_posts if p.get("poster_agent_id") == 99999]
+    if world_posts:
+        inject_world_posts(db_path, world_posts, "twitter")
+
     
     # 记录 round 0 结束
     if action_logger:
@@ -1367,6 +1444,12 @@ async def run_reddit_simulation(
         if initial_actions:
             await result.env.step(initial_actions)
             log_info(f"已发布 {len(initial_actions)} 条初始帖子")
+            
+    # Inject background world posts
+    world_posts = [p for p in initial_posts if p.get("poster_agent_id") == 99999]
+    if world_posts:
+        inject_world_posts(db_path, world_posts, "reddit")
+
     
     # 记录 round 0 结束
     if action_logger:
