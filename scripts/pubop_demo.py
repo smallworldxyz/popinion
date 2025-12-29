@@ -38,12 +38,14 @@ def get_data_dir() -> str:
     return data_dir
 
 
-async def crawl_telegram(channel: str, max_posts: int = 50, save: bool = True) -> CrawlResult:
+async def crawl_telegram(channel: str, max_posts: int = 50, save: bool = True, engine: str = None) -> CrawlResult:
     """Crawl a Telegram channel"""
     print(f"\n📱 Crawling Telegram channel: @{channel}")
     print(f"   Max posts: {max_posts}")
     
-    async with LightPandaClient() as client:
+    engine = engine or "lightpanda"
+    async with LightPandaClient(engine=engine) as client:
+        print(f"   Engine: {client.engine}")
         crawler = TelegramCrawler(client)
         posts = await crawler.scrape_channel(channel, limit=max_posts)
         result = CrawlResult(
@@ -52,9 +54,14 @@ async def crawl_telegram(channel: str, max_posts: int = 50, save: bool = True) -
             posts=posts
         )
     
+    # Retry with Browserless if no results and using LightPanda
+    if len(result.posts) == 0 and engine == "lightpanda":
+        print("   ⚠️  No results with LightPanda, retrying with Browserless...")
+        return await crawl_telegram(channel, max_posts, save, engine="browserless")
+    
     print(f"   ✅ Found {len(result.posts)} posts")
     
-    if save:
+    if save and len(result.posts) > 0:
         filename = f"telegram_{channel}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
         filepath = os.path.join(get_data_dir(), filename)
         result.save(filepath)
@@ -63,13 +70,16 @@ async def crawl_telegram(channel: str, max_posts: int = 50, save: bool = True) -
     return result
 
 
-async def crawl_twitter(query: str = None, username: str = None, max_posts: int = 50, save: bool = True) -> CrawlResult:
+
+async def crawl_twitter(query: str = None, username: str = None, max_posts: int = 50, save: bool = True, engine: str = None) -> CrawlResult:
     """Crawl Twitter"""
     target = query or f"@{username}"
     print(f"\n🐦 Crawling Twitter: {target}")
     print(f"   Max posts: {max_posts}")
     
-    async with LightPandaClient() as client:
+    engine = engine or "lightpanda"
+    async with LightPandaClient(engine=engine) as client:
+        print(f"   Engine: {client.engine}")
         crawler = TwitterCrawler(client)
         
         if username:
@@ -89,9 +99,14 @@ async def crawl_twitter(query: str = None, username: str = None, max_posts: int 
                 posts=posts
             )
     
+    # Retry with Browserless if no results and using LightPanda
+    if len(result.posts) == 0 and engine == "lightpanda":
+        print("   ⚠️  No results with LightPanda, retrying with Browserless...")
+        return await crawl_twitter(query, username, max_posts, save, engine="browserless")
+    
     print(f"   ✅ Found {len(result.posts)} posts")
     
-    if save:
+    if save and len(result.posts) > 0:
         safe_name = (query or username).replace(" ", "_")[:30]
         filename = f"twitter_{safe_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
         filepath = os.path.join(get_data_dir(), filename)
@@ -101,12 +116,14 @@ async def crawl_twitter(query: str = None, username: str = None, max_posts: int 
     return result
 
 
-async def crawl_facebook(page: str, max_posts: int = 50, save: bool = True) -> CrawlResult:
+async def crawl_facebook(page: str, max_posts: int = 50, save: bool = True, engine: str = None) -> CrawlResult:
     """Crawl a Facebook page"""
     print(f"\n📘 Crawling Facebook page: {page}")
     print(f"   Max posts: {max_posts}")
     
-    async with LightPandaClient() as client:
+    engine = engine or "lightpanda"
+    async with LightPandaClient(engine=engine) as client:
+        print(f"   Engine: {client.engine}")
         crawler = FacebookCrawler(client)
         posts = await crawler.scrape_channel(page, limit=max_posts)
         result = CrawlResult(
@@ -115,9 +132,14 @@ async def crawl_facebook(page: str, max_posts: int = 50, save: bool = True) -> C
             posts=posts
         )
     
+    # Retry with Browserless if no results and using LightPanda
+    if len(result.posts) == 0 and engine == "lightpanda":
+        print("   ⚠️  No results with LightPanda, retrying with Browserless...")
+        return await crawl_facebook(page, max_posts, save, engine="browserless")
+    
     print(f"   ✅ Found {len(result.posts)} posts")
     
-    if save:
+    if save and len(result.posts) > 0:
         filename = f"facebook_{page}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
         filepath = os.path.join(get_data_dir(), filename)
         result.save(filepath)

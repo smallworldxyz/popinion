@@ -213,33 +213,57 @@ class LightPandaClient:
             return random.choice(self.USER_AGENTS)
         return self.USER_AGENTS[0]
     
-    async def connect(self) -> None:
-        """Connect to headless browser via CDP"""
+    async def connect(self, use_fallback: bool = True) -> None:
+        """
+        Connect to headless browser via CDP.
+        
+        Args:
+            use_fallback: If True and primary connection fails, try fallback endpoint
+        """
         if self._connected:
             logger.warning("Already connected to headless browser")
             return
         
         try:
-            # Import playwright here to avoid import errors if not installed
-            from playwright.async_api import async_playwright
-            import aiohttp
-            
-            # Get WebSocket URL from CDP endpoint
-            ws_url = await self._get_websocket_url()
-            
-            logger.info(f"Connecting to headless browser at {ws_url}")
-            self._playwright = await async_playwright().start()
-            self._browser = await self._playwright.chromium.connect_over_cdp(
-                ws_url,
-                timeout=self.timeout
-            )
-            self._connected = True
-            logger.info("Successfully connected to headless browser")
+            await self._connect_to_endpoint(self.endpoint)
             
         except Exception as e:
-            logger.error(f"Failed to connect to headless browser: {e}")
-            await self.close()
-            raise ConnectionError(f"Failed to connect to headless browser at {self.endpoint}: {e}")
+            logger.warning(f"Primary connection failed ({self.engine}): {e}")
+            
+            # Try fallback if available
+            if use_fallback and self.fallback_endpoint:
+                logger.info(f"Trying fallback endpoint: {self.fallback_endpoint}")
+                try:
+                    self.endpoint = self.fallback_endpoint
+                    self.engine = "browserless"  # Update engine for context creation
+                    self.fallback_endpoint = None  # Prevent infinite fallback
+                    await self._connect_to_endpoint(self.endpoint)
+                    logger.info("Successfully connected to fallback browser")
+                    return
+                except Exception as fallback_error:
+                    logger.error(f"Fallback also failed: {fallback_error}")
+                    raise ConnectionError(f"Both primary and fallback connections failed: {e}, {fallback_error}")
+            else:
+                raise ConnectionError(f"Failed to connect to headless browser at {self.endpoint}: {e}")
+    
+    async def _connect_to_endpoint(self, endpoint: str) -> None:
+        """Internal method to connect to a specific endpoint"""
+        from playwright.async_api import async_playwright
+        
+        # Get WebSocket URL from CDP endpoint
+        original_endpoint = self.endpoint
+        self.endpoint = endpoint
+        ws_url = await self._get_websocket_url()
+        self.endpoint = original_endpoint
+        
+        logger.info(f"Connecting to headless browser at {ws_url}")
+        self._playwright = await async_playwright().start()
+        self._browser = await self._playwright.chromium.connect_over_cdp(
+            ws_url,
+            timeout=self.timeout
+        )
+        self._connected = True
+        logger.info(f"Successfully connected to headless browser ({self.engine})")
     
     async def _get_websocket_url(self) -> str:
         """Get WebSocket URL from CDP endpoint"""
