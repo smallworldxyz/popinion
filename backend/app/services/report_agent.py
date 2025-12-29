@@ -28,7 +28,7 @@ from .neo4j_tools import (
     PanoramaResult,
     InterviewResult
 )
-from .rwsp_comparison import RWSPComparisonTools, ComparisonMetrics
+from .pubop_comparison import PubopComparisonTools, ComparisonMetrics
 
 logger = get_logger('pubop.report_agent')
 
@@ -520,7 +520,7 @@ class ReportAgent:
         self.neo4j_tools = neo4j_tools or Neo4jToolsService()
         
         # RWSP comparison tools
-        self.rwsp_tools = RWSPComparisonTools()
+        self.comparison_tools = PubopComparisonTools()
         self.real_data_seed = None  # Set via set_real_data_seed() for validation
         
         self.tools = self._define_tools()
@@ -781,7 +781,7 @@ Workflow:
                     real_crawl = self.real_data_seed._original_crawl
                 
                 # Perform comparison
-                metrics = self.rwsp_tools.compare_with_real_data(
+                metrics = self.comparison_tools.compare_with_real_data(
                     simulation_topics=topics,
                     simulation_posts=simulation_posts,
                     real_crawl=real_crawl,
@@ -790,13 +790,13 @@ Workflow:
                 # Validate specific predictions if provided
                 validations = []
                 if predictions and real_crawl.posts:
-                    validations = self.rwsp_tools.validate_predictions(
+                    validations = self.comparison_tools.validate_predictions(
                         predictions=predictions,
                         real_posts=real_crawl.posts,
                     )
                 
                 # Generate report
-                report = self.rwsp_tools.generate_comparison_report(
+                report = self.comparison_tools.generate_comparison_report(
                     metrics=metrics,
                     validations=validations if validations else None,
                 )

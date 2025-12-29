@@ -6,8 +6,8 @@ import pytest
 from datetime import datetime
 
 from app.models.pubop import ScrapedPost, ScrapedUser, CrawlResult, ScrapedTrend
-from app.services.rwsp_comparison import (
-    RWSPComparisonTools,
+from app.services.pubop_comparison import (
+    PubopComparisonTools,
     ComparisonMetrics,
     PredictionValidation,
 )
@@ -74,12 +74,12 @@ class TestPredictionValidation:
         assert d["validated"] == False
 
 
-class TestRWSPComparisonTools:
-    """Tests for RWSPComparisonTools"""
+class TestPubopComparisonTools:
+    """Tests for PubopComparisonTools"""
     
     @pytest.fixture
     def tools(self):
-        return RWSPComparisonTools()
+        return PubopComparisonTools()
     
     @pytest.fixture
     def sample_crawl(self):

@@ -17,7 +17,7 @@ import json
 from ..models.pubop import ScrapedPost, ScrapedUser, ScrapedTrend, CrawlResult
 from ..utils.logger import get_logger
 
-logger = get_logger('pubop.rwsp_comparison')
+logger = get_logger('pubop.comparison')
 
 
 @dataclass
@@ -120,14 +120,14 @@ class PredictionValidation:
         }
 
 
-class RWSPComparisonTools:
+class PubopComparisonTools:
     """
     Tools for comparing OASIS simulation predictions with real-world data.
     
     Used by ReportAgent to validate predictions and generate accuracy metrics.
     
     Example:
-        tools = RWSPComparisonTools()
+        tools = PubopComparisonTools()
         
         # Compare simulation with real crawl
         metrics = tools.compare_with_real_data(
