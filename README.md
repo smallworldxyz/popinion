@@ -2,7 +2,7 @@
 
 > **pubop** (Public Opinion) is a fork of [MiroFish](https://github.com/rithythul/mirofish) - a global public opinion analysis platform powered by AI simulation.
 > 
-> **Features:** Real-world data collection from global social platforms + AI agent simulation + Prediction.
+> **Features:** AI-driven Real-world data collection + "Ghost" Agent Injection + AI agent simulation + Prediction.
 
 ---
 
@@ -24,9 +24,9 @@ From serious predictions to playful simulations, we let every "what if" see its 
 
 ## 🔄 Workflow
 
-1. **Graph Building**: Seed extraction & Individual/collective memory injection & GraphRAG construction
+1. **Graph Building**: Seed extraction & AI-driven Search Planning & Real-world data injection (World Agent 99999) & GraphRAG construction
 2. **Environment Setup**: Entity relationship extraction & Persona generation & Agent configuration injection
-3. **Simulation**: Dual-platform parallel simulation & Auto-parse prediction requirements & Dynamic temporal memory updates
+3. **Simulation**: Dual-platform parallel simulation with Real-Data Context & Auto-parse prediction requirements & Dynamic temporal memory updates
 4. **Report Generation**: ReportAgent with rich toolset for deep interaction with post-simulation environment
 5. **Deep Interaction**: Chat with any agent in the simulated world & Interact with ReportAgent
 

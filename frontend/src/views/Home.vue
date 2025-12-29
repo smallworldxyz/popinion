@@ -18,7 +18,7 @@
           <div class="console-section">
             <div class="console-header">
               <span class="console-label">01 / Reality Seeds</span>
-              <span class="console-meta">Supported formats: PDF, MD, TXT</span>
+              <span class="console-meta">Supported formats: PDF, MD, TXT (Context for AI Planner)</span>
             </div>
             
             <div 
@@ -121,15 +121,15 @@
           <div class="capabilities-list">
              <div class="cap-item">
                <span class="cap-icon">✓</span>
-               <span class="cap-text">Dynamic Source Discovery (Google/DuckDuckGo)</span>
+               <span class="cap-text">AI Search Planner (Context-Aware Scraping)</span>
              </div>
              <div class="cap-item">
                <span class="cap-icon">✓</span>
-               <span class="cap-text">Multimodal (Text, Image, Video)</span>
+               <span class="cap-text">Direct Simulation Injection (World Agent)</span>
              </div>
              <div class="cap-item">
                <span class="cap-icon">✓</span>
-               <span class="cap-text">Generative AI Content Filter</span>
+               <span class="cap-text">Multimodal & Deepfake Detection</span>
              </div>
           </div>
 
@@ -142,8 +142,8 @@
               <div class="workflow-item">
                 <span class="step-num">01</span>
                 <div class="step-info">
-                  <div class="step-title">Graph Building</div>
-                  <div class="step-desc">Reality seed extraction & Individual/collective memory injection & GraphRAG construction</div>
+                  <div class="step-title">Reality Injection</div>
+                  <div class="step-desc">AI-planned scraping & "World News" context injection & GraphRAG construction</div>
                 </div>
               </div>
               <div class="workflow-item">
