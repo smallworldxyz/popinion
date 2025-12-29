@@ -341,6 +341,105 @@ class LightPandaClient:
         page.set_default_timeout(self.timeout)
         return page
     
+    async def new_stealth_page(self, use_proxy: bool = True) -> Any:
+        """
+        Create a new page with stealth settings for anti-bot evasion.
+        
+        Uses realistic browser fingerprint to avoid detection by
+        captcha systems like TikTok, Instagram, etc.
+        
+        Args:
+            use_proxy: Whether to use proxy if configured
+        
+        Returns:
+            Playwright Page object with stealth settings
+        """
+        if not self._connected or not self._browser:
+            raise ConnectionError("Not connected. Call connect() first.")
+        
+        # Realistic stealth settings
+        context_kwargs = {
+            # Realistic viewport (common desktop resolution)
+            "viewport": {"width": 1920, "height": 1080},
+            # Realistic user agent
+            "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            # Locale and timezone
+            "locale": "en-US",
+            "timezone_id": "America/New_York",
+            # Not a mobile device
+            "has_touch": False,
+            "is_mobile": False,
+            # Device scale factor
+            "device_scale_factor": 1,
+            # Color scheme
+            "color_scheme": "light",
+            # Permissions for realistic browser
+            "permissions": ["geolocation"],
+            # Extra HTTP headers
+            "extra_http_headers": {
+                "Accept-Language": "en-US,en;q=0.9",
+                "Accept-Encoding": "gzip, deflate, br",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+                "Sec-Fetch-Dest": "document",
+                "Sec-Fetch-Mode": "navigate",
+                "Sec-Fetch-Site": "none",
+                "Sec-Fetch-User": "?1",
+                "Upgrade-Insecure-Requests": "1",
+            },
+        }
+        
+        # Add proxy if configured
+        if use_proxy and self.proxy and self.engine != "lightpanda":
+            proxy_config = self.proxy.get_proxy(rotate=True)
+            if proxy_config:
+                context_kwargs["proxy"] = proxy_config
+                logger.debug(f"Using proxy: {proxy_config['server']}")
+        
+        context = await self._browser.new_context(**context_kwargs)
+        page = await context.new_page()
+        page.set_default_timeout(self.timeout)
+        
+        # Inject stealth scripts to evade detection
+        await self._inject_stealth_scripts(page)
+        
+        logger.info("Created stealth page with anti-bot evasion")
+        return page
+    
+    async def _inject_stealth_scripts(self, page) -> None:
+        """Inject JavaScript to evade bot detection"""
+        # Hide webdriver property
+        await page.add_init_script("""
+            Object.defineProperty(navigator, 'webdriver', {
+                get: () => undefined
+            });
+        """)
+        
+        # Fake plugins
+        await page.add_init_script("""
+            Object.defineProperty(navigator, 'plugins', {
+                get: () => [
+                    {name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer'},
+                    {name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai'},
+                    {name: 'Native Client', filename: 'internal-nacl-plugin'}
+                ]
+            });
+        """)
+        
+        # Fake languages
+        await page.add_init_script("""
+            Object.defineProperty(navigator, 'languages', {
+                get: () => ['en-US', 'en']
+            });
+        """)
+        
+        # Hide automation indicators
+        await page.add_init_script("""
+            delete window.cdc_adoQpoasnfa76pfcZLmcfl_Array;
+            delete window.cdc_adoQpoasnfa76pfcZLmcfl_Promise;
+            delete window.cdc_adoQpoasnfa76pfcZLmcfl_Symbol;
+        """)
+
+    
     async def new_context(self, use_proxy: bool = True) -> Any:
         """
         Create a new browser context.

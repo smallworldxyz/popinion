@@ -93,20 +93,35 @@ class TikTokCrawler(BaseCrawler):
         source_id: str, 
         limit: int
     ) -> List[ScrapedPost]:
-        """Internal method to scrape videos from any TikTok page"""
+        """Internal method to scrape videos from any TikTok page with stealth mode"""
+        import random
         posts = []
         
         try:
-            page = await self._get_page()
+            # Use stealth page for TikTok to avoid captcha
+            page = await self.client.new_stealth_page()
             
-            # TikTok may require extra wait time
-            await page.goto(url, wait_until="networkidle")
-            await asyncio.sleep(4)  # TikTok loads dynamically
+            logger.info("Using stealth mode for TikTok anti-bot evasion")
+            
+            # Human-like: random initial delay
+            await asyncio.sleep(random.uniform(2, 4))
+            
+            # Navigate with human-like timing
+            await page.goto(url, wait_until="domcontentloaded")
+            
+            # Human-like: wait for page to settle
+            await asyncio.sleep(random.uniform(5, 8))
+            
+            # Human-like: random mouse movement
+            await self._human_like_mouse_move(page)
             
             # Check for captcha or block
-            captcha = await page.query_selector('[class*="captcha"], [class*="Captcha"]')
+            captcha = await page.query_selector('[class*="captcha"], [class*="Captcha"], [class*="verify"]')
             if captcha:
-                logger.warning("TikTok captcha detected - may need human verification")
+                logger.warning("TikTok captcha detected - trying to wait it out...")
+                # Wait longer and try scrolling
+                await asyncio.sleep(random.uniform(3, 6))
+                await self._human_like_scroll(page)
             
             # Find video items
             video_elements = []
@@ -299,3 +314,29 @@ class TikTokCrawler(BaseCrawler):
             pass
         
         return 0
+    
+    async def _human_like_mouse_move(self, page) -> None:
+        """Simulate human-like mouse movements"""
+        import random
+        try:
+            # Random mouse movements across the page
+            for _ in range(random.randint(2, 4)):
+                x = random.randint(100, 1200)
+                y = random.randint(100, 600)
+                await page.mouse.move(x, y)
+                await asyncio.sleep(random.uniform(0.1, 0.3))
+        except Exception:
+            pass  # Mouse movement is optional
+    
+    async def _human_like_scroll(self, page) -> None:
+        """Simulate human-like scrolling"""
+        import random
+        try:
+            # Scroll in small increments with random pauses
+            for _ in range(random.randint(2, 5)):
+                scroll_amount = random.randint(200, 500)
+                await page.evaluate(f"window.scrollBy(0, {scroll_amount})")
+                await asyncio.sleep(random.uniform(0.5, 1.5))
+        except Exception:
+            pass  # Scrolling is optional
+
