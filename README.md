@@ -36,7 +36,7 @@ From serious predictions to playful simulations, we let every "what if" see its 
 
 ### Prerequisites
 
-> Note: pubop was developed and tested on Mac and Linux. Windows compatibility is experimental.
+> Note: Popinion was developed and tested on Mac and Linux. Windows compatibility is experimental.
 
 | Tool | Version | Description | Check Installation |
 |------|---------|-------------|-------------------|
