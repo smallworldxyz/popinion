@@ -18,7 +18,10 @@ from urllib.parse import quote_plus
 
 from ..models.pubop import ScrapedPost, CrawlResult
 from ..utils.logger import get_logger
-from .crawler import LightPandaClient, GenericWebCrawler
+from .crawler import (
+    LightPandaClient, GenericWebCrawler,
+    TelegramCrawler
+)
 from .pubop_bridge import PubopBridge, RealDataSeed
 from ..config import Config
 
@@ -261,9 +264,13 @@ class RealWorldScraper:
             for url in links:
                 if len(posts) >= limit: break
                 try:
-                    post = await crawler.scrape_url(url)
+                    # Smart Dispatch: Use specialized crawler if available
+                    post = await self._smart_scrape_url(client, crawler, url)
                     if post:
                         post.media_type = "text" # Default
+                        # If telegram, might have images
+                        if post.platform == "telegram" and post.media_urls:
+                             post.media_type = "image"
                         posts.append(post)
                 except Exception: pass
                     
@@ -271,6 +278,45 @@ class RealWorldScraper:
             logger.warning(f"Search failed for {query}: {e}")
         
         return posts
+
+    async def _smart_scrape_url(
+        self,
+        client: LightPandaClient,
+        generic_crawler: GenericWebCrawler,
+        url: str
+    ) -> Optional[ScrapedPost]:
+        """Dispatch URL to specialized crawler or fallback to generic"""
+        
+        # 1. Telegram Dispatch
+        if "t.me" in url or "telegram.me" in url:
+            try:
+                # Extract channel ID from URL (t.me/s/channel or t.me/channel/123)
+                path_parts = url.split('/')
+                channel = ""
+                for part in path_parts:
+                    if part in ["s", "t.me", "https:", "http:", "telegram.me", ""]:
+                        continue
+                    # First meaningful part is usually channel
+                    channel = part
+                    break
+                
+                if channel:
+                    logger.info(f"Smart Dispatch: Switching to TelegramCrawler for {channel}")
+                    tg_crawler = TelegramCrawler(client)
+                    # Scrape recent posts from channel
+                    results = await tg_crawler.scrape_channel(channel, limit=2)
+                    if results:
+                        # Return the most relevant/recent post that matches context if possible
+                        # For now, just return the latest one
+                        return results[0]
+            except Exception as e:
+                logger.warning(f"Telegram smart scrape failed, falling back: {e}")
+        
+        # 2. Add other dispatchers here (Twitter, etc.)
+        
+        # 3. Fallback to Generic
+        return await generic_crawler.scrape_url(url)
+
 
     def _analyze_posts_content(self, posts: List[ScrapedPost]) -> List[ScrapedPost]:
         """Analyze posts for AI generation"""
