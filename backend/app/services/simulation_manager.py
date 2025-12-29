@@ -234,17 +234,21 @@ class SimulationManager:
         defined_entity_types: Optional[List[str]] = None,
         use_llm_for_profiles: bool = True,
         progress_callback: Optional[callable] = None,
-        parallel_profile_count: int = 3
+        parallel_profile_count: int = 3,
+        enable_realworld_scraping: bool = True,
+        realworld_max_posts: int = 30,
+        realworld_region: str = "sea"
     ) -> SimulationState:
         """
         Prepare simulation environment (fully automated)
         
         Steps:
         1. Read and filter entities from Neo4j graph
-        2. Generate OASIS Agent Profile for each entity (optional LLM enhancement, supports parallel)
-        3. Use LLM to intelligently generate simulation configuration parameters (time, activity, post frequency, etc.)
-        4. Save configuration files and Profile files
-        5. Copy preset scripts to simulation directory
+        2. [NEW] Scrape real-world news/posts about entities (pubop integration)
+        3. Generate OASIS Agent Profile for each entity (optional LLM enhancement, supports parallel)
+        4. Use LLM to intelligently generate simulation configuration parameters (time, activity, post frequency, etc.)
+        5. Inject real-world scraped data into configuration
+        6. Save configuration files and Profile files
         
         Args:
             simulation_id: Simulation ID
@@ -254,6 +258,9 @@ class SimulationManager:
             use_llm_for_profiles: Whether to use LLM to generate detailed profiles
             progress_callback: Progress callback function (stage, progress, message)
             parallel_profile_count: Number of profiles to generate in parallel, default 3
+            enable_realworld_scraping: Whether to scrape real news about entities (pubop feature)
+            realworld_max_posts: Max posts to scrape in real-world phase
+            realworld_region: Region for news sources (sea, cambodia, thailand, vietnam, general)
             
         Returns:
             SimulationState
@@ -300,7 +307,76 @@ class SimulationManager:
                 self._save_simulation_state(state)
                 return state
             
-            # ========== Phase 2: Generate Agent Profiles ==========
+            # ========== Phase 2: Real-World Data Scraping (pubop) ==========
+            real_data_seed = None
+            
+            if enable_realworld_scraping:
+                if progress_callback:
+                    progress_callback(
+                        "scraping_realworld", 0,
+                        "Starting real-world news scraping...",
+                        current=0,
+                        total=len(filtered.entities)
+                    )
+                
+                try:
+                    from .pubop_realworld_scraper import RealWorldScraper
+                    import asyncio
+                    
+                    # Extract entity names for scraping
+                    entity_names = [e.name for e in filtered.entities]
+                    
+                    logger.info(f"Starting real-world scraping for {len(entity_names)} entities")
+                    
+                    def scrape_progress(current, total, msg):
+                        if progress_callback:
+                            progress_callback(
+                                "scraping_realworld",
+                                int(current / total * 100),
+                                msg,
+                                current=current,
+                                total=total
+                            )
+                    
+                    # Run async scraping
+                    scraper = RealWorldScraper()
+                    loop = asyncio.new_event_loop()
+                    try:
+                        real_data_seed = loop.run_until_complete(
+                            scraper.scrape_entity_names(
+                                entity_names,
+                                region=realworld_region,
+                                max_total_posts=realworld_max_posts,
+                                progress_callback=scrape_progress
+                            )
+                        )
+                    finally:
+                        loop.close()
+                    
+                    if progress_callback:
+                        progress_callback(
+                            "scraping_realworld", 100,
+                            f"Scraped {len(real_data_seed.initial_posts)} real articles",
+                            current=len(filtered.entities),
+                            total=len(filtered.entities)
+                        )
+                    
+                    logger.info(
+                        f"Real-world scraping complete: {len(real_data_seed.initial_posts)} articles, "
+                        f"{len(real_data_seed.trending_topics)} topics"
+                    )
+                    
+                except Exception as e:
+                    logger.warning(f"Real-world scraping failed (continuing without): {e}")
+                    if progress_callback:
+                        progress_callback(
+                            "scraping_realworld", 100,
+                            f"Scraping skipped: {str(e)[:50]}",
+                            current=len(filtered.entities),
+                            total=len(filtered.entities)
+                        )
+            
+            # ========== Phase 3: Generate Agent Profiles ==========
             total_entities = len(filtered.entities)
             
             if progress_callback:
@@ -410,12 +486,39 @@ class SimulationManager:
                 enable_reddit=state.enable_reddit
             )
             
+            # ========== Phase 5: Inject Real-World Data (pubop) ==========
+            if real_data_seed and len(real_data_seed.initial_posts) > 0:
+                if progress_callback:
+                    progress_callback(
+                        "generating_config", 60,
+                        f"Injecting {len(real_data_seed.initial_posts)} real articles...",
+                        current=2,
+                        total=4
+                    )
+                
+                logger.info(
+                    f"Injecting real data: {len(real_data_seed.initial_posts)} posts, "
+                    f"{len(real_data_seed.trending_topics)} topics"
+                )
+                
+                sim_params = config_generator.inject_real_data_seed(
+                    params=sim_params,
+                    initial_posts_from_real=real_data_seed.initial_posts,
+                    trending_topics=real_data_seed.trending_topics,
+                    merge_mode="prepend"
+                )
+                
+                logger.info(
+                    f"After injection: {len(sim_params.event_config.initial_posts)} total posts, "
+                    f"{len(sim_params.event_config.hot_topics)} hot topics"
+                )
+            
             if progress_callback:
                 progress_callback(
                     "generating_config", 70, 
                     "Saving configuration file...",
-                    current=2,
-                    total=3
+                    current=3,
+                    total=4
                 )
             
             # Save configuration file

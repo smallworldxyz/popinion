@@ -1,0 +1,378 @@
+{
+  "project_id": "proj_089c7c8f893f",
+  "name": "Unnamed Project",
+  "status": "ontology_generated",
+  "created_at": "2025-12-29T12:54:30.915278",
+  "updated_at": "2025-12-29T12:54:48.988251",
+  "ontology": {
+    "entity_types": [
+      {
+        "name": "Politician",
+        "description": "Elected officials or government leaders involved in Thai or Cambodian domestic and foreign policy.",
+        "attributes": [
+          {
+            "name": "full_name",
+            "type": "text",
+            "description": "The full legal name of the politician"
+          },
+          {
+            "name": "political_affiliation",
+            "type": "text",
+            "description": "The political party or movement they belong to"
+          },
+          {
+            "name": "current_role",
+            "type": "text",
+            "description": "The current official position held"
+          }
+        ],
+        "examples": [
+          "Thaksin Shinawatra",
+          "Hun Sen"
+        ]
+      },
+      {
+        "name": "Diplomat",
+        "description": "Officials representing their country in international relations and handling bilateral frictions.",
+        "attributes": [
+          {
+            "name": "full_name",
+            "type": "text",
+            "description": "The name of the diplomat"
+          },
+          {
+            "name": "representing_country",
+            "type": "text",
+            "description": "The country the diplomat represents"
+          },
+          {
+            "name": "diplomatic_rank",
+            "type": "text",
+            "description": "The rank such as Ambassador or Consul General"
+          }
+        ],
+        "examples": [
+          "Thai Ambassador to Cambodia",
+          "Permanent Representative to ASEAN"
+        ]
+      },
+      {
+        "name": "MilitaryOfficer",
+        "description": "High-ranking members of the armed forces involved in border security and geopolitical strategy.",
+        "attributes": [
+          {
+            "name": "full_name",
+            "type": "text",
+            "description": "The name of the officer"
+          },
+          {
+            "name": "military_rank",
+            "type": "text",
+            "description": "The military rank held"
+          },
+          {
+            "name": "command_area",
+            "type": "text",
+            "description": "The specific region or unit under their command"
+          }
+        ],
+        "examples": [
+          "General Apirat Kongsompong",
+          "Border Patrol Commander"
+        ]
+      },
+      {
+        "name": "PoliticalActivist",
+        "description": "Individuals leading movements or protests regarding national sovereignty or political reform.",
+        "attributes": [
+          {
+            "name": "full_name",
+            "type": "text",
+            "description": "The name of the activist"
+          },
+          {
+            "name": "movement_focus",
+            "type": "text",
+            "description": "The primary political or social cause"
+          },
+          {
+            "name": "influence_reach",
+            "type": "text",
+            "description": "The scale of their social media following"
+          }
+        ],
+        "examples": [
+          "Parit Chiwarak",
+          "Nationalist protest leader"
+        ]
+      },
+      {
+        "name": "PoliticalAnalyst",
+        "description": "Scholars or experts who provide commentary on geopolitical frictions and election outcomes.",
+        "attributes": [
+          {
+            "name": "full_name",
+            "type": "text",
+            "description": "The name of the analyst"
+          },
+          {
+            "name": "expertise_area",
+            "type": "text",
+            "description": "Specific field of study like SE Asian Geopolitics"
+          },
+          {
+            "name": "institution_affiliation",
+            "type": "text",
+            "description": "The university or think tank they belong to"
+          }
+        ],
+        "examples": [
+          "Thitinan Pongsudhirak",
+          "Pavin Chachavalpongpun"
+        ]
+      },
+      {
+        "name": "GovernmentAgency",
+        "description": "State departments responsible for foreign affairs, defense, or national security.",
+        "attributes": [
+          {
+            "name": "agency_name",
+            "type": "text",
+            "description": "The official name of the department"
+          },
+          {
+            "name": "country_location",
+            "type": "text",
+            "description": "The country the agency belongs to"
+          },
+          {
+            "name": "primary_function",
+            "type": "text",
+            "description": "The main responsibility of the agency"
+          }
+        ],
+        "examples": [
+          "Ministry of Foreign Affairs Thailand",
+          "Cambodian Ministry of National Defence"
+        ]
+      },
+      {
+        "name": "PoliticalParty",
+        "description": "Organized groups that contest elections and shape national political discourse.",
+        "attributes": [
+          {
+            "name": "party_name",
+            "type": "text",
+            "description": "The full name of the political party"
+          },
+          {
+            "name": "ideological_stance",
+            "type": "text",
+            "description": "The core political ideology"
+          },
+          {
+            "name": "party_leader",
+            "type": "text",
+            "description": "The current head of the party"
+          }
+        ],
+        "examples": [
+          "Pheu Thai Party",
+          "Move Forward Party"
+        ]
+      },
+      {
+        "name": "MediaOutlet",
+        "description": "News organizations that report on political events and influence public opinion.",
+        "attributes": [
+          {
+            "name": "outlet_name",
+            "type": "text",
+            "description": "The name of the news organization"
+          },
+          {
+            "name": "media_platform",
+            "type": "text",
+            "description": "The primary medium like TV, Digital, or Print"
+          },
+          {
+            "name": "editorial_bias",
+            "type": "text",
+            "description": "The perceived political leaning of the outlet"
+          }
+        ],
+        "examples": [
+          "Bangkok Post",
+          "Phnom Penh Post"
+        ]
+      },
+      {
+        "name": "Person",
+        "description": "Fallback type for any individual not fitting specific categories, such as netizens or voters.",
+        "attributes": [
+          {
+            "name": "full_name",
+            "type": "text",
+            "description": "The name or handle of the person"
+          },
+          {
+            "name": "user_bio",
+            "type": "text",
+            "description": "Brief description of the individual"
+          },
+          {
+            "name": "geographic_location",
+            "type": "text",
+            "description": "Where the person is based"
+          }
+        ],
+        "examples": [
+          "Anonymous Netizen",
+          "Local Voter"
+        ]
+      },
+      {
+        "name": "Organization",
+        "description": "Fallback type for any group, NGO, or collective not fitting specific categories.",
+        "attributes": [
+          {
+            "name": "org_name",
+            "type": "text",
+            "description": "The name of the organization"
+          },
+          {
+            "name": "org_type",
+            "type": "text",
+            "description": "The nature of the organization"
+          },
+          {
+            "name": "mission_statement",
+            "type": "text",
+            "description": "The primary goal of the group"
+          }
+        ],
+        "examples": [
+          "ASEAN Secretariat",
+          "Human Rights Watch"
+        ]
+      }
+    ],
+    "edge_types": [
+      {
+        "name": "CRITICIZES",
+        "description": "Publicly expresses disapproval of another entity's actions or policies.",
+        "source_targets": [
+          {
+            "source": "Politician",
+            "target": "Politician"
+          },
+          {
+            "source": "PoliticalActivist",
+            "target": "GovernmentAgency"
+          }
+        ],
+        "attributes": []
+      },
+      {
+        "name": "NEGOTIATES_WITH",
+        "description": "Engages in formal discussions to resolve frictions or reach agreements.",
+        "source_targets": [
+          {
+            "source": "Diplomat",
+            "target": "Diplomat"
+          },
+          {
+            "source": "GovernmentAgency",
+            "target": "GovernmentAgency"
+          }
+        ],
+        "attributes": []
+      },
+      {
+        "name": "REPORTS_ON",
+        "description": "Provides news coverage or analysis regarding an entity's activities.",
+        "source_targets": [
+          {
+            "source": "MediaOutlet",
+            "target": "Politician"
+          },
+          {
+            "source": "MediaOutlet",
+            "target": "GovernmentAgency"
+          }
+        ],
+        "attributes": []
+      },
+      {
+        "name": "ADVISES",
+        "description": "Provides expert recommendations or strategic guidance.",
+        "source_targets": [
+          {
+            "source": "PoliticalAnalyst",
+            "target": "GovernmentAgency"
+          },
+          {
+            "source": "PoliticalAnalyst",
+            "target": "Politician"
+          }
+        ],
+        "attributes": []
+      },
+      {
+        "name": "MEMBER_OF",
+        "description": "Indicates formal membership or affiliation with a group.",
+        "source_targets": [
+          {
+            "source": "Politician",
+            "target": "PoliticalParty"
+          },
+          {
+            "source": "Person",
+            "target": "Organization"
+          }
+        ],
+        "attributes": []
+      },
+      {
+        "name": "SUPPORTS",
+        "description": "Expresses public agreement or provides resources to another entity.",
+        "source_targets": [
+          {
+            "source": "Person",
+            "target": "PoliticalParty"
+          },
+          {
+            "source": "PoliticalParty",
+            "target": "Politician"
+          }
+        ],
+        "attributes": []
+      },
+      {
+        "name": "MONITORS",
+        "description": "Observes the actions of another entity, often for security or compliance.",
+        "source_targets": [
+          {
+            "source": "MilitaryOfficer",
+            "target": "GovernmentAgency"
+          },
+          {
+            "source": "Organization",
+            "target": "GovernmentAgency"
+          }
+        ],
+        "attributes": []
+      }
+    ]
+  },
+  "analysis_summary": "The ontology is designed to simulate the complex geopolitical landscape between Thailand and Cambodia. It focuses on key actors such as politicians, diplomats, and military officers who drive official policy, alongside activists, analysts, and media outlets who shape the social media discourse and public opinion surrounding regional frictions.",
+  "total_text_length": 39,
+  "graph_id": null,
+  "node_count": null,
+  "edge_count": null,
+  "simulation_requirement": "predict thai politics",
+  "additional_context": null,
+  "simulation_id": null,
+  "simulation_config": null,
+  "files": []
+}

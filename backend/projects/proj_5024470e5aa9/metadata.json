@@ -1,0 +1,340 @@
+{
+  "project_id": "proj_5024470e5aa9",
+  "name": "Unnamed Project",
+  "status": "ontology_generated",
+  "created_at": "2025-12-29T12:59:00.686324",
+  "updated_at": "2025-12-29T12:59:19.006929",
+  "ontology": {
+    "entity_types": [
+      {
+        "name": "GovernmentOfficial",
+        "description": "High-ranking state leaders and ministers who shape foreign policy and public discourse.",
+        "attributes": [
+          {
+            "name": "official_title",
+            "type": "text",
+            "description": "The specific rank or position held by the official."
+          },
+          {
+            "name": "country_affiliation",
+            "type": "text",
+            "description": "The nation the official represents (e.g., Thailand or Cambodia)."
+          },
+          {
+            "name": "political_party",
+            "type": "text",
+            "description": "The political faction the official belongs to."
+          }
+        ],
+        "examples": [
+          "Prayut Chan-o-cha",
+          "Hun Sen"
+        ]
+      },
+      {
+        "name": "Diplomat",
+        "description": "Representatives of the foreign ministry involved in international negotiations and embassies.",
+        "attributes": [
+          {
+            "name": "diplomatic_rank",
+            "type": "text",
+            "description": "The rank of the diplomat, such as Ambassador or Consul."
+          },
+          {
+            "name": "assigned_country",
+            "type": "text",
+            "description": "The country where the diplomat is currently stationed."
+          }
+        ],
+        "examples": [
+          "Thai Ambassador to Phnom Penh",
+          "Cambodian Foreign Ministry Spokesperson"
+        ]
+      },
+      {
+        "name": "MilitaryUnit",
+        "description": "Armed forces accounts or units, particularly those stationed near border regions.",
+        "attributes": [
+          {
+            "name": "unit_designation",
+            "type": "text",
+            "description": "The specific name or number of the military unit."
+          },
+          {
+            "name": "command_region",
+            "type": "text",
+            "description": "The geographical area under the unit's responsibility."
+          }
+        ],
+        "examples": [
+          "Thai Second Army Region",
+          "Cambodian Border Protection Unit"
+        ]
+      },
+      {
+        "name": "MediaOutlet",
+        "description": "News organizations and digital platforms that report on geopolitical events.",
+        "attributes": [
+          {
+            "name": "media_type",
+            "type": "text",
+            "description": "The format of the media, such as TV, Newspaper, or Digital News."
+          },
+          {
+            "name": "editorial_bias",
+            "type": "text",
+            "description": "The perceived political or national leaning of the outlet."
+          }
+        ],
+        "examples": [
+          "Bangkok Post",
+          "Khmer Times"
+        ]
+      },
+      {
+        "name": "PoliticalActivist",
+        "description": "Individuals or group leaders who advocate for nationalistic or specific political causes.",
+        "attributes": [
+          {
+            "name": "cause_focus",
+            "type": "text",
+            "description": "The primary issue the activist campaigns for (e.g., border sovereignty)."
+          },
+          {
+            "name": "movement_affiliation",
+            "type": "text",
+            "description": "The name of the political movement or group they lead."
+          }
+        ],
+        "examples": [
+          "Yellow Shirt Leader",
+          "Cambodian Youth Network Representative"
+        ]
+      },
+      {
+        "name": "InternationalOrganization",
+        "description": "Supranational bodies that monitor or mediate regional conflicts.",
+        "attributes": [
+          {
+            "name": "org_scope",
+            "type": "text",
+            "description": "The reach of the organization (e.g., Regional, Global)."
+          },
+          {
+            "name": "mandate_description",
+            "type": "text",
+            "description": "The primary goal of the organization in the region."
+          }
+        ],
+        "examples": [
+          "ASEAN Secretariat",
+          "UNESCO"
+        ]
+      },
+      {
+        "name": "BusinessAssociation",
+        "description": "Groups representing trade interests that may be affected by border frictions.",
+        "attributes": [
+          {
+            "name": "industry_sector",
+            "type": "text",
+            "description": "The primary industry represented (e.g., Tourism, Agriculture)."
+          },
+          {
+            "name": "trade_volume_focus",
+            "type": "text",
+            "description": "The scale of cross-border trade interests."
+          }
+        ],
+        "examples": [
+          "Thai-Cambodian Business Council",
+          "Chamber of Commerce"
+        ]
+      },
+      {
+        "name": "Journalist",
+        "description": "Individual reporters or correspondents who post updates and opinions on social media.",
+        "attributes": [
+          {
+            "name": "beat_coverage",
+            "type": "text",
+            "description": "The specific topic the journalist covers (e.g., Geopolitics, Defense)."
+          },
+          {
+            "name": "professional_bio",
+            "type": "text",
+            "description": "Brief professional background of the journalist."
+          }
+        ],
+        "examples": [
+          "Foreign Correspondent",
+          "Political Columnist"
+        ]
+      },
+      {
+        "name": "Person",
+        "description": "Fallback type for any natural person, such as netizens, citizens, or local residents.",
+        "attributes": [
+          {
+            "name": "citizenship",
+            "type": "text",
+            "description": "The nationality of the individual."
+          },
+          {
+            "name": "social_bio",
+            "type": "text",
+            "description": "The user's self-description on social media."
+          }
+        ],
+        "examples": [
+          "Local Villager",
+          "Social Media User"
+        ]
+      },
+      {
+        "name": "Organization",
+        "description": "Fallback type for any group or entity not covered by specific categories.",
+        "attributes": [
+          {
+            "name": "primary_mission",
+            "type": "text",
+            "description": "The main purpose or goal of the organization."
+          },
+          {
+            "name": "location_hq",
+            "type": "text",
+            "description": "The headquarters location of the organization."
+          }
+        ],
+        "examples": [
+          "Local Community Group",
+          "Border Relief Committee"
+        ]
+      }
+    ],
+    "edge_types": [
+      {
+        "name": "CRITICIZES",
+        "description": "Expresses disapproval or negative opinion regarding another entity's actions.",
+        "source_targets": [
+          {
+            "source": "GovernmentOfficial",
+            "target": "GovernmentOfficial"
+          },
+          {
+            "source": "PoliticalActivist",
+            "target": "GovernmentOfficial"
+          }
+        ],
+        "attributes": []
+      },
+      {
+        "name": "NEGOTIATES_WITH",
+        "description": "Engages in formal or informal discussions to resolve frictions.",
+        "source_targets": [
+          {
+            "source": "Diplomat",
+            "target": "Diplomat"
+          },
+          {
+            "source": "GovernmentOfficial",
+            "target": "GovernmentOfficial"
+          }
+        ],
+        "attributes": []
+      },
+      {
+        "name": "REPORTS_ON",
+        "description": "Provides news coverage or updates about an entity or event.",
+        "source_targets": [
+          {
+            "source": "MediaOutlet",
+            "target": "GovernmentOfficial"
+          },
+          {
+            "source": "Journalist",
+            "target": "MilitaryUnit"
+          }
+        ],
+        "attributes": []
+      },
+      {
+        "name": "PROTESTS_AGAINST",
+        "description": "Publicly demonstrates opposition to an entity's policies or presence.",
+        "source_targets": [
+          {
+            "source": "PoliticalActivist",
+            "target": "GovernmentOfficial"
+          },
+          {
+            "source": "Person",
+            "target": "InternationalOrganization"
+          }
+        ],
+        "attributes": []
+      },
+      {
+        "name": "MEDIATES_BETWEEN",
+        "description": "Acts as an intermediary to facilitate communication between two parties.",
+        "source_targets": [
+          {
+            "source": "InternationalOrganization",
+            "target": "Organization"
+          }
+        ],
+        "attributes": []
+      },
+      {
+        "name": "ADVOCATES_FOR",
+        "description": "Publicly supports a specific policy or the interests of another entity.",
+        "source_targets": [
+          {
+            "source": "BusinessAssociation",
+            "target": "GovernmentOfficial"
+          },
+          {
+            "source": "PoliticalActivist",
+            "target": "Person"
+          }
+        ],
+        "attributes": []
+      },
+      {
+        "name": "MONITORS_BORDER",
+        "description": "Observes and manages activities along the national boundary.",
+        "source_targets": [
+          {
+            "source": "MilitaryUnit",
+            "target": "Organization"
+          }
+        ],
+        "attributes": []
+      },
+      {
+        "name": "POSTS_OPINION",
+        "description": "Shares a personal or professional viewpoint on a social platform.",
+        "source_targets": [
+          {
+            "source": "Person",
+            "target": "MediaOutlet"
+          },
+          {
+            "source": "Journalist",
+            "target": "MediaOutlet"
+          }
+        ],
+        "attributes": []
+      }
+    ]
+  },
+  "analysis_summary": "The ontology is designed to simulate the complex geopolitical relationship between Thailand and Cambodia in 2016. It focuses on state actors (officials, diplomats, military), influencers (activists, journalists), and economic stakeholders (business associations) who drive social media narratives during periods of friction. Fallback types ensure all social media participants are captured.",
+  "total_text_length": 39,
+  "graph_id": null,
+  "node_count": null,
+  "edge_count": null,
+  "simulation_requirement": "predict thai vs cambodia relationship in 2016",
+  "additional_context": null,
+  "simulation_id": null,
+  "simulation_config": null,
+  "files": []
+}

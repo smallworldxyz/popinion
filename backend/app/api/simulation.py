@@ -515,23 +515,25 @@ def prepare_simulation():
                 stage_details = {}
                 
                 def progress_callback(stage, progress, message, **kwargs):
-                    # 计算Total进度
+                    # Calculate total progress
                     stage_weights = {
-                        "reading": (0, 20),           # 0-20%
-                        "generating_profiles": (20, 70),  # 20-70%
-                        "generating_config": (70, 90),    # 70-90%
-                        "copying_scripts": (90, 100)       # 90-100%
+                        "reading": (0, 15),              # 0-15%
+                        "scraping_realworld": (15, 35),  # 15-35% (NEW: real-world scraping)
+                        "generating_profiles": (35, 70), # 35-70%
+                        "generating_config": (70, 95),   # 70-95%
+                        "copying_scripts": (95, 100)     # 95-100%
                     }
                     
                     start, end = stage_weights.get(stage, (0, 100))
                     current_progress = int(start + (end - start) * progress / 100)
                     
-                    # 构建detailed进度information
+                    # Build detailed progress information
                     stage_names = {
-                        "reading": "readgraphentity",
-                        "generating_profiles": "generationAgentpeople设",
-                        "generating_config": "generationsimulationconfiguration",
-                        "copying_scripts": "准备simulation脚本"
+                        "reading": "Reading graph entities",
+                        "scraping_realworld": "Scraping real-world news",
+                        "generating_profiles": "Generating Agent profiles",
+                        "generating_config": "Generating simulation config",
+                        "copying_scripts": "Preparing simulation scripts"
                     }
                     
                     stage_index = list(stage_weights.keys()).index(stage) + 1 if stage in stage_weights else 1
