@@ -344,6 +344,7 @@ class SimulationManager:
                             scraper.scrape_entity_names(
                                 entity_names,
                                 simulation_requirement=simulation_requirement,
+                                document_text=document_text,
                                 max_total_posts=realworld_max_posts,
                                 progress_callback=scrape_progress
                             )

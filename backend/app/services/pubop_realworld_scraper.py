@@ -6,10 +6,12 @@ Features:
 1. Dynamic Source Discovery: Search Google/DuckDuckGo based on prompt context
 2. Multimodal Support: Search for text, images, videos, reactions
 3. AI/Fake Detection: Analyze content for AI markers
+4. AI Search Planning: Uses LLM to generate targeted search queries
 """
 
 import asyncio
 import re
+import json
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 from urllib.parse import quote_plus
@@ -18,6 +20,7 @@ from ..models.pubop import ScrapedPost, CrawlResult
 from ..utils.logger import get_logger
 from .crawler import LightPandaClient, GenericWebCrawler
 from .pubop_bridge import PubopBridge, RealDataSeed
+from ..config import Config
 
 logger = get_logger('pubop.realworld_scraper')
 
@@ -39,11 +42,26 @@ class RealWorldScraper:
         self.engine = engine
         self.max_posts_per_entity = max_posts_per_entity
         self.timeout = timeout
+        
+        # Initialize LLM client for smart planning
+        self.llm_client = None
+        try:
+            from openai import OpenAI
+            if Config.LLM_API_KEY:
+                self.llm_client = OpenAI(
+                    api_key=Config.LLM_API_KEY, 
+                    base_url=Config.LLM_BASE_URL
+                )
+                self.llm_model = Config.LLM_MODEL
+                logger.info(f"LLM Search Planner initialized: {self.llm_model}")
+        except Exception as e:
+            logger.warning(f"LLM client init failed: {e}")
     
     async def scrape_entities(
         self,
         entities: List[Dict[str, Any]],
         simulation_requirement: str = "",
+        document_text: str = "",
         max_total_posts: int = 50,
         progress_callback: Optional[callable] = None
     ) -> RealDataSeed:
@@ -53,18 +71,27 @@ class RealWorldScraper:
         Args:
             entities: List of entities
             simulation_requirement: User prompt to guide search intent
+            document_text: Reality seeds content
             max_total_posts: Max posts total
             progress_callback: Progress callback
         """
         all_posts: List[ScrapedPost] = []
         trending_topics: List[str] = []
         
-        # 1. Analyze prompt to determine search intent
-        intent = self._analyze_search_intent(simulation_requirement)
-        logger.info(f"Search intent derived from prompt: {intent}")
-        
         entity_names = [e.get("name", str(e)) if isinstance(e, dict) else str(e) for e in entities]
         total_entities = len(entity_names)
+        
+        # 1. Generate Smart Search Plan using LLM
+        search_plan = {}
+        if self.llm_client and simulation_requirement:
+            if progress_callback:
+                progress_callback(0, total_entities, "AI generating search plan...")
+            search_plan = await self._generate_ai_search_plan(
+                entity_names, simulation_requirement, document_text
+            )
+        
+        # Fallback intent analysis
+        fallback_intent = self._analyze_search_intent(simulation_requirement)
         
         try:
             async with LightPandaClient(engine=self.engine, timeout=self.timeout) as client:
@@ -74,22 +101,31 @@ class RealWorldScraper:
                     if len(all_posts) >= max_total_posts:
                         break
                     
+                    # Get queries for this entity from plan, or use fallback
+                    entity_queries = search_plan.get(entity_name, [])
+                    if not entity_queries:
+                        # Fallback logic
+                        keywords = fallback_intent["keywords"]
+                        entity_queries = [f"{entity_name} {kw}" for kw in keywords[:2]]
+                    
                     if progress_callback:
                         progress_callback(
                             i + 1, total_entities,
-                            f"Smart searching: {entity_name} ({', '.join(intent['keywords'])})"
+                            f"Searching: {entity_queries[0]}..."
                         )
                     
-                    # 2. Dynamic Search Discovery
-                    # Instead of hardcoded sources, we search for the entity + intent
-                    posts = await self._smart_search_entity(
-                        client, crawler, entity_name, intent,
-                        limit=self.max_posts_per_entity
-                    )
+                    # 2. Execute Search Queries
+                    entity_posts = []
+                    for query in entity_queries[:2]: # Limit queries per entity
+                        posts = await self._execute_search(
+                            client, crawler, query, 
+                            limit=max(2, self.max_posts_per_entity // 2)
+                        )
+                        entity_posts.extend(posts)
                     
-                    if posts:
+                    if entity_posts:
                         # 3. Analyze content (Fake/AI detection)
-                        analyzed_posts = self._analyze_posts_content(posts)
+                        analyzed_posts = self._analyze_posts_content(entity_posts)
                         
                         all_posts.extend(analyzed_posts)
                         logger.info(f"Found {len(analyzed_posts)} items for {entity_name}")
@@ -126,7 +162,7 @@ class RealWorldScraper:
         
         return RealDataSeed(
             platform="web",
-            query=f"Smart Search: {simulation_requirement[:30]}...",
+            query=f"AI Plan: {simulation_requirement[:30]}...",
             crawled_at=datetime.now(),
             profiles=[],
             initial_posts=initial_posts,
@@ -135,61 +171,86 @@ class RealWorldScraper:
             original_user_count=0,
         )
 
+    async def _generate_ai_search_plan(
+        self, 
+        entities: List[str], 
+        requirement: str,
+        doc_text: str
+    ) -> Dict[str, List[str]]:
+        """Generate specific search queries using LLM"""
+        try:
+            prompt = f"""
+            You are a Search Specialist for a simulation engine.
+            Goal: Generate search queries to find real-world data (news, opinions, facts) to ground a simulation.
+            
+            Simulation Prompt: "{requirement}"
+            Background Doc: "{doc_text[:1000]}..."
+            Entities: {', '.join(entities[:10])}
+            
+            Task: For each entity, generate 2 specific search queries that would yield relevant data for the simulation.
+            Queries should be specific (e.g., instead of just "Bitcoin news", use "Bitcoin price crash reaction 2024").
+            
+            Output strictly valid JSON format:
+            {{
+                "Entity Name": ["Query 1", "Query 2"],
+                ...
+            }}
+            """
+            
+            response = self.llm_client.chat.completions.create(
+                model=self.llm_model,
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"}
+            )
+            
+            content = response.choices[0].message.content
+            plan = json.loads(content)
+            logger.info(f"AI Search Plan Generated: {len(plan)} entities")
+            return plan
+            
+        except Exception as e:
+            logger.error(f"Failed to generate AI search plan: {e}")
+            return {}
+
     def _analyze_search_intent(self, prompt: str) -> Dict[str, Any]:
-        """Analyze simulation prompt to guide search"""
+        """Analyze simulation prompt to guide search (Fallback)"""
         prompt_lower = prompt.lower()
         keywords = []
         
-        # Detect focus topics
         if "opinion" in prompt_lower or "react" in prompt_lower:
-            keywords.append("opinion")
+            keywords.append("public opinion")
             keywords.append("reaction")
         if "news" in prompt_lower or "article" in prompt_lower:
             keywords.append("news")
         if "video" in prompt_lower:
             keywords.append("video")
-        if "scandal" in prompt_lower or "issue" in prompt_lower:
+        if "scandal" in prompt_lower:
             keywords.append("scandal")
-            keywords.append("controversy")
             
-        # Default fallback
         if not keywords:
-            keywords = ["news", "latest"]
+            keywords = ["latest news", "controversy"]
             
         return {
-            "keywords": keywords,
-            "prefer_video": "video" in prompt_lower,
-            "prefer_images": "image" in prompt_lower,
-            "prefer_comments": "comment" in prompt_lower
+            "keywords": keywords
         }
 
-    async def _smart_search_entity(
+    async def _execute_search(
         self,
         client: LightPandaClient,
         crawler: GenericWebCrawler,
-        entity_name: str,
-        intent: Dict[str, Any],
+        query: str,
         limit: int = 5
     ) -> List[ScrapedPost]:
-        """Performs search on DuckDuckGo/Google to find relevant URLs"""
+        """Performs search on DuckDuckGo"""
         posts = []
-        
-        # Construct dynamic queries
-        search_terms = [entity_name]
-        search_terms.extend(intent["keywords"])
-        query = " ".join(search_terms)
-        
-        # 1. Search DuckDuckGo (HTML version is easier to scrape)
         search_url = f"https://html.duckduckgo.com/html/?q={quote_plus(query)}"
         
         try:
-            logger.info(f"Searching: {query}")
-            # Use crawler's page interaction to get search results
+            logger.info(f"Executing Query: {query}")
             page = await client.get_page()
             await page.goto(search_url)
             await asyncio.sleep(2)
             
-            # Extract result links
             links = []
             link_elements = await page.query_selector_all('.result__a')
             for el in link_elements[:limit]:
@@ -197,91 +258,47 @@ class RealWorldScraper:
                 if href and 'duckduckgo' not in href:
                     links.append(href)
             
-            logger.info(f"Discovered {len(links)} sources for {entity_name}")
-            
-            # 2. Scrape discovered URLs
             for url in links:
-                if len(posts) >= limit:
-                    break
+                if len(posts) >= limit: break
                 try:
                     post = await crawler.scrape_url(url)
                     if post:
-                        # Detect media type
-                        if intent["prefer_video"]:
-                            post.media_type = "video" if ("youtube" in url or "video" in url) else "text"
-                        else:
-                            post.media_type = "text"
+                        post.media_type = "text" # Default
                         posts.append(post)
-                except Exception as e:
-                    logger.debug(f"Failed to scrape found link {url}: {e}")
+                except Exception: pass
                     
         except Exception as e:
-            logger.warning(f"Search failed for {entity_name}: {e}")
+            logger.warning(f"Search failed for {query}: {e}")
         
         return posts
 
     def _analyze_posts_content(self, posts: List[ScrapedPost]) -> List[ScrapedPost]:
-        """Analyze posts for AI generation and content quality"""
+        """Analyze posts for AI generation"""
         for post in posts:
-            analysis = {
-                "is_likely_ai": False,
-                "confidence": 0.0,
-                "reason": []
-            }
-            
+            analysis = {"is_likely_ai": False, "confidence": 0.0, "reason": []}
             content = (post.content or "").lower()
             
-            # Simple heuristic detection (Placeholders for advanced model)
-            ai_phrases = [
-                "as an ai language model",
-                "i cannot predict",
-                "my knowledge cutoff",
-                "in summary",
-                "it appears that"
-            ]
-            
+            ai_phrases = ["as an ai", "cannot predict", "my knowledge cutoff"]
             matches = [p for p in ai_phrases if p in content]
             if matches:
                 analysis["is_likely_ai"] = True
-                analysis["confidence"] = 0.8 + (len(matches) * 0.05)
-                analysis["reason"].append(f"Contains AI-like phrases: {matches}")
-            
-            # Repetitive structure check
-            # (Simplified)
-            
-            # Metadata analysis
-            if not post.author_name:
-                analysis["reason"].append("Missing author attribution")
+                analysis["confidence"] = 0.9
+                analysis["reason"].append(f"AI phrases: {matches}")
             
             post.content_analysis = analysis
-            
         return posts
     
     async def scrape_entity_names(
         self,
         entity_names: List[str],
         simulation_requirement: str = "",
+        document_text: str = "",
         max_total_posts: int = 50,
         progress_callback: Optional[callable] = None
     ) -> RealDataSeed:
         """Call with list of names"""
         entities = [{"name": name} for name in entity_names]
         return await self.scrape_entities(
-            entities, simulation_requirement, max_total_posts, progress_callback
+            entities, simulation_requirement, document_text, max_total_posts, progress_callback
         )
 
-
-def sync_scrape_entities(
-    entity_names: List[str],
-    simulation_requirement: str = "",
-    max_posts: int = 50
-) -> RealDataSeed:
-    """Sync wrapper"""
-    scraper = RealWorldScraper()
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(
-            scraper.scrape_entity_names(entity_names, simulation_requirement, max_posts)
-        )
-    finally:
-        loop.close()
