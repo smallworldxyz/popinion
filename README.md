@@ -1,6 +1,6 @@
-# pubop
+# Popinion
 
-> **pubop** (Public Opinion) is a fork of [MiroFish](https://github.com/rithythul/mirofish) - a global public opinion analysis platform powered by AI simulation.
+> **Popinion** (Public Opinion) is a fork of [MiroFish](https://github.com/rithythul/mirofish) - a global public opinion analysis platform powered by AI simulation.
 > 
 > **Features:** AI-driven Real-world data collection + "Ghost" Agent Injection + AI agent simulation + Prediction.
 
@@ -8,14 +8,16 @@
 
 ## ⚡ Overview
 
-**pubop** is a next-generation AI prediction engine powered by multi-agent technology. By extracting seed information from the real world (such as breaking news, policy drafts, or social media trends), it automatically constructs a high-fidelity parallel digital world. Within this space, thousands of intelligent agents with independent personalities, long-term memory, and behavioral logic freely interact and undergo social evolution. You can inject variables dynamically from a "God's-eye view" to precisely deduce future trajectories — **rehearse the future in a digital sandbox, and win decisions after countless simulations**.
+**Popinion** is a next-generation AI prediction engine powered by multi-agent technology. By extracting seed information from the real world (such as breaking news, policy drafts, or social media trends), it automatically constructs a high-fidelity parallel digital world. Within this space, thousands of intelligent agents with independent personalities, long-term memory, and behavioral logic freely interact and undergo social evolution. You can inject variables dynamically from a "God's-eye view" to precisely deduce future trajectories — **rehearse the future in a digital sandbox, and win decisions after countless simulations**.
 
 > You only need to: Upload seed materials (data analysis reports or social media data) and describe your prediction requirements in natural language</br>
-> pubop will return: A detailed prediction report and a deeply interactive high-fidelity digital world
+> Popinion will return: A detailed prediction report and a deeply interactive high-fidelity digital world
 
 ### Our Vision
 
-pubop is dedicated to creating a swarm intelligence mirror that maps reality. By capturing the collective emergence triggered by individual interactions, we break through the limitations of traditional prediction:
+### Our Vision
+
+Popinion is dedicated to creating a swarm intelligence mirror that maps reality. By capturing the collective emergence triggered by individual interactions, we break through the limitations of traditional prediction:
 
 - **At the Macro Level**: We are a rehearsal laboratory for decision-makers, allowing policies and public relations to be tested at zero risk
 - **At the Micro Level**: We are a creative sandbox for individual users — whether deducing novel endings or exploring imaginative scenarios, everything can be fun, playful, and accessible
@@ -124,7 +126,7 @@ bun run frontend  # Start frontend only
 
 ## 📄 Acknowledgments
 
-pubop's core simulation engine is powered by **[OASIS (Open Agent Social Interaction Simulations)](https://github.com/camel-ai/oasis)**. OASIS is a high-performance social media simulation framework developed by the [CAMEL-AI](https://github.com/camel-ai) team, supporting million-scale agent interaction simulations, providing a solid technical foundation for pubop's swarm intelligence emergence. We sincerely thank the CAMEL-AI team for their open-source contributions!
+Popinion's core simulation engine is powered by **[OASIS (Open Agent Social Interaction Simulations)](https://github.com/camel-ai/oasis)**. OASIS is a high-performance social media simulation framework developed by the [CAMEL-AI](https://github.com/camel-ai) team, supporting million-scale agent interaction simulations, providing a solid technical foundation for Popinion's swarm intelligence emergence. We sincerely thank the CAMEL-AI team for their open-source contributions!
 
 ## 📝 License
 
