@@ -27,7 +27,7 @@ from datetime import datetime
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
 from app.models.pubop import CrawlResult
-from app.services.crawler import LightPandaClient, TelegramCrawler, TwitterCrawler, FacebookCrawler, InstagramCrawler
+from app.services.crawler import LightPandaClient, TelegramCrawler, TwitterCrawler, FacebookCrawler, InstagramCrawler, TikTokCrawler
 from app.services.pubop_bridge import PubopBridge, RealDataSeed
 
 
@@ -183,6 +183,40 @@ async def crawl_instagram(username: str = None, hashtag: str = None, max_posts: 
     return result
 
 
+async def crawl_tiktok(username: str = None, hashtag: str = None, max_posts: int = 20, save: bool = True, engine: str = None) -> CrawlResult:
+    """Crawl TikTok profile or hashtag"""
+    target = f"@{username}" if username else f"#{hashtag}"
+    print(f"\n🎵 Crawling TikTok: {target}")
+    print(f"   Max videos: {max_posts}")
+    
+    # TikTok needs Browserless due to complex JS and anti-bot
+    engine = engine or "browserless"
+    async with LightPandaClient(engine=engine) as client:
+        print(f"   Engine: {client.engine}")
+        crawler = TikTokCrawler(client)
+        
+        if username:
+            posts = await crawler.scrape_channel(username, limit=max_posts)
+        else:
+            posts = await crawler.scrape_posts(hashtag, limit=max_posts)
+        
+        result = CrawlResult(
+            platform="tiktok",
+            query=target,
+            posts=posts
+        )
+    
+    print(f"   ✅ Found {len(result.posts)} videos")
+    
+    if save and len(result.posts) > 0:
+        safe_name = (username or hashtag).replace(" ", "_")[:30]
+        filename = f"tiktok_{safe_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        filepath = os.path.join(get_data_dir(), filename)
+        result.save(filepath)
+        print(f"   💾 Saved to: {filepath}")
+    
+    return result
+
 def bridge_to_seed(result: CrawlResult, anonymize: bool = True, max_profiles: int = 100) -> RealDataSeed:
     """Bridge crawl result to simulation seed"""
     print(f"\n🔗 Bridging to simulation format...")
@@ -289,6 +323,13 @@ def main():
     ig_parser.add_argument("--max-posts", type=int, default=20, help="Max posts to crawl")
     ig_parser.add_argument("--no-save", action="store_true", help="Don't save to file")
     
+    # TikTok command
+    tt_parser = subparsers.add_parser("tiktok", help="Crawl TikTok profile")
+    tt_parser.add_argument("--username", help="Profile username (without @)")
+    tt_parser.add_argument("--hashtag", help="Hashtag to search (without #)")
+    tt_parser.add_argument("--max-posts", type=int, default=20, help="Max videos to crawl")
+    tt_parser.add_argument("--no-save", action="store_true", help="Don't save to file")
+    
     # Bridge command
     bridge_parser = subparsers.add_parser("bridge", help="Bridge crawl result to simulation")
     bridge_parser.add_argument("--input", required=True, help="Input crawl result JSON file")
@@ -326,6 +367,12 @@ def main():
                 print("❌ Either --username or --hashtag is required")
                 return
             asyncio.run(crawl_instagram(args.username, args.hashtag, args.max_posts, save=not args.no_save))
+        
+        elif args.command == "tiktok":
+            if not args.username and not args.hashtag:
+                print("❌ Either --username or --hashtag is required")
+                return
+            asyncio.run(crawl_tiktok(args.username, args.hashtag, args.max_posts, save=not args.no_save))
         
         elif args.command == "bridge":
             result = CrawlResult.load(args.input)
