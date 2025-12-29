@@ -27,7 +27,7 @@ from datetime import datetime
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
 from app.models.pubop import CrawlResult
-from app.services.crawler import LightPandaClient, TelegramCrawler, TwitterCrawler, FacebookCrawler, InstagramCrawler, TikTokCrawler, YouTubeCrawler, LINECrawler, ZaloCrawler
+from app.services.crawler import LightPandaClient, TelegramCrawler, TwitterCrawler, FacebookCrawler, InstagramCrawler, TikTokCrawler, YouTubeCrawler, LINECrawler, ZaloCrawler, GenericWebCrawler
 from app.services.pubop_bridge import PubopBridge, RealDataSeed
 
 
@@ -313,6 +313,33 @@ async def crawl_zalo(query: str = None, category: str = None, max_posts: int = 2
     return result
 
 
+async def crawl_web(url: str, max_posts: int = 10, save: bool = True, engine: str = None) -> CrawlResult:
+    """Crawl any website/news URL"""
+    from urllib.parse import urlparse
+    domain = urlparse(url).netloc
+    
+    print(f"\n🌐 Crawling Web: {url}")
+    print(f"   Max articles: {max_posts}")
+    
+    engine = engine or "browserless"
+    async with LightPandaClient(engine=engine) as client:
+        print(f"   Engine: {client.engine}")
+        crawler = GenericWebCrawler(client)
+        posts = await crawler.scrape_channel(url, limit=max_posts)
+        result = CrawlResult(platform="web", query=url, posts=posts)
+    
+    print(f"   ✅ Found {len(result.posts)} articles")
+    
+    if save and len(result.posts) > 0:
+        safe_name = domain.replace(".", "_")[:30]
+        filename = f"web_{safe_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        filepath = os.path.join(get_data_dir(), filename)
+        result.save(filepath)
+        print(f"   💾 Saved to: {filepath}")
+    
+    return result
+
+
 def bridge_to_seed(result: CrawlResult, anonymize: bool = True, max_profiles: int = 100) -> RealDataSeed:
     """Bridge crawl result to simulation seed"""
     print(f"\n🔗 Bridging to simulation format...")
@@ -447,6 +474,12 @@ def main():
     zalo_parser.add_argument("--max-posts", type=int, default=20, help="Max articles to crawl")
     zalo_parser.add_argument("--no-save", action="store_true", help="Don't save to file")
     
+    # Web command (any URL)
+    web_parser = subparsers.add_parser("web", help="Crawl any website/news URL")
+    web_parser.add_argument("--url", required=True, help="URL to crawl")
+    web_parser.add_argument("--max-posts", type=int, default=10, help="Max articles to find")
+    web_parser.add_argument("--no-save", action="store_true", help="Don't save to file")
+    
     # Bridge command
     bridge_parser = subparsers.add_parser("bridge", help="Bridge crawl result to simulation")
     bridge_parser.add_argument("--input", required=True, help="Input crawl result JSON file")
@@ -502,6 +535,9 @@ def main():
         
         elif args.command == "zalo":
             asyncio.run(crawl_zalo(args.query, args.category, args.max_posts, save=not args.no_save))
+        
+        elif args.command == "web":
+            asyncio.run(crawl_web(args.url, args.max_posts, save=not args.no_save))
         
         elif args.command == "bridge":
             result = CrawlResult.load(args.input)

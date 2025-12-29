@@ -6,8 +6,8 @@ Provides:
 - LightPandaClient: CDP connection to headless browser
 - ProxyConfig: Proxy configuration with rotation pool
 - BaseCrawler: Abstract base class for platform crawlers
-- TelegramCrawler, TwitterCrawler, FacebookCrawler, InstagramCrawler
-- TikTokCrawler, YouTubeCrawler, LINECrawler, ZaloCrawler
+- Platform crawlers: Telegram, Twitter, Facebook, Instagram, TikTok, YouTube, LINE, Zalo
+- GenericWebCrawler: Scrapes any URL (news sites, blogs, articles)
 """
 
 from .client import LightPandaClient, ProxyConfig, get_lightpanda_client
@@ -20,6 +20,7 @@ from .tiktok import TikTokCrawler
 from .youtube import YouTubeCrawler
 from .line import LINECrawler
 from .zalo import ZaloCrawler
+from .web import GenericWebCrawler
 
 __all__ = [
     # Core
@@ -36,7 +37,10 @@ __all__ = [
     "YouTubeCrawler",
     "LINECrawler",
     "ZaloCrawler",
+    # Generic
+    "GenericWebCrawler",
 ]
+
 
 
 
