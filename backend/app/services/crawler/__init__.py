@@ -3,15 +3,11 @@ pubop Crawler Module
 Web scraping infrastructure for Real-World Simulation Prediction
 
 Provides:
-- LightPandaClient: CDP connection to headless browser (Browserless Chrome)
+- LightPandaClient: CDP connection to headless browser
 - ProxyConfig: Proxy configuration with rotation pool
 - BaseCrawler: Abstract base class for platform crawlers
-- TelegramCrawler: Scrapes public Telegram channels
-- TwitterCrawler: Scrapes Twitter/X search and profiles
-- FacebookCrawler: Scrapes public Facebook pages
-- InstagramCrawler: Scrapes public Instagram profiles
-- TikTokCrawler: Scrapes public TikTok profiles and hashtags
-- YouTubeCrawler: Scrapes public YouTube channels and videos
+- TelegramCrawler, TwitterCrawler, FacebookCrawler, InstagramCrawler
+- TikTokCrawler, YouTubeCrawler, LINECrawler, ZaloCrawler
 """
 
 from .client import LightPandaClient, ProxyConfig, get_lightpanda_client
@@ -22,6 +18,8 @@ from .facebook import FacebookCrawler
 from .instagram import InstagramCrawler
 from .tiktok import TikTokCrawler
 from .youtube import YouTubeCrawler
+from .line import LINECrawler
+from .zalo import ZaloCrawler
 
 __all__ = [
     # Core
@@ -36,7 +34,10 @@ __all__ = [
     "InstagramCrawler",
     "TikTokCrawler",
     "YouTubeCrawler",
+    "LINECrawler",
+    "ZaloCrawler",
 ]
+
 
 
 

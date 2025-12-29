@@ -27,7 +27,7 @@ from datetime import datetime
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
 from app.models.pubop import CrawlResult
-from app.services.crawler import LightPandaClient, TelegramCrawler, TwitterCrawler, FacebookCrawler, InstagramCrawler, TikTokCrawler, YouTubeCrawler
+from app.services.crawler import LightPandaClient, TelegramCrawler, TwitterCrawler, FacebookCrawler, InstagramCrawler, TikTokCrawler, YouTubeCrawler, LINECrawler, ZaloCrawler
 from app.services.pubop_bridge import PubopBridge, RealDataSeed
 
 
@@ -253,6 +253,66 @@ async def crawl_youtube(channel: str = None, query: str = None, max_posts: int =
     return result
 
 
+async def crawl_line(query: str = None, category: str = None, max_posts: int = 20, save: bool = True, engine: str = None) -> CrawlResult:
+    """Crawl LINE Today news (Thailand)"""
+    target = category or query or "homepage"
+    print(f"\n💬 Crawling LINE Today: {target}")
+    print(f"   Max articles: {max_posts}")
+    
+    engine = engine or "browserless"
+    async with LightPandaClient(engine=engine) as client:
+        print(f"   Engine: {client.engine}")
+        crawler = LINECrawler(client)
+        
+        if category:
+            posts = await crawler.scrape_channel(category, limit=max_posts)
+        else:
+            posts = await crawler.scrape_posts(query, limit=max_posts)
+        
+        result = CrawlResult(platform="line", query=target, posts=posts)
+    
+    print(f"   ✅ Found {len(result.posts)} articles")
+    
+    if save and len(result.posts) > 0:
+        safe_name = (category or query or "today").replace(" ", "_")[:30]
+        filename = f"line_{safe_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        filepath = os.path.join(get_data_dir(), filename)
+        result.save(filepath)
+        print(f"   💾 Saved to: {filepath}")
+    
+    return result
+
+
+async def crawl_zalo(query: str = None, category: str = None, max_posts: int = 20, save: bool = True, engine: str = None) -> CrawlResult:
+    """Crawl Zalo News (Vietnam)"""
+    target = category or query or "homepage"
+    print(f"\n📱 Crawling Zalo News: {target}")
+    print(f"   Max articles: {max_posts}")
+    
+    engine = engine or "browserless"
+    async with LightPandaClient(engine=engine) as client:
+        print(f"   Engine: {client.engine}")
+        crawler = ZaloCrawler(client)
+        
+        if category:
+            posts = await crawler.scrape_channel(category, limit=max_posts)
+        else:
+            posts = await crawler.scrape_posts(query, limit=max_posts)
+        
+        result = CrawlResult(platform="zalo", query=target, posts=posts)
+    
+    print(f"   ✅ Found {len(result.posts)} articles")
+    
+    if save and len(result.posts) > 0:
+        safe_name = (category or query or "news").replace(" ", "_")[:30]
+        filename = f"zalo_{safe_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        filepath = os.path.join(get_data_dir(), filename)
+        result.save(filepath)
+        print(f"   💾 Saved to: {filepath}")
+    
+    return result
+
+
 def bridge_to_seed(result: CrawlResult, anonymize: bool = True, max_profiles: int = 100) -> RealDataSeed:
     """Bridge crawl result to simulation seed"""
     print(f"\n🔗 Bridging to simulation format...")
@@ -373,6 +433,20 @@ def main():
     yt_parser.add_argument("--max-posts", type=int, default=20, help="Max videos to crawl")
     yt_parser.add_argument("--no-save", action="store_true", help="Don't save to file")
     
+    # LINE command (Thailand)
+    line_parser = subparsers.add_parser("line", help="Crawl LINE Today news (Thailand)")
+    line_parser.add_argument("--query", help="Search topic (optional)")
+    line_parser.add_argument("--category", help="News category")
+    line_parser.add_argument("--max-posts", type=int, default=20, help="Max articles to crawl")
+    line_parser.add_argument("--no-save", action="store_true", help="Don't save to file")
+    
+    # Zalo command (Vietnam)
+    zalo_parser = subparsers.add_parser("zalo", help="Crawl Zalo News (Vietnam)")
+    zalo_parser.add_argument("--query", help="Search topic (optional)")
+    zalo_parser.add_argument("--category", help="News category")
+    zalo_parser.add_argument("--max-posts", type=int, default=20, help="Max articles to crawl")
+    zalo_parser.add_argument("--no-save", action="store_true", help="Don't save to file")
+    
     # Bridge command
     bridge_parser = subparsers.add_parser("bridge", help="Bridge crawl result to simulation")
     bridge_parser.add_argument("--input", required=True, help="Input crawl result JSON file")
@@ -422,6 +496,12 @@ def main():
                 print("❌ Either --channel or --query is required")
                 return
             asyncio.run(crawl_youtube(args.channel, args.query, args.max_posts, save=not args.no_save))
+        
+        elif args.command == "line":
+            asyncio.run(crawl_line(args.query, args.category, args.max_posts, save=not args.no_save))
+        
+        elif args.command == "zalo":
+            asyncio.run(crawl_zalo(args.query, args.category, args.max_posts, save=not args.no_save))
         
         elif args.command == "bridge":
             result = CrawlResult.load(args.input)
