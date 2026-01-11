@@ -15,7 +15,7 @@ from ..config import Config
 from ..models.task import TaskManager, TaskStatus
 from .text_processor import TextProcessor
 from .neo4j_service import Neo4jService
-from .llm_entity_extractor import LLMEntityExtractor
+from .llm_entity_extractor import LLMEntityExtractor, ExtractionError
 from ..utils.logger import get_logger
 
 logger = get_logger('pubop.graph_builder')
@@ -65,7 +65,7 @@ class GraphBuilderService:
         self,
         text: str,
         ontology: Dict[str, Any],
-        graph_name: str = "Fishi Graph",
+        graph_name: str = "Popinion Graph",
         chunk_size: int = 500,
         chunk_overlap: int = 50,
         batch_size: int = 3
@@ -167,6 +167,13 @@ class GraphBuilderService:
             
             graph_information = self._get_graph_information(graph_id)
             
+            # FAIL-SAFE: Don't mark complete if graph is empty
+            if graph_information.node_count == 0:
+                raise RuntimeError(
+                    "Graph build failed: No entities were extracted. "
+                    "This may be due to rate limiting. Please try again later."
+                )
+            
             # Set to 100% before completing
             self.task_manager.update_task(
                 task_id,
@@ -205,7 +212,7 @@ class GraphBuilderService:
             properties={
                 "graph_id": graph_id,
                 "name": name,
-                "description": "Fishi Social Simulation Graph",
+                "description": "Popinion Social Simulation Graph",
                 "created_at": datetime.now().isoformat()
             }
         )
@@ -275,8 +282,12 @@ class GraphBuilderService:
             
         Returns:
             List of processed chunk IDs
+            
+        Raises:
+            RuntimeError: If more than 50% of chunks fail extraction
         """
         processed_ids = []
+        failed_chunks = 0
         total_chunks = len(chunks)
         
         for i in range(0, total_chunks, batch_size):
@@ -292,7 +303,8 @@ class GraphBuilderService:
                 )
             
             # Process each chunk
-            for chunk in batch_chunks:
+            for j, chunk in enumerate(batch_chunks):
+                chunk_idx = i + j
                 try:
                     # Extract entities and relationships using LLM
                     extraction = self.entity_extractor.extract_entities(chunk, ontology)
@@ -304,13 +316,26 @@ class GraphBuilderService:
                         source_text=chunk[:100]  # First 100 chars for reference
                     )
                     
-                    processed_ids.append(f"chunk_{i}")
+                    processed_ids.append(f"chunk_{chunk_idx}")
                     
+                except ExtractionError as e:
+                    failed_chunks += 1
+                    logger.error(f"Failed to process chunk {chunk_idx}: {e}")
                 except Exception as e:
-                    logger.error(f"Failed to process chunk {i}: {e}")
-            
-            # Avoid request overload
-            time.sleep(0.5)
+                    failed_chunks += 1
+                    logger.error(f"Unexpected error processing chunk {chunk_idx}: {e}")
+                
+                # Rate limit protection: wait between each chunk (20 RPM = 3s between requests)
+                time.sleep(3.0)
+        
+        # Validation: fail if too many chunks failed
+        if total_chunks > 0:
+            failure_rate = failed_chunks / total_chunks
+            if failure_rate > 0.5:
+                raise RuntimeError(
+                    f"Extraction failed: {failed_chunks}/{total_chunks} chunks failed ({failure_rate:.0%}). "
+                    "This is likely due to rate limiting. Please try again later."
+                )
         
         return processed_ids
     

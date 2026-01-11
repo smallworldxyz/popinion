@@ -4,6 +4,8 @@
 > *"The goal isn't to be right. It's to become less wrong."*
 ---
 
+specs --> design --> implementation --> testing --> iteration --> release --> feedback --> iteration --> release.
+
 ## The Core Philosophy
 
 **"Become less wrong."**
@@ -112,6 +114,70 @@ Beyond 1:1 graph connections — a **platform** for collective intelligence.
 ### Value Proposition
 
 > *"Don't build your world model from scratch. Search the global library. Find perspectives you're missing. Become less wrong — faster."*
+
+---
+
+## Deep Interaction Enhancements
+
+Beyond one-on-one agent interviews, Popinion V introduces **collective interaction modes**.
+
+### Panel Chat (Talk to All Agents at Once)
+
+> *"What does the room think?"*
+
+Instead of interviewing agents one by one, ask a question to **all agents simultaneously** — like addressing a panel of experts.
+
+**How It Works:**
+
+1. User poses a question: *"What are your views on the new economic policy?"*
+2. All selected agents (or all 35) respond in parallel
+3. Responses are aggregated and displayed:
+   - **By stance**: Group supporters vs. critics
+   - **By faction**: Government officials vs. civil society
+   - **By theme**: Economic concerns vs. political concerns
+
+**Use Cases:**
+- Quick pulse check on a controversial topic
+- Identify fault lines in the simulated society
+- Discover unexpected alliances or oppositions
+
+**Output Options:**
+- Individual responses (expanded view)
+- Summarized consensus/dissent report
+- Stance distribution chart
+
+---
+
+### Send Survey to Simulation World
+
+> *"Mass polling the digital mirror."*
+
+Deploy structured surveys to agents — not just open-ended questions, but **formatted questionnaires** with measurable responses.
+
+**Survey Types:**
+
+| Type | Description |
+|------|-------------|
+| **Opinion Poll** | Single question, multiple choice (Agree/Disagree/Neutral) |
+| **Likert Scale** | Rate agreement 1-5 on a statement |
+| **Ranking** | Rank options by preference |
+| **Open Response** | Free-form answers (analyzed for themes) |
+
+**Workflow:**
+
+1. **Create Survey**: Define questions and response format
+2. **Select Targets**: All agents, or filter by type (e.g., only Government officials)
+3. **Deploy**: Agents respond based on their persona and memory
+4. **Analyze**: Aggregated results with breakdowns by faction, stance, demographics
+
+**Key Features:**
+- **Before/After Comparison**: Run same survey pre- and post-simulation to measure shift
+- **Cross-Segment Analysis**: Compare responses between factions
+- **Export**: Download results as CSV/JSON for external analysis
+
+**Example Use Case:**
+> *"Survey all agents: 'Would you support a 10% increase in minimum wage?'"*  
+> Results: 60% support (mostly labor groups), 25% oppose (business leaders), 15% neutral
 
 ---
 

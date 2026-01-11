@@ -1,5 +1,5 @@
 """
-Fishi Backend entry point
+Popinion Backend entry point
 """
 
 from app import create_app

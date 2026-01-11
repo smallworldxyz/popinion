@@ -5,12 +5,18 @@ Replaces manual entity extraction with LLM-based extraction
 
 import json
 from typing import Dict, Any, List, Optional
-from openai import OpenAI
 
 from ..config import Config
 from ..utils.logger import get_logger
+from ..utils.llm_client import LLMClient
 
 logger = get_logger('pubop.llm_entity_extractor')
+
+
+class ExtractionError(Exception):
+    """Raised when entity extraction fails"""
+    pass
+
 
 
 class LLMEntityExtractor:
@@ -29,18 +35,16 @@ class LLMEntityExtractor:
         Initialize entity extractor
         
         Args:
-            api_key: OpenAI-compatible API key
-            base_url: API base URL
-            model_name: Model name
+            api_key: OpenAI-compatible API key (passed to LLMClient)
+            base_url: API base URL (passed to LLMClient)
+            model_name: Model name (passed to LLMClient)
         """
-        self.api_key = api_key or Config.LLM_API_KEY
-        self.base_url = base_url or Config.LLM_BASE_URL
-        self.model_name = model_name or Config.LLM_MODEL_NAME
-        
-        if not self.api_key:
-            raise ValueError("LLM_API_KEY not configured")
-        
-        self.client = OpenAI(api_key=self.api_key, base_url=self.base_url)
+        # Use centralized LLMClient for retry logic and rate limit handling
+        self.llm_client = LLMClient(
+            api_key=api_key,
+            base_url=base_url,
+            model=model_name
+        )
     
     def extract_entities(
         self,
@@ -81,8 +85,8 @@ class LLMEntityExtractor:
         prompt = self._build_extraction_prompt(text, ontology)
         
         try:
-            response = self.client.chat.completions.create(
-                model=self.model_name,
+            # Use LLMClient for centralized retry logic
+            result = self.llm_client.chat_json(
                 messages=[
                     {
                         "role": "system",
@@ -95,22 +99,8 @@ class LLMEntityExtractor:
                         "content": prompt
                     }
                 ],
-                temperature=0.3,
-                response_format={"type": "json_object"} if hasattr(self.client, 'response_format') else None
+                temperature=0.3
             )
-            
-            result_text = response.choices[0].message.content
-            if not result_text:
-                logger.error("LLM returned empty response")
-                return {"entities": [], "relationships": []}
-                
-            try:
-                result = json.loads(result_text)
-            except json.JSONDecodeError as je:
-                logger.error(f"Failed to parse LLM response as JSON: {je}")
-                logger.error(f"Raw response: {result_text}")
-                # Try to repair common JSON errors if needed, or structured fallback
-                return {"entities": [], "relationships": []}
             
             # Validate and normalize result
             normalized = self._normalize_extraction(result, ontology)
@@ -122,7 +112,7 @@ class LLMEntityExtractor:
             
         except Exception as e:
             logger.error(f"Entity extraction failed: {e}")
-            return {"entities": [], "relationships": []}
+            raise ExtractionError(f"Failed to extract entities: {e}")
     
     def _build_extraction_prompt(self, text: str, ontology: Dict[str, Any]) -> str:
         """Build extraction prompt with ontology guidance"""
@@ -353,33 +343,24 @@ CRITICAL: Each entity MUST have a summary and at least 2 properties.
 """
         
         try:
-            response = self.client.chat.completions.create(
-                model=self.model_name,
+            # Use LLMClient for centralized retry logic
+            result = self.llm_client.chat_json(
                 messages=[
                     {"role": "system", "content": "Extract structured data from social media activities with rich details. Return JSON only."},
                     {"role": "user", "content": prompt}
                 ],
-                temperature=0.3,
-                response_format={"type": "json_object"} if hasattr(self.client, 'response_format') else None
+                temperature=0.3
             )
             
-            result_text = response.choices[0].message.content
-            if not result_text:
-                return {"entities": [], "relationships": []}
-                
-            try:
-                result = json.loads(result_text)
-                # Ensure summary is included in properties for each entity
-                for entity in result.get("entities", []):
-                    if entity.get("summary") and "summary" not in entity.get("properties", {}):
-                        if "properties" not in entity:
-                            entity["properties"] = {}
-                        entity["properties"]["summary"] = entity["summary"]
-                return result
-            except json.JSONDecodeError:
-                logger.error(f"Failed to parse activity extraction JSON: {result_text}")
-                return {"entities": [], "relationships": []}
+            # Ensure summary is included in properties for each entity
+            for entity in result.get("entities", []):
+                if entity.get("summary") and "summary" not in entity.get("properties", {}):
+                    if "properties" not in entity:
+                        entity["properties"] = {}
+                    entity["properties"]["summary"] = entity["summary"]
+            return result
             
         except Exception as e:
             logger.error(f"Activity extraction failed: {e}")
-            return {"entities": [], "relationships": []}
+            raise ExtractionError(f"Failed to extract from activity: {e}")
+

@@ -10,10 +10,19 @@ export const createSimulation = (data) => {
 
 /**
  * Prepare simulation environment (async task)
- * @param {Object} data - { simulation_id, entity_types?, use_llm_for_profiles?, parallel_profile_count?, force_regenerate? }
+ * @param {Object} data - { simulation_id, entity_types?, selected_entity_ids?, use_llm_for_profiles?, parallel_profile_count?, force_regenerate? }
  */
 export const prepareSimulation = (data) => {
   return requestWithRetry(() => service.post('/api/simulation/prepare', data), 3, 1000)
+}
+
+/**
+ * Preview entities before preparation - returns list for user selection
+ * @param {Object} data - { simulation_id, entity_types? }
+ * @returns {Promise} Entity list grouped by type with counts
+ */
+export const preparePreview = (data) => {
+  return service.post('/api/simulation/prepare/preview', data)
 }
 
 /**
@@ -175,4 +184,45 @@ export const getEnvStatus = (data) => {
 export const interviewAgents = (data) => {
   return requestWithRetry(() => service.post('/api/simulation/interview/batch', data), 3, 1000)
 }
+
+/**
+ * Panel Chat - Ask all agents the same question with aggregated responses
+ * @param {Object} data - { simulation_id, prompt, platform?, classify_stance?, generate_summary?, timeout? }
+ */
+export const panelChat = (data) => {
+  return requestWithRetry(() => service.post('/api/simulation/panel-chat', data), 3, 2000)
+}
+
+/**
+ * Create a survey template
+ * @param {Object} data - { title, description?, questions: [{question_text, question_type, options?}] }
+ */
+export const createSurvey = (data) => {
+  return service.post('/api/simulation/survey/create', data)
+}
+
+/**
+ * Deploy survey to agents
+ * @param {Object} data - { simulation_id, survey_id, platform?, timeout? }
+ */
+export const deploySurvey = (data) => {
+  return requestWithRetry(() => service.post('/api/simulation/survey/deploy', data), 3, 2000)
+}
+
+/**
+ * List all survey templates
+ */
+export const listSurveys = () => {
+  return service.get('/api/simulation/survey/list')
+}
+
+/**
+ * Get a specific survey template
+ * @param {string} surveyId
+ */
+export const getSurvey = (surveyId) => {
+  return service.get(`/api/simulation/survey/${surveyId}`)
+}
+
+
 

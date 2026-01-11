@@ -334,7 +334,7 @@ def build_graph():
         # Parse request
         data = request.get_json()
         project_id = data.get('project_id', '').strip()
-        graph_name = data.get('graph_name', '').strip() or "Fishi Graph"
+        graph_name = data.get('graph_name', '').strip() or "Popinion Graph"
         chunk_size = int(data.get('chunk_size', Config.DEFAULT_CHUNK_SIZE))
         chunk_overlap = int(data.get('chunk_overlap', Config.DEFAULT_CHUNK_OVERLAP))
         

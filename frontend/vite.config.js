@@ -19,10 +19,12 @@ export default defineConfig({
     port: 4173,
     proxy: {
       '/api': {
-        target: 'https://api-fishi.tunnel.koompi.cloud',
+        target: 'https://api-vi.tunnel.koompi.cloud',
         changeOrigin: true,
         secure: false
       }
     }
   }
 })
+
+// bun run build && bun run preview && jrok--port 4173 --domain vi && jrok--port 5001 --domain api - vi

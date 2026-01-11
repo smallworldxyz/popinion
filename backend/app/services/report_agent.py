@@ -1431,40 +1431,51 @@ Already called tools {tool_calls_count}/{self.MAX_TOOL_CALLS_PER_SECTION} times
             
             self.console_logger = ReportConsoleLogger(report_id)
             
-            ReportManager.update_progress(
-                report_id, "pending", 0, "Initializing report...",
-                completed_sections=[]
-            )
-            ReportManager.save_report(report)
-            
-            # Stage 1: Plan Outline
-            report.status = ReportStatus.PLANNING
-            ReportManager.update_progress(
-                report_id, "planning", 5, "Start planning report outline...",
-                completed_sections=[]
-            )
-            
-            self.report_logger.log_planning_start()
-            
-            if progress_callback:
-                progress_callback("planning", 0, "Start planning report outline...")
-            
-            outline = self.plan_outline(
-                progress_callback=lambda stage, prog, msg: 
-                    progress_callback(stage, prog // 5, msg) if progress_callback else None
-            )
-            report.outline = outline
-            
-            self.report_logger.log_planning_complete(outline.to_dict())
-            
-            ReportManager.save_outline(report_id, outline)
-            ReportManager.update_progress(
-                report_id, "planning", 15, f"Outline planned, total {len(outline.sections)} sections",
-                completed_sections=[]
-            )
-            ReportManager.save_report(report)
-            
-            logger.info(f"Outline saved: {report_id}/outline.json")
+            # Check for existing outline to resume
+            existing_outline = ReportManager.get_outline(report_id)
+            if existing_outline:
+                logger.info(f"Report {report_id} resuming: existing outline found.")
+                outline = existing_outline
+                report.outline = outline
+                ReportManager.update_progress(
+                    report_id, "planning", 15, f"Resuming report: using existing outline",
+                    completed_sections=[]
+                )
+            else:
+                ReportManager.update_progress(
+                    report_id, "pending", 0, "Initializing report...",
+                    completed_sections=[]
+                )
+                ReportManager.save_report(report)
+                
+                # Stage 1: Plan Outline
+                report.status = ReportStatus.PLANNING
+                ReportManager.update_progress(
+                    report_id, "planning", 5, "Start planning report outline...",
+                    completed_sections=[]
+                )
+                
+                self.report_logger.log_planning_start()
+                
+                if progress_callback:
+                    progress_callback("planning", 0, "Start planning report outline...")
+                
+                outline = self.plan_outline(
+                    progress_callback=lambda stage, prog, msg: 
+                        progress_callback(stage, prog // 5, msg) if progress_callback else None
+                )
+                report.outline = outline
+                
+                self.report_logger.log_planning_complete(outline.to_dict())
+                
+                ReportManager.save_outline(report_id, outline)
+                ReportManager.update_progress(
+                    report_id, "planning", 15, f"Outline planned, total {len(outline.sections)} sections",
+                    completed_sections=[]
+                )
+                ReportManager.save_report(report)
+                
+                logger.info(f"Outline saved: {report_id}/outline.json")
             
             # Stage 2: Generate Section by Section
             report.status = ReportStatus.GENERATING
@@ -1476,6 +1487,17 @@ Already called tools {tool_calls_count}/{self.MAX_TOOL_CALLS_PER_SECTION} times
                 section_num = i + 1
                 base_progress = 20 + int((i / total_sections) * 70)
                 
+                # Check if section file already exists for resumption
+                existing_section_content = ReportManager.get_section_content(report_id, section_num)
+                if existing_section_content:
+                    logger.info(f"Resuming section {section_num}: {section.title} - already exists, skipping generation")
+                    generated_sections.append(existing_section_content)
+                    completed_section_titles.append(section.title)
+                    # For UI display consistency, add subsections if outline has them
+                    for sub in section.subsections:
+                        completed_section_titles.append(f"  └─ {sub.title}")
+                    continue
+
                 ReportManager.update_progress(
                     report_id, "generating", base_progress,
                     f"Generating section: {section.title} ({section_num}/{total_sections})",
@@ -1906,6 +1928,50 @@ class ReportManager:
             json.dump(outline.to_dict(), f, ensure_ascii=False, indent=2)
         
         logger.info(f"Outline saved: {report_id}")
+
+    @classmethod
+    def get_outline(cls, report_id: str) -> Optional[ReportOutline]:
+        """Get report outline from file"""
+        path = cls._get_outline_path(report_id)
+        if not os.path.exists(path):
+            return None
+            
+        with open(path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            
+        sections = []
+        for sec_data in data.get("sections", []):
+            subs = []
+            for sub_data in sec_data.get("subsections", []):
+                subs.append(ReportSection(
+                    title=sub_data.get("title", ""),
+                    content=sub_data.get("content", "")
+                ))
+            sections.append(ReportSection(
+                title=sec_data.get("title", ""),
+                content=sec_data.get("content", ""),
+                subsections=subs
+            ))
+            
+        return ReportOutline(
+            title=data.get("title", ""),
+            summary=data.get("summary", ""),
+            sections=sections
+        )
+
+    @classmethod
+    def get_section_content(cls, report_id: str, section_index: int) -> Optional[str]:
+        """Get section content from markdown file"""
+        path = cls._get_section_path(report_id, section_index)
+        if not os.path.exists(path):
+            return None
+            
+        with open(path, 'r', encoding='utf-8') as f:
+            content = f.read()
+            
+        # Optional: remove the ## Section Title if it was saved with it
+        # Based on save_section_with_subsections, it might have it
+        return content
     
     @classmethod
     def save_section(
