@@ -145,6 +145,9 @@ class SurveyService:
     - Aggregate responses by question and faction
     """
     
+    # Valid question types for validation
+    VALID_QUESTION_TYPES = {"opinion_poll", "likert"}
+    
     def __init__(self):
         self.surveys_dir = os.path.join(Config.UPLOAD_FOLDER, "surveys")
         os.makedirs(self.surveys_dir, exist_ok=True)
@@ -165,23 +168,54 @@ class SurveyService:
             
         Returns:
             SurveyTemplate
+            
+        Raises:
+            ValueError: If validation fails
         """
+        # Validate title
+        if not title or not title.strip():
+            raise ValueError("Survey title is required and cannot be empty")
+        
+        # Validate questions
+        if not questions:
+            raise ValueError("At least one question is required")
+        
         survey_id = f"survey_{uuid.uuid4().hex[:8]}"
         
         survey_questions = []
         for i, q in enumerate(questions):
+            # Validate question_text
+            question_text = q.get("question_text", "").strip()
+            if not question_text:
+                raise ValueError(f"Question {i+1}: question_text is required and cannot be empty")
+            
+            # Validate question_type
+            question_type = q.get("question_type", "opinion_poll")
+            if question_type not in self.VALID_QUESTION_TYPES:
+                raise ValueError(
+                    f"Question {i+1}: Invalid question_type '{question_type}'. "
+                    f"Must be one of: {', '.join(sorted(self.VALID_QUESTION_TYPES))}"
+                )
+            
+            # Validate options for opinion_poll
+            options = q.get("options", self._get_default_options(question_type))
+            if question_type == "opinion_poll" and len(options) < 2:
+                raise ValueError(
+                    f"Question {i+1}: Opinion poll requires at least 2 options"
+                )
+            
             question = SurveyQuestion(
                 question_id=f"q{i+1}",
-                question_text=q.get("question_text", ""),
-                question_type=SurveyType(q.get("question_type", "opinion_poll")),
-                options=q.get("options", self._get_default_options(q.get("question_type", "opinion_poll")))
+                question_text=question_text,
+                question_type=SurveyType(question_type),
+                options=options
             )
             survey_questions.append(question)
         
         template = SurveyTemplate(
             survey_id=survey_id,
-            title=title,
-            description=description,
+            title=title.strip(),
+            description=description.strip() if description else "",
             questions=survey_questions
         )
         

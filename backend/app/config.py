@@ -66,6 +66,11 @@ class Config:
     REPORT_AGENT_MAX_REFLECTION_ROUNDS = int(os.environ.get('REPORT_AGENT_MAX_REFLECTION_ROUNDS', '2'))
     REPORT_AGENT_TEMPERATURE = float(os.environ.get('REPORT_AGENT_TEMPERATURE', '0.5'))
     
+    # Panel Chat and Survey timeout configuration (in seconds)
+    PANEL_CHAT_TIMEOUT_DEFAULT = int(os.environ.get('PANEL_CHAT_TIMEOUT', '180'))
+    SURVEY_DEPLOY_TIMEOUT_DEFAULT = int(os.environ.get('SURVEY_DEPLOY_TIMEOUT', '180'))
+    INTERVIEW_BATCH_TIMEOUT_DEFAULT = int(os.environ.get('INTERVIEW_BATCH_TIMEOUT', '120'))
+    
     @classmethod
     def validate(cls):
         """Validate required configuration"""

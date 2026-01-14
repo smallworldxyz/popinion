@@ -1409,9 +1409,20 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  // Remove event listeners
   document.removeEventListener('click', handleClickOutside)
   document.removeEventListener('selectionchange', handleTextSelection)
+  
+  // Clear timeouts
   clearTimeout(selectionTimeout)
+  
+  // Clear selection state to prevent memory leaks
+  selectionPopup.value = null
+  pendingHighlight.value = null
+  selectedTags.value.clear()
+  
+  // Clear chat state
+  chatHistoryCache.value = {}
 })
 
 watch(() => props.reportId, (newId) => {

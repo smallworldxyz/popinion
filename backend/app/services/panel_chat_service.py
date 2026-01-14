@@ -84,7 +84,7 @@ class PanelChatResult:
                     {
                         "agent_id": r.agent_id,
                         "agent_name": r.agent_name,
-                        "response": r.response[:200] + "..." if len(r.response) > 200 else r.response,
+                        "response": r.response[:self.RESPONSE_PREVIEW_LENGTH] + "..." if len(r.response) > self.RESPONSE_PREVIEW_LENGTH else r.response,
                         "faction": r.faction,
                     }
                     for r in responses
@@ -96,7 +96,7 @@ class PanelChatResult:
                     {
                         "agent_id": r.agent_id,
                         "agent_name": r.agent_name,
-                        "response": r.response[:200] + "..." if len(r.response) > 200 else r.response,
+                        "response": r.response[:self.RESPONSE_PREVIEW_LENGTH] + "..." if len(r.response) > self.RESPONSE_PREVIEW_LENGTH else r.response,
                         "stance": r.stance.value,
                     }
                     for r in responses
@@ -118,6 +118,11 @@ class PanelChatService:
     - Faction grouping
     - Statistical analysis
     """
+    
+    # Constants
+    STANCE_CLASSIFICATION_BATCH_SIZE = 10  # Number of responses to classify per LLM call
+    RESPONSE_PREVIEW_LENGTH = 200          # Max characters for response preview in grouped views
+    RESPONSE_TRUNCATE_LENGTH = 300         # Max characters for response in classification prompt
     
     def __init__(self):
         self.api_key = Config.LLM_API_KEY
@@ -249,7 +254,7 @@ class PanelChatService:
         """
         try:
             # Batch classify stances for efficiency
-            batch_size = 10
+            batch_size = self.STANCE_CLASSIFICATION_BATCH_SIZE
             all_classified = []
             
             for i in range(0, len(responses), batch_size):
@@ -273,7 +278,7 @@ class PanelChatService:
         # Build prompt
         response_texts = []
         for i, r in enumerate(responses):
-            response_texts.append(f"{i+1}. {r.agent_name}: {r.response[:300]}")
+            response_texts.append(f"{i+1}. {r.agent_name}: {r.response[:self.RESPONSE_TRUNCATE_LENGTH]}")
         
         prompt = f"""Classify each response's stance on the following question.
 
