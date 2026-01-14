@@ -37,6 +37,8 @@ from .simulation_ipc import (
     CommandStatus
 )
 from .neo4j_tools import Neo4jToolsService
+from .panel_chat_service import PanelChatService, PanelChatResult, AgentResponse, Stance
+from .survey_service import SurveyService, SurveyTemplate, SurveyQuestion, SurveyType, SurveyResult
 
 __all__ = [
     'OntologyGenerator', 
@@ -71,4 +73,8 @@ __all__ = [
     'CommandType',
     'CommandStatus',
     'Neo4jToolsService',
+    'PanelChatService',
+    'PanelChatResult',
+    'AgentResponse',
+    'Stance',
 ]

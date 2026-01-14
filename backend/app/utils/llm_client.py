@@ -39,31 +39,64 @@ class LLMClient:
         response_format: Optional[Dict] = None
     ) -> str:
         """
-        Send chat request
-        
-        Args:
-            messages: Message list
-            temperature: Temperature parameter
-            max_tokens: Maximum token count
-            response_format: Response format (e.g., JSON mode)
-            
-        Returns:
-            Model response text
+        Send chat request with retry logic
         """
-        kwargs = {
-            "model": self.model,
-            "messages": messages,
-            "temperature": temperature,
-            "max_tokens": max_tokens,
-        }
+        import time
+        import re
+        import random
+        from openai import RateLimitError
         
-        if response_format:
-            kwargs["response_format"] = response_format
+        max_retries = 10  # Increased for better resilience
+        base_delay = 10.0
         
-        response = self.client.chat.completions.create(**kwargs)
-        content = response.choices[0].message.content
-        # Ensure we never return None
-        return content if content is not None else ""
+        for attempt in range(max_retries):
+            try:
+                kwargs = {
+                    "model": self.model,
+                    "messages": messages,
+                    "temperature": temperature,
+                    "max_tokens": max_tokens,
+                }
+                
+                if response_format:
+                    kwargs["response_format"] = response_format
+                
+                response = self.client.chat.completions.create(**kwargs)
+                content = response.choices[0].message.content
+                return content if content is not None else ""
+                
+            except RateLimitError as e:
+                from ..utils.logger import get_logger
+                logger = get_logger('pubop.llm_client')
+                
+                if attempt < max_retries - 1:
+                    # Try to extract retry delay from API error message
+                    error_str = str(e)
+                    retry_match = re.search(r'retry in (\d+\.?\d*)s', error_str)
+                    
+                    if retry_match:
+                        # Use API-provided delay + jitter
+                        api_delay = float(retry_match.group(1))
+                        wait_time = api_delay + random.uniform(0.5, 2.0)
+                        logger.warning(
+                            f"LLM Rate Limit (429) hit. API says wait {api_delay:.1f}s, "
+                            f"waiting {wait_time:.1f}s (with jitter)... (Attempt {attempt + 1}/{max_retries})"
+                        )
+                    else:
+                        # Fallback to exponential backoff with jitter
+                        wait_time = base_delay * (2 ** attempt) + random.uniform(0.5, 2.0)
+                        wait_time = min(wait_time, 120.0)  # Cap at 2 minutes
+                        logger.warning(
+                            f"LLM Rate Limit (429) hit, retrying in {wait_time:.1f}s... "
+                            f"(Attempt {attempt + 1}/{max_retries})"
+                        )
+                    
+                    time.sleep(wait_time)
+                else:
+                    logger.error(f"LLM Rate Limit exceeded after {max_retries} attempts: {e}")
+                    raise
+            except Exception as e:
+                raise
     
     def chat_json(
         self,

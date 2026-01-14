@@ -16,10 +16,9 @@ from typing import Dict, Any, List, Optional, Callable
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 
-from openai import OpenAI
-
 from ..config import Config
 from ..utils.logger import get_logger
+from ..utils.llm_client import LLMClient
 from .neo4j_entity_reader import EntityNode, Neo4jEntityReader
 
 logger = get_logger('pubop.simulation_config')
@@ -214,17 +213,14 @@ class SimulationConfigGenerator:
         base_url: Optional[str] = None,
         model_name: Optional[str] = None
     ):
-        self.api_key = api_key or Config.LLM_API_KEY
-        self.base_url = base_url or Config.LLM_BASE_URL
-        self.model_name = model_name or Config.LLM_MODEL_NAME
-        
-        if not self.api_key:
-            raise ValueError("LLM_API_KEY not configured")
-        
-        self.client = OpenAI(
-            api_key=self.api_key,
-            base_url=self.base_url
+        # Use centralized LLMClient for retry logic and rate limit handling
+        self.llm_client = LLMClient(
+            api_key=api_key,
+            base_url=base_url,
+            model=model_name
         )
+        self.model_name = model_name or Config.LLM_MODEL_NAME
+        self.base_url = base_url or Config.LLM_BASE_URL
     
     def generate_config(
         self,
@@ -400,39 +396,28 @@ class SimulationConfigGenerator:
         return "\n".join(lines)
     
     def _call_llm_with_retry(self, prompt: str, system_prompt: str) -> Dict[str, Any]:
-        """LLM call with retry, includes JSON fix logic"""
+        """LLM call with retry, includes JSON fix logic. Uses LLMClient for rate limit handling."""
         max_attempts = 3
         last_error = None
         
         for attempt in range(max_attempts):
             try:
-                response = self.client.chat.completions.create(
-                    model=self.model_name,
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": prompt}
-                    ],
-                    response_format={"type": "json_object"},
+                # Use LLMClient.chat_json for centralized retry logic
+                messages = [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": prompt}
+                ]
+                
+                result = self.llm_client.chat_json(
+                    messages=messages,
                     temperature=0.7 - (attempt * 0.1)
                 )
+                return result
                 
-                content = response.choices[0].message.content
-                finish_reason = response.choices[0].finish_reason
-                
-                if finish_reason == 'length':
-                    logger.warning(f"LLM output truncated (attempt {attempt+1})")
-                    content = self._fix_truncated_json(content)
-                
-                try:
-                    return json.loads(content)
-                except json.JSONDecodeError as e:
-                    logger.warning(f"JSON parse failed (attempt {attempt+1}): {str(e)[:80]}")
-                    
-                    fixed = self._try_fix_config_json(content)
-                    if fixed:
-                        return fixed
-                    
-                    last_error = e
+            except ValueError as e:
+                # LLMClient.chat_json raises ValueError for invalid JSON
+                logger.warning(f"JSON parse failed (attempt {attempt+1}): {str(e)[:80]}")
+                last_error = e
                     
             except Exception as e:
                 logger.warning(f"LLM call failed (attempt {attempt+1}): {str(e)[:80]}")

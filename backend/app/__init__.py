@@ -1,5 +1,5 @@
 """
-Fishi Backend - Flask Application Factory
+Popinion Backend - Flask Application Factory
 """
 
 import os
@@ -36,7 +36,7 @@ def create_app(config_class=Config):
     
     if should_log_startup:
         logger.info("=" * 50)
-        logger.info("Fishi Backend starting...")
+        logger.info("Popinion Backend starting...")
         logger.info("=" * 50)
     
     # Enable CORS
@@ -72,9 +72,9 @@ def create_app(config_class=Config):
     # Health check
     @app.route('/health')
     def health():
-        return {'status': 'ok', 'service': 'Fishi Backend'}
+        return {'status': 'ok', 'service': 'Popinion Backend'}
     
     if should_log_startup:
-        logger.info("Fishi Backend start completed")
+        logger.info("Popinion Backend start completed")
     
     return app

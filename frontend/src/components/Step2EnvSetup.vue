@@ -38,6 +38,23 @@
               <span class="info-value mono">{{ taskId || 'Async TaskCompleted' }}</span>
             </div>
           </div>
+
+          <!-- Agent Selection Button (NEW) -->
+          <div v-if="phase === 0 && simulationId" class="action-group">
+            <button 
+              class="action-btn secondary"
+              @click="loadEntityPreview"
+            >
+              🎯 Select Agents (Optional)
+            </button>
+            <button 
+              class="action-btn primary"
+              @click="startPrepareSimulation"
+            >
+              ▶ Start Preparation (All Entities)
+            </button>
+            <span class="action-hint">Choose specific entities OR start with all {{ expectedTotal || '' }} entities</span>
+          </div>
         </div>
       </div>
 
@@ -109,6 +126,58 @@
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Optional: Pre-load Knowledge from Previous Simulations -->
+      <div class="step-card optional-card" :class="{ 'has-content': preloadedKnowledge.length > 0 }">
+        <div class="card-header">
+          <div class="step-info">
+            <span class="step-num optional">📚</span>
+            <span class="step-title">Pre-load Knowledge (Optional)</span>
+          </div>
+          <div class="step-status">
+            <span v-if="preloadedKnowledge.length > 0" class="badge success">{{ preloadedKnowledge.length }} loaded</span>
+            <span v-else class="badge optional">Skip if none</span>
+          </div>
+        </div>
+        
+        <div class="card-content">
+          <p class="description">
+            Import insights from previous simulations to inform agent conversations from the start.
+            <strong>Only JSON exports can be imported.</strong>
+          </p>
+          
+          <div class="knowledge-import-section">
+            <label class="import-knowledge-btn">
+              📥 Import Knowledge Pad JSON
+              <input type="file" accept=".json" @change="handleKnowledgeImport" hidden />
+            </label>
+            
+            <div v-if="preloadedKnowledge.length > 0" class="preload-summary">
+              <div class="preload-header">
+                <span>✓ {{ preloadedKnowledge.length }} highlight(s) loaded</span>
+                <button class="clear-preload-btn" @click="clearPreloadedKnowledge">Clear All</button>
+              </div>
+              <div class="preload-preview">
+                <div 
+                  v-for="(item, idx) in preloadedKnowledge.slice(0, 3)" 
+                  :key="idx"
+                  class="preload-item"
+                >
+                  <span class="preload-source">{{ item.source?.agent || 'Unknown' }}</span>
+                  <span class="preload-text">"{{ item.content?.substring(0, 60) }}..."</span>
+                </div>
+                <div v-if="preloadedKnowledge.length > 3" class="preload-more">
+                  +{{ preloadedKnowledge.length - 3 }} more
+                </div>
+              </div>
+            </div>
+            
+            <p v-else class="skip-hint">
+              💡 No previous knowledge? That's fine! Skip this step and continue.
+            </p>
           </div>
         </div>
       </div>
@@ -628,6 +697,75 @@
         </div>
       </div>
     </div>
+
+    <!-- Entity Selection Modal (NEW) -->
+    <EntitySelectionModal
+      :show="showEntityModal"
+      :entities="previewEntities"
+      :by-type="previewByType"
+      @close="showEntityModal = false"
+      @confirm="handleEntitySelection"
+    />
+
+    <!-- Agent Matching Modal -->
+    <Teleport to="body">
+      <div v-if="showMatchingModal" class="matching-modal-overlay" @click.self="cancelMatching">
+        <div class="matching-modal" @click.stop>
+          <div class="matching-modal-header">
+            <h3>🔄 Match Imported Knowledge to Agents</h3>
+            <button class="matching-modal-close" @click="cancelMatching">×</button>
+          </div>
+          
+          <div class="matching-modal-body">
+            <p class="matching-description">
+              Map source agents from your imported knowledge to agents in this simulation.
+              Unmatched items will be treated as global knowledge.
+            </p>
+            
+            <div class="mapping-list">
+              <div 
+                v-for="(mapping, idx) in agentMappings" 
+                :key="mapping.originalAgent"
+                class="mapping-row"
+                :class="{ matched: mapping.matchedProfileIdx !== null }"
+              >
+                <div class="mapping-source">
+                  <span class="source-agent">{{ mapping.originalAgent }}</span>
+                  <span class="source-count">{{ mapping.highlightCount }} highlight(s)</span>
+                </div>
+                <span class="mapping-arrow">→</span>
+                <div class="mapping-target">
+                  <select 
+                    v-model="agentMappings[idx].matchedProfileIdx"
+                    class="mapping-select"
+                  >
+                    <option :value="null">-- Global (All Agents) --</option>
+                    <option 
+                      v-for="(profile, pIdx) in profiles" 
+                      :key="pIdx" 
+                      :value="pIdx"
+                    >{{ profile.username }}</option>
+                  </select>
+                  <span v-if="mapping.confidence === 'exact'" class="match-badge exact">✓ Exact</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div class="matching-modal-footer">
+            <button class="matching-btn global" @click="makeAllGlobal">
+              🌐 Make All Global
+            </button>
+            <button class="matching-btn skip" @click="skipMatching">
+              Skip Matching
+            </button>
+            <button class="matching-btn apply" @click="applyMappings">
+              ✓ Apply Mappings
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -635,11 +773,13 @@
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { 
   prepareSimulation, 
+  preparePreview,
   getPrepareStatus, 
   getSimulationProfilesRealtime,
   getSimulationConfig,
   getSimulationConfigRealtime 
 } from '../api/simulation'
+import EntitySelectionModal from './EntitySelectionModal.vue'
 
 const props = defineProps({
   simulationId: String,  // passed from parent component
@@ -648,7 +788,7 @@ const props = defineProps({
   systemLogs: Array
 })
 
-const emit = defineEmits(['go-back', 'next-step', 'add-log', 'update-status'])
+const emit = defineEmits(['go-back', 'next-step', 'add-log', 'update-status', 'preload-knowledge'])
 
 // State
 const phase = ref(0) // 0: Initializing, 1: Generating Profile, 2: Generating configuration, 3: Completed
@@ -662,6 +802,20 @@ const expectedTotal = ref(null)
 const simulationConfig = ref(null)
 const selectedProfile = ref(null)
 const showProfilesDetail = ref(true)
+
+// Entity Selection State (NEW)
+const showEntityModal = ref(false)
+const previewEntities = ref([])
+const previewByType = ref({})
+const selectedEntityIds = ref(null) // null = use all entities
+
+// Knowledge Pre-load State
+const preloadedKnowledge = ref([])
+
+// Agent Matching Modal State
+const showMatchingModal = ref(false)
+const pendingHighlights = ref([]) // Highlights waiting for matching
+const agentMappings = ref([]) // { originalAgent, matchedProfileIdx, confidence, highlightCount }
 
 // Log deduplication: record last output key info
 let lastLoggedMessage = ''
@@ -737,6 +891,140 @@ const addLog = (msg) => {
   emit('add-log', msg)
 }
 
+// Knowledge Pre-load Methods
+const handleKnowledgeImport = async (event) => {
+  const file = event.target.files[0]
+  if (!file) return
+  
+  if (!file.name.endsWith('.json')) {
+    alert('Only JSON files can be imported. Export your Knowledge Pad as JSON to import it here.')
+    event.target.value = ''
+    return
+  }
+  
+  try {
+    const text = await file.text()
+    const data = JSON.parse(text)
+    
+    if (!data.highlights || !Array.isArray(data.highlights)) {
+      alert('Invalid Knowledge Pad file. Missing highlights array.')
+      event.target.value = ''
+      return
+    }
+    
+    // Store pending highlights
+    pendingHighlights.value = data.highlights
+    
+    // Extract unique source agents and count highlights per agent
+    const agentCounts = {}
+    data.highlights.forEach(h => {
+      const agent = h.source?.agent || 'Unknown'
+      agentCounts[agent] = (agentCounts[agent] || 0) + 1
+    })
+    
+    // Perform exact matching against current profiles
+    const mappings = Object.keys(agentCounts).map(originalAgent => {
+      const exactMatchIdx = profiles.value.findIndex(p => 
+        p.username?.toLowerCase() === originalAgent.toLowerCase()
+      )
+      
+      return {
+        originalAgent,
+        matchedProfileIdx: exactMatchIdx >= 0 ? exactMatchIdx : null,
+        confidence: exactMatchIdx >= 0 ? 'exact' : 'none',
+        highlightCount: agentCounts[originalAgent]
+      }
+    })
+    
+    agentMappings.value = mappings
+    
+    // Show matching modal
+    showMatchingModal.value = true
+    addLog(`Parsed ${data.highlights.length} highlights from ${Object.keys(agentCounts).length} agent(s)`)
+    event.target.value = ''
+  } catch (err) {
+    alert(`Failed to parse JSON: ${err.message}`)
+    event.target.value = ''
+  }
+}
+
+const clearPreloadedKnowledge = () => {
+  preloadedKnowledge.value = []
+  sessionStorage.removeItem('preloadedKnowledge')
+  emit('preload-knowledge', [])
+  addLog('Cleared pre-loaded knowledge')
+}
+
+// Agent Matching Modal Methods
+const applyMappings = () => {
+  // Apply agent mappings to highlights and save
+  const mappedHighlights = pendingHighlights.value.map(h => {
+    const originalAgent = h.source?.agent || 'Unknown'
+    const mapping = agentMappings.value.find(m => m.originalAgent === originalAgent)
+    
+    if (mapping && mapping.matchedProfileIdx !== null) {
+      // Map to matched profile
+      return {
+        ...h,
+        mappedAgentIdx: mapping.matchedProfileIdx,
+        mappedAgentName: profiles.value[mapping.matchedProfileIdx]?.username
+      }
+    }
+    // Keep original (will be treated as global in Step 5)
+    return { ...h, mappedAgentIdx: null }
+  })
+  
+  preloadedKnowledge.value = mappedHighlights
+  sessionStorage.setItem('preloadedKnowledge', JSON.stringify(mappedHighlights))
+  emit('preload-knowledge', mappedHighlights)
+  
+  const matchedCount = agentMappings.value.filter(m => m.matchedProfileIdx !== null).length
+  addLog(`Applied mappings: ${matchedCount}/${agentMappings.value.length} agents matched`)
+  
+  showMatchingModal.value = false
+  pendingHighlights.value = []
+  agentMappings.value = []
+}
+
+const makeAllGlobal = () => {
+  // Mark all highlights as global (no agent mapping)
+  const globalHighlights = pendingHighlights.value.map(h => ({
+    ...h,
+    mappedAgentIdx: null,
+    isGlobal: true
+  }))
+  
+  preloadedKnowledge.value = globalHighlights
+  sessionStorage.setItem('preloadedKnowledge', JSON.stringify(globalHighlights))
+  emit('preload-knowledge', globalHighlights)
+  
+  addLog(`All ${globalHighlights.length} highlights set as global knowledge`)
+  
+  showMatchingModal.value = false
+  pendingHighlights.value = []
+  agentMappings.value = []
+}
+
+const skipMatching = () => {
+  // Keep original source info, let user handle in Step 5
+  preloadedKnowledge.value = pendingHighlights.value
+  sessionStorage.setItem('preloadedKnowledge', JSON.stringify(pendingHighlights.value))
+  emit('preload-knowledge', pendingHighlights.value)
+  
+  addLog(`Skipped matching. ${pendingHighlights.value.length} highlights imported with original sources.`)
+  
+  showMatchingModal.value = false
+  pendingHighlights.value = []
+  agentMappings.value = []
+}
+
+const cancelMatching = () => {
+  showMatchingModal.value = false
+  pendingHighlights.value = []
+  agentMappings.value = []
+  addLog('Import cancelled')
+}
+
 // Process Start Simulation button Click
 const handleStartSimulation = () => {
   // Building parameters passed to parent component
@@ -765,6 +1053,42 @@ const selectProfile = (profile) => {
   selectedProfile.value = profile
 }
 
+// Load entity preview for selection modal (NEW)
+const loadEntityPreview = async () => {
+  if (!props.simulationId) {
+    addLog('Error: Missing simulationId')
+    return
+  }
+  
+  addLog('Loading entities for selection...')
+  
+  try {
+    const res = await preparePreview({
+      simulation_id: props.simulationId
+    })
+    
+    if (res.success && res.data) {
+      previewEntities.value = res.data.entities
+      previewByType.value = res.data.by_type
+      addLog(`Found ${res.data.total_count} entities in ${Object.keys(res.data.by_type).length} categories`)
+      showEntityModal.value = true
+    } else {
+      addLog(`Failed to load entities: ${res.error || 'Unknown error'}`)
+    }
+  } catch (err) {
+    addLog(`Error loading entities: ${err.message}`)
+  }
+}
+
+// Handle entity selection from modal (NEW)
+const handleEntitySelection = (selectedIds) => {
+  selectedEntityIds.value = selectedIds
+  showEntityModal.value = false
+  addLog(`Selected ${selectedIds.length} entities as agents`)
+  // Proceed with preparation using selected entities
+  startPrepareSimulation()
+}
+
 // Automatic Start Prepare Simulation
 const startPrepareSimulation = async () => {
   if (!props.simulationId) {
@@ -782,6 +1106,7 @@ const startPrepareSimulation = async () => {
   try {
     const res = await prepareSimulation({
       simulation_id: props.simulationId,
+      selected_entity_ids: selectedEntityIds.value,  // NEW: pass selected entities
       use_llm_for_profiles: true,
       parallel_profile_count: 5
     })
@@ -1066,11 +1391,34 @@ watch(() => props.systemLogs?.length, () => {
   })
 })
 
-onMounted(() => {
-  // Automatic Start Prepare Process
+onMounted(async () => {
+  // Check if already prepared first, if not, wait for user to select agents
   if (props.simulationId) {
     addLog('Step2 Environment Setup Initialization')
-    startPrepareSimulation()
+    
+    // Quick check if already prepared - if so, load existing data
+    try {
+      const statusRes = await getPrepareStatus({ simulation_id: props.simulationId })
+      if (statusRes.success && statusRes.data?.status === 'completed') {
+        addLog('Detected existing preparation, loading...')
+        await loadPreparedData()
+        return
+      }
+    } catch (e) {
+      // Not prepared yet, that's fine
+    }
+    
+    // Fetch entity count for display (but don't start preparation yet)
+    try {
+      const previewRes = await preparePreview({ simulation_id: props.simulationId })
+      if (previewRes.success && previewRes.data) {
+        expectedTotal.value = previewRes.data.total_count
+        addLog(`Found ${previewRes.data.total_count} entities ready for selection`)
+        addLog('Click "Select Agents" to choose specific entities, or "Start Preparation" to use all')
+      }
+    } catch (e) {
+      addLog('Ready to start preparation')
+    }
   }
 })
 
@@ -1216,10 +1564,295 @@ onUnmounted(() => {
   cursor: not-allowed;
 }
 
+/* Optional card (Knowledge Pre-load) */
+.optional-card {
+  border: 1px dashed #D1D5DB;
+  background: #FAFAFA;
+}
+
+.optional-card.has-content {
+  border-color: #10B981;
+  background: #F0FDF4;
+}
+
+.step-num.optional {
+  background: transparent;
+  color: inherit;
+}
+
+.badge.optional {
+  background: #F3F4F6;
+  color: #6B7280;
+}
+
+.knowledge-import-section {
+  margin-top: 16px;
+}
+
+.import-knowledge-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  background: linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%);
+  color: #FFF;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.import-knowledge-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
+}
+
+.preload-summary {
+  margin-top: 16px;
+  background: #FFF;
+  border: 1px solid #D1FAE5;
+  border-radius: 8px;
+  padding: 12px 16px;
+}
+
+.preload-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: #059669;
+}
+
+.clear-preload-btn {
+  padding: 4px 12px;
+  font-size: 11px;
+  background: #FEE2E2;
+  border: 1px solid #FCA5A5;
+  color: #DC2626;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.preload-preview {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.preload-item {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 12px;
+}
+
+.preload-source {
+  background: #E0E7FF;
+  color: #4338CA;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.preload-text {
+  color: #6B7280;
+  font-style: italic;
+}
+
+.preload-more {
+  font-size: 11px;
+  color: #9CA3AF;
+  padding-left: 4px;
+}
+
+.skip-hint {
+  margin-top: 12px;
+  font-size: 12px;
+  color: #9CA3AF;
+}
+
+/* Agent Matching Modal */
+.matching-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10001;
+}
+
+.matching-modal {
+  background: #FFF;
+  border-radius: 16px;
+  width: 560px;
+  max-width: 95vw;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+}
+
+.matching-modal-header {
+  padding: 20px 24px;
+  border-bottom: 1px solid #E5E7EB;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.matching-modal-header h3 {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.matching-modal-close {
+  background: none;
+  border: none;
+  font-size: 24px;
+  color: #9CA3AF;
+  cursor: pointer;
+}
+
+.matching-modal-body {
+  padding: 20px 24px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.matching-description {
+  font-size: 13px;
+  color: #6B7280;
+  margin-bottom: 20px;
+}
+
+.mapping-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.mapping-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: #F9FAFB;
+  border: 1px solid #E5E7EB;
+  border-radius: 8px;
+}
+
+.mapping-row.matched {
+  background: #F0FDF4;
+  border-color: #86EFAC;
+}
+
+.mapping-source {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.source-agent {
+  font-weight: 600;
+  font-size: 13px;
+  color: #374151;
+}
+
+.source-count {
+  font-size: 11px;
+  color: #9CA3AF;
+}
+
+.mapping-arrow {
+  color: #9CA3AF;
+  font-size: 16px;
+}
+
+.mapping-target {
+  flex: 1.5;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mapping-select {
+  flex: 1;
+  padding: 8px 12px;
+  font-size: 13px;
+  border: 1px solid #D1D5DB;
+  border-radius: 6px;
+  background: #FFF;
+}
+
+.match-badge {
+  font-size: 10px;
+  padding: 3px 8px;
+  border-radius: 10px;
+  font-weight: 600;
+}
+
+.match-badge.exact {
+  background: #D1FAE5;
+  color: #059669;
+}
+
+.matching-modal-footer {
+  padding: 16px 24px;
+  border-top: 1px solid #E5E7EB;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.matching-btn {
+  padding: 10px 18px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: pointer;
+  border: none;
+}
+
+.matching-btn.global {
+  background: #F3F4F6;
+  color: #374151;
+}
+
+.matching-btn.skip {
+  background: #FEF3C7;
+  color: #92400E;
+}
+
+.matching-btn.apply {
+  background: linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%);
+  color: #FFF;
+}
+
+.matching-btn:hover {
+  opacity: 0.9;
+}
+
 .action-group {
   display: flex;
+  flex-wrap: wrap;
   gap: 12px;
   margin-top: 16px;
+  align-items: center;
+}
+
+.action-hint {
+  width: 100%;
+  font-size: 12px;
+  color: #888;
+  margin-top: 4px;
 }
 
 .action-group.dual {

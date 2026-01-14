@@ -69,20 +69,32 @@ def generate_report():
             }), 404
         
         # Check if report already exists
+        report_id = None
         if not force_regenerate:
             existing_report = ReportManager.get_report_by_simulation(simulation_id)
-            if existing_report and existing_report.status == ReportStatus.COMPLETED:
-                return jsonify({
-                    "success": True,
-                    "data": {
-                        "simulation_id": simulation_id,
-                        "report_id": existing_report.report_id,
-                        "status": "completed",
-                        "message": "Report already exists",
-                        "already_generated": True
-                    }
-                })
+            if existing_report:
+                if existing_report.status == ReportStatus.COMPLETED:
+                    return jsonify({
+                        "success": True,
+                        "data": {
+                            "simulation_id": simulation_id,
+                            "report_id": existing_report.report_id,
+                            "status": "completed",
+                            "message": "Report already exists",
+                            "already_generated": True
+                        }
+                    })
+                else:
+                    # Found a failed or incomplete report, use its ID to resume
+                    report_id = existing_report.report_id
+                    logger.info(f"Resuming incomplete report: {report_id}")
         
+        # If no existing report to resume or force_regenerate is True, create new ID
+        if not report_id:
+            import uuid
+            report_id = f"report_{uuid.uuid4().hex[:12]}"
+            logger.info(f"Creating new report: {report_id}")
+
         # Get project information
         project = ProjectManager.get_project(state.project_id)
         if not project:
@@ -104,10 +116,6 @@ def generate_report():
                 "success": False,
                 "error": "Missing simulation requirement description"
             }), 400
-        
-        # Pre-generate report_id so it can be returned immediately to frontend
-        import uuid
-        report_id = f"report_{uuid.uuid4().hex[:12]}"
         
         # Create async task
         task_manager = TaskManager()

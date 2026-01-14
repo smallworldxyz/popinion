@@ -20,7 +20,7 @@ T = TypeVar('T')
 
 class Neo4jService:
     """
-    Neo4j database service for Fishi
+    Neo4j database service for Popinion
     
     Provides connection management, transaction handling, and basic CRUD operations
     """

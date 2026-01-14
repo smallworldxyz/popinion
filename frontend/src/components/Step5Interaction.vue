@@ -1,5 +1,114 @@
 <template>
-  <div class="interaction-panel">
+  <div class="interaction-panel" @click="clearSelection">
+    <!-- Selection Popup for Knowledge Pad -->
+    <Teleport to="body">
+      <div 
+        v-if="selectionPopup && !showTagModal" 
+        class="selection-popup"
+        :style="{ left: selectionPopup.x + 'px', top: selectionPopup.y + 'px' }"
+        @click.stop
+      >
+        <button class="add-knowledge-btn" @click="openTagModal">
+          📋 Add to Knowledge
+        </button>
+      </div>
+    </Teleport>
+
+    <!-- Tag Modal for Knowledge Capture -->
+    <Teleport to="body">
+      <div v-if="showTagModal" class="tag-modal-overlay" @click.self="closeTagModal">
+        <div class="tag-modal" @click.stop>
+          <div class="tag-modal-header">
+            <h3>📋 Add to Knowledge Pad</h3>
+            <button class="tag-modal-close" @click="closeTagModal">×</button>
+          </div>
+          <div class="tag-modal-body">
+            <div class="tag-preview">
+              <p class="preview-text">"{{ pendingHighlight?.text?.substring(0, 150) }}{{ pendingHighlight?.text?.length > 150 ? '...' : '' }}"</p>
+              <p class="preview-source">From: {{ cleanAgentName(pendingHighlight?.source?.agent) }}</p>
+            </div>
+            
+            <div class="tag-section">
+              <label class="tag-label">Select Tags:</label>
+              <div class="predefined-tags">
+                <button 
+                  v-for="tag in predefinedTags" 
+                  :key="tag"
+                  class="tag-chip"
+                  :class="{ selected: selectedTags.has(tag) }"
+                  @click="toggleTag(tag)"
+                >{{ tag }}</button>
+              </div>
+            </div>
+            
+            <div class="custom-tag-section">
+              <label class="tag-label">Add Custom Tag:</label>
+              <div class="custom-tag-input">
+                <input 
+                  v-model="customTagInput" 
+                  placeholder="Type and press Enter"
+                  @keydown.enter.prevent="addCustomTag"
+                />
+                <button class="add-tag-btn" @click="addCustomTag">+</button>
+              </div>
+            </div>
+            
+            <div v-if="selectedTags.size > 0" class="selected-tags-preview">
+              <span class="tags-label">Selected:</span>
+              <span v-for="tag in selectedTags" :key="tag" class="selected-tag">
+                {{ tag }}
+                <button @click="toggleTag(tag)">×</button>
+              </span>
+            </div>
+          </div>
+          <div class="tag-modal-footer">
+            <button class="tag-btn secondary" @click="closeTagModal">Cancel</button>
+            <button class="tag-btn primary" @click="confirmAddToKnowledge">
+              Add to Knowledge Pad
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- Injection Removal Modal -->
+    <Teleport to="body">
+      <div v-if="showRemovalModal" class="removal-modal-overlay" @click.self="closeRemovalModal">
+        <div class="removal-modal" @click.stop>
+          <div class="removal-modal-header">
+            <h3>🧠 Injected Knowledge</h3>
+            <button class="removal-modal-close" @click="closeRemovalModal">×</button>
+          </div>
+          <div class="removal-modal-body">
+            <div v-if="removalModalItems.length === 0" class="removal-empty">
+              <p>No injected knowledge for this target.</p>
+            </div>
+            <div v-else class="removal-list">
+              <div 
+                v-for="(item, idx) in removalModalItems" 
+                :key="idx"
+                class="removal-item"
+              >
+                <p class="removal-text">"{{ item.length > 100 ? item.substring(0, 100) + '...' : item }}"</p>
+                <button 
+                  class="removal-btn" 
+                  @click="removeInjection(removalModalTarget, idx)"
+                  title="Remove this injection"
+                >🗑️</button>
+              </div>
+            </div>
+          </div>
+          <div class="removal-modal-footer">
+            <button 
+              v-if="removalModalItems.length > 0"
+              class="removal-clear-btn"
+              @click="clearAllInjections(removalModalTarget)"
+            >Clear All ({{ removalModalItems.length }})</button>
+            <button class="removal-done-btn" @click="closeRemovalModal">Done</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
     <!-- Main Split Layout -->
     <div class="main-split-layout">
       <!-- LEFT PANEL: Report Style -->
@@ -133,14 +242,16 @@
             <div class="tab-divider"></div>
             <button 
               class="tab-pill survey-pill"
-              :class="{ active: activeTab === 'survey' }"
-              @click="selectSurveyTab"
+              :class="{ active: activeTab === 'panel' }"
+              @click="selectPanelTab"
             >
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M9 11l3 3L22 4"></path>
-                <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                <circle cx="9" cy="7" r="4"></circle>
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
               </svg>
-              <span>Send Survey to Simulation World</span>
+              <span>Panel Discussion</span>
             </button>
           </div>
         </div>
@@ -226,6 +337,15 @@
                   <span class="profile-card-profession">{{ selectedAgent.profession || 'Unknown Profession' }}</span>
                 </div>
               </div>
+              <!-- Injection badge for single agent -->
+              <button 
+                v-if="getAgentInjectionCount(selectedAgentIndex) > 0 || globalInjectionCount > 0"
+                class="agent-injection-badge"
+                @click="openInjectionRemovalModal(selectedAgentIndex)"
+                title="Click to view/remove injected knowledge"
+              >
+                🧠 {{ getAgentInjectionCount(selectedAgentIndex) + globalInjectionCount }}
+              </button>
               <button class="profile-card-toggle" @click="showFullProfile = !showFullProfile">
                 <svg :class="{ 'is-expanded': showFullProfile }" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
                   <polyline points="6 9 12 15 18 9"></polyline>
@@ -310,100 +430,140 @@
           </div>
         </div>
 
-        <!-- Survey Mode -->
-        <div v-if="activeTab === 'survey'" class="survey-container">
-          <!-- Survey Setup -->
-          <div class="survey-setup">
-            <div class="setup-section">
-              <div class="section-header">
-                <span class="section-title">Select Survey Targets</span>
-                <span class="selection-count">Selected {{ selectedAgents.size }} / {{ profiles.length }}</span>
+        <!-- Panel Discussion Mode -->
+        <div v-if="activeTab === 'panel'" class="panel-container">
+          <!-- Participant Selection Header -->
+          <div class="panel-header">
+            <div class="participants-section">
+              <div class="participants-label">
+                <span class="label-text">Discussion Participants</span>
+                <span class="participant-count">
+                  {{ panelParticipants.size - mutedParticipants.size }} active / {{ panelParticipants.size }} total
+                </span>
               </div>
-              <div class="agents-grid">
-                <label 
-                  v-for="(agent, idx) in profiles" 
-                  :key="idx"
-                  class="agent-checkbox"
-                  :class="{ checked: selectedAgents.has(idx) }"
+              <div class="participants-chips">
+                <!-- Global injection indicator (clickable) -->
+                <button 
+                  v-if="globalInjectionCount > 0" 
+                  class="injection-indicator global clickable"
+                  @click="openInjectionRemovalModal('global')"
+                  title="Click to manage global injections"
                 >
-                  <input 
-                    type="checkbox" 
-                    :checked="selectedAgents.has(idx)"
-                    @change="toggleAgentSelection(idx)"
-                  >
-                  <div class="checkbox-avatar">{{ (agent.username || 'A')[0] }}</div>
-                  <div class="checkbox-info">
-                    <span class="checkbox-name">{{ agent.username }}</span>
-                    <span class="checkbox-role">{{ agent.profession || 'Unknown Profession' }}</span>
-                  </div>
-                  <div class="checkbox-indicator">
-                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="3">
-                      <polyline points="20 6 9 17 4 12"></polyline>
-                    </svg>
-                  </div>
-                </label>
-              </div>
-              <div class="selection-actions">
-                <button class="action-link" @click="selectAllAgents">Select All</button>
-                <span class="action-divider">|</span>
-                <button class="action-link" @click="clearAgentSelection">Clear</button>
-              </div>
-            </div>
-
-            <div class="setup-section">
-              <div class="section-header">
-                <span class="section-title">Survey Question</span>
-              </div>
-              <textarea 
-                v-model="surveyQuestion"
-                class="survey-input"
-                placeholder="Enter the question you want to ask the selected subjects..."
-                rows="3"
-              ></textarea>
-            </div>
-
-            <button 
-              class="survey-submit-btn"
-              :disabled="selectedAgents.size === 0 || !surveyQuestion.trim() || isSurveying"
-              @click="submitSurvey"
-            >
-              <span v-if="isSurveying" class="loading-spinner"></span>
-              <span v-else>Send Survey</span>
-            </button>
-          </div>
-
-          <!-- Survey Results -->
-          <div v-if="surveyResults.length > 0" class="survey-results">
-            <div class="results-header">
-              <span class="results-title">Survey Results</span>
-              <span class="results-count">{{ surveyResults.length }} responses</span>
-            </div>
-            <div class="results-list">
-              <div 
-                v-for="(result, idx) in surveyResults" 
-                :key="idx"
-                class="result-card"
-              >
-                <div class="result-header">
-                  <div class="result-avatar">{{ (result.agent_name || 'A')[0] }}</div>
-                  <div class="result-info">
-                    <span class="result-name">{{ result.agent_name }}</span>
-                    <span class="result-role">{{ result.profession || 'Unknown Profession' }}</span>
-                  </div>
+                  🧠 {{ globalInjectionCount }} global
+                </button>
+                <div 
+                  v-for="idx in Array.from(panelParticipants).slice(0, 8)" 
+                  :key="idx"
+                  class="participant-chip"
+                  :class="{ muted: mutedParticipants.has(idx) }"
+                >
+                  <span class="chip-avatar">{{ (profiles[idx]?.username || 'A')[0] }}</span>
+                  <span class="chip-name">{{ profiles[idx]?.username || `Agent ${idx}` }}</span>
+                  <!-- Injection badge (clickable) -->
+                  <button 
+                    v-if="getAgentInjectionCount(idx) > 0" 
+                    class="chip-injection-badge clickable"
+                    :title="`${getAgentInjectionCount(idx)} injected - click to manage`"
+                    @click.stop="openInjectionRemovalModal(idx)"
+                  >🧠{{ getAgentInjectionCount(idx) }}</button>
+                  <button class="chip-mute" @click="toggleMute(idx)" :title="mutedParticipants.has(idx) ? 'Unmute' : 'Mute'">
+                    {{ mutedParticipants.has(idx) ? '🔇' : '🔊' }}
+                  </button>
+                  <button class="chip-remove" @click="removeParticipant(idx)">×</button>
                 </div>
-                <div class="result-question">
+                <div v-if="panelParticipants.size > 8" class="participant-chip more-chip">
+                  +{{ panelParticipants.size - 8 }} more
+                </div>
+                <button class="add-participants-btn" @click="showParticipantModal = true">
                   <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
                     <circle cx="12" cy="12" r="10"></circle>
-                    <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
-                    <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                    <line x1="12" y1="8" x2="12" y2="16"></line>
+                    <line x1="8" y1="12" x2="16" y2="12"></line>
                   </svg>
-                  <span>{{ result.question }}</span>
-                </div>
-                <div class="result-answer" v-html="renderMarkdown(result.answer)"></div>
+                  <span>{{ panelParticipants.size === 0 ? 'Select Participants' : 'Modify' }}</span>
+                </button>
               </div>
             </div>
           </div>
+
+          <!-- Conversation Thread -->
+          <div class="panel-thread" ref="panelThreadRef">
+            <div v-if="panelHistory.length === 0" class="empty-thread">
+              <div class="empty-icon">💬</div>
+              <p>Start a panel discussion by selecting participants and asking a question.</p>
+            </div>
+            
+            <div v-for="(exchange, exchangeIdx) in panelHistory" :key="exchangeIdx" class="exchange-block">
+              <!-- User Question -->
+              <div class="exchange-question">
+                <div class="question-bubble">
+                  <span class="question-label">You asked:</span>
+                  <p>{{ exchange.question }}</p>
+                </div>
+                <span class="exchange-time">{{ formatTime(exchange.timestamp) }}</span>
+              </div>
+              
+              <!-- Panel Responses -->
+              <div class="exchange-responses">
+                <div 
+                  v-for="(resp, respIdx) in exchange.responses" 
+                  :key="respIdx"
+                  class="response-card"
+                >
+                  <div class="resp-header">
+                    <div class="resp-avatar">{{ (resp.agent_name || 'A')[0].toUpperCase() }}</div>
+                    <div class="resp-info">
+                      <span class="resp-name">{{ cleanAgentName(resp.agent_name) }}</span>
+                      <span class="resp-role">{{ resp.profession || 'Participant' }}</span>
+                    </div>
+                    <button class="resp-reply-btn" @click="quoteResponse(resp, exchangeIdx)" title="Reply to this">
+                      ↩ Reply
+                    </button>
+                  </div>
+                  <div class="resp-content" v-html="renderMarkdown(resp.answer)"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Input Area -->
+          <div class="panel-input-area">
+            <!-- Quote Indicator -->
+            <div v-if="quotedResponse" class="quote-indicator">
+              <span class="quote-text">Replying to {{ cleanAgentName(quotedResponse.agent_name) }}</span>
+              <button class="quote-clear" @click="clearQuote">×</button>
+            </div>
+            <textarea 
+              v-model="panelInput"
+              class="panel-input"
+              :placeholder="quotedResponse ? `Reply about ${cleanAgentName(quotedResponse.agent_name)}'s response...` : 'Ask the panel a question...'"
+              rows="2"
+              @keydown.enter.ctrl="sendPanelMessage"
+              @keydown.enter.meta="sendPanelMessage"
+            ></textarea>
+            <button 
+              class="panel-send-btn"
+              :disabled="panelParticipants.size === 0 || !panelInput.trim() || isPanelSending"
+              @click="sendPanelMessage"
+            >
+              <span v-if="isPanelSending" class="loading-spinner"></span>
+              <span v-else>Ask Panel</span>
+            </button>
+          </div>
         </div>
+
+        <!-- Participant Selection Modal -->
+        <EntitySelectionModal
+          :show="showParticipantModal"
+          :entities="profilesAsEntities"
+          :by-type="profilesByType"
+          title="Select Panel Discussion Participants"
+          item-label="participants"
+          :show-estimate="false"
+          :select-all-by-default="false"
+          @close="showParticipantModal = false"
+          @confirm="handleParticipantSelection"
+        />
       </div>
     </div>
   </div>
@@ -413,13 +573,22 @@
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { chatWithReport, getReport, getAgentLog } from '../api/report'
 import { interviewAgents, getSimulationProfilesRealtime } from '../api/simulation'
+import EntitySelectionModal from './EntitySelectionModal.vue'
 
 const props = defineProps({
   reportId: String,
-  simulationId: String
+  simulationId: String,
+  simulationTags: {
+    type: Array,
+    default: () => []
+  },
+  injectedKnowledge: {
+    type: Object,
+    default: () => ({})
+  }
 })
 
-const emit = defineEmits(['add-log', 'update-status'])
+const emit = defineEmits(['add-log', 'update-status', 'add-to-knowledge', 'remove-injection', 'clear-injections'])
 
 // State
 const activeTab = ref('chat')
@@ -430,6 +599,38 @@ const selectedAgentIndex = ref(null)
 const showFullProfile = ref(true)
 const showToolsDetail = ref(true)
 
+// Text Selection State (for Knowledge Pad)
+const selectionPopup = ref(null) // { x, y, text, source }
+const currentSelectionSource = ref(null) // Track which content area is being selected from
+
+// Tag Modal State
+const showTagModal = ref(false)
+const pendingHighlight = ref(null) // { text, source }
+// Fixed categories for consistency across all simulations (custom tags can be added)
+const predefinedTags = ['Economic', 'Political', 'Social', 'Risk', 'Opportunity', 'Consensus', 'Conflict', 'Insight']
+const selectedTags = ref(new Set())
+const customTagInput = ref('')
+
+// Injection Removal Modal State
+const showRemovalModal = ref(false)
+const removalModalTarget = ref(null) // 'global', 'panel_all', or agent index
+const removalModalItems = computed(() => {
+  if (!removalModalTarget.value) return []
+  
+  if (removalModalTarget.value === 'global') {
+    // Show both global and panel_all
+    const globalItems = props.injectedKnowledge['global'] || []
+    const panelItems = props.injectedKnowledge['panel_all'] || []
+    return [...globalItems, ...panelItems]
+  } else {
+    // Agent-specific
+    const key = typeof removalModalTarget.value === 'number' 
+      ? `agent_${removalModalTarget.value}` 
+      : removalModalTarget.value
+    return props.injectedKnowledge[key] || []
+  }
+})
+
 // Chat State
 const chatInput = ref('')
 const chatHistory = ref([])
@@ -438,11 +639,14 @@ const isSending = ref(false)
 const chatMessages = ref(null)
 const chatInputRef = ref(null)
 
-// Survey State
-const selectedAgents = ref(new Set())
-const surveyQuestion = ref('')
-const surveyResults = ref([])
-const isSurveying = ref(false)
+// Panel Discussion State (formerly Survey)
+const panelParticipants = ref(new Set())  // Selected agent indices
+const mutedParticipants = ref(new Set())  // Muted agents (still hear but don't respond)
+const panelInput = ref('')  // Current question input
+const panelHistory = ref([])  // Array of { question, responses: [{agent_id, agent_name, profession, answer}], timestamp }
+const isPanelSending = ref(false)
+const showParticipantModal = ref(false)
+const quotedResponse = ref(null)  // { agent_name, answer, exchangeIdx } for click-to-quote
 
 // Report Data
 const reportOutline = ref(null)
@@ -454,6 +658,17 @@ const profiles = ref([])
 // Helper Methods
 const isSectionCompleted = (sectionIndex) => {
   return !!generatedSections.value[sectionIndex]
+}
+
+// Clean agent name: "hun_sen_319" → "Hun Sen"
+const cleanAgentName = (name) => {
+  if (!name) return 'Agent'
+  return name
+    .replace(/_\d+$/, '')           // Remove trailing numbers
+    .replace(/_/g, ' ')              // Replace underscores with spaces
+    .split(' ')
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(' ')
 }
 
 // Refs
@@ -749,38 +964,309 @@ const scrollToBottom = () => {
   })
 }
 
-// Survey Methods
-const toggleAgentSelection = (idx) => {
-  const newSet = new Set(selectedAgents.value)
-  if (newSet.has(idx)) {
-    newSet.delete(idx)
-  } else {
-    newSet.add(idx)
+// Panel Discussion Methods
+const panelThreadRef = ref(null)
+
+// Computed: Convert profiles to entity format for EntitySelectionModal
+const profilesAsEntities = computed(() => {
+  return profiles.value.map((p, idx) => ({
+    uuid: String(idx),  // Use uuid to match EntitySelectionModal expectations
+    name: p.username || `Agent ${idx}`,
+    type: p.profession || 'Participant',
+    relationship_count: 0
+  }))
+})
+
+// Computed: Group profiles by profession for EntitySelectionModal
+const profilesByType = computed(() => {
+  const grouped = {}
+  profiles.value.forEach((p, idx) => {
+    const type = p.profession || 'Other'
+    if (!grouped[type]) {
+      grouped[type] = { count: 0, entities: [] }
+    }
+    grouped[type].count++
+    grouped[type].entities.push({
+      uuid: String(idx),  // Use uuid to match EntitySelectionModal expectations
+      name: p.username || `Agent ${idx}`,
+      type: type
+    })
+  })
+  return grouped
+})
+
+// Computed for injection badge counts
+const globalInjectionCount = computed(() => {
+  const globalCount = props.injectedKnowledge['global']?.length || 0
+  const panelCount = props.injectedKnowledge['panel_all']?.length || 0
+  return globalCount + panelCount
+})
+
+const getAgentInjectionCount = (idx) => {
+  const agentKey = `agent_${idx}`
+  return props.injectedKnowledge[agentKey]?.length || 0
+}
+
+// Injection removal modal methods
+const openInjectionRemovalModal = (target) => {
+  removalModalTarget.value = target
+  showRemovalModal.value = true
+}
+
+const closeRemovalModal = () => {
+  showRemovalModal.value = false
+  removalModalTarget.value = null
+}
+
+const removeInjection = (target, index) => {
+  // Emit to parent to actually remove from state
+  emit('remove-injection', { target, index })
+  addLog(`Removed injection item at index ${index}`)
+}
+
+const clearAllInjections = (target) => {
+  emit('clear-injections', { target })
+  addLog(`Cleared all injections for ${target}`)
+  closeRemovalModal()
+}
+
+const selectPanelTab = () => {
+  activeTab.value = 'panel'
+  selectedAgent.value = null
+  selectedAgentIndex.value = null
+  showAgentDropdown.value = false
+}
+
+const removeParticipant = (idx) => {
+  const newSet = new Set(panelParticipants.value)
+  newSet.delete(idx)
+  panelParticipants.value = newSet
+  // Also remove from muted if present
+  if (mutedParticipants.value.has(idx)) {
+    const mutedSet = new Set(mutedParticipants.value)
+    mutedSet.delete(idx)
+    mutedParticipants.value = mutedSet
   }
-  selectedAgents.value = newSet
 }
 
-const selectAllAgents = () => {
-  const newSet = new Set()
-  profiles.value.forEach((_, idx) => newSet.add(idx))
-  selectedAgents.value = newSet
+const toggleMute = (idx) => {
+  const newSet = new Set(mutedParticipants.value)
+  if (newSet.has(idx)) {
+    newSet.delete(idx)  // Unmute
+    addLog(`Unmuted ${profiles.value[idx]?.username || 'Agent'}`)
+  } else {
+    newSet.add(idx)     // Mute
+    addLog(`Muted ${profiles.value[idx]?.username || 'Agent'}`)
+  }
+  mutedParticipants.value = newSet
 }
 
-const clearAgentSelection = () => {
-  selectedAgents.value = new Set()
+const handleParticipantSelection = (selectedIds) => {
+  // selectedIds are string IDs from the modal, convert to numbers
+  const newSet = new Set(selectedIds.map(id => parseInt(id, 10)))
+  panelParticipants.value = newSet
+  showParticipantModal.value = false
+  addLog(`Selected ${newSet.size} participants for panel discussion`)
 }
 
-const submitSurvey = async () => {
-  if (selectedAgents.value.size === 0 || !surveyQuestion.value.trim()) return
+// Quote a response for explicit reference
+const quoteResponse = (response, exchangeIdx) => {
+  quotedResponse.value = {
+    agent_name: response.agent_name,
+    answer: response.answer,
+    exchangeIdx: exchangeIdx
+  }
+  addLog(`Quoting ${cleanAgentName(response.agent_name)}'s response`)
+}
+
+const clearQuote = () => {
+  quotedResponse.value = null
+}
+
+// --- Text Selection for Knowledge Pad ---
+let selectionTimeout = null
+
+const checkSelection = () => {
+  const selection = window.getSelection()
+  const text = selection.toString().trim()
   
-  isSurveying.value = true
-  addLog(`Sending survey to ${selectedAgents.value.size} subjects...`)
+  if (text.length > 15) {
+    const range = selection.getRangeAt(0)
+    const rect = range.getBoundingClientRect()
+    
+    // Determine source from selection container
+    const container = range.commonAncestorContainer.parentElement
+    let source = { agent: 'Unknown', context: 'unknown' }
+    
+    // Check if selection is in panel discussion
+    const panelCard = container?.closest('.response-card')
+    if (panelCard) {
+      const nameEl = panelCard.querySelector('.resp-name')
+      source = { agent: nameEl?.textContent || 'Panel Agent', context: 'panel' }
+    }
+    
+    // Check if selection is in chat
+    const chatMsg = container?.closest('.chat-message')
+    if (chatMsg) {
+      const isUser = chatMsg.classList.contains('user')
+      if (!isUser) {
+        source = { agent: chatTarget.value === 'report_agent' ? 'Report Agent' : (selectedAgent.value?.username || 'Agent'), context: chatTarget.value === 'report_agent' ? 'report_chat' : 'agent_chat' }
+      }
+    }
+    
+    if (source.context !== 'unknown') {
+      selectionPopup.value = {
+        x: rect.left + rect.width / 2,
+        y: rect.top - 10,
+        text: text,
+        source: source
+      }
+    }
+  } else {
+    selectionPopup.value = null
+  }
+}
+
+// Debounced selection handler - fires 300ms after selection stops changing
+const handleTextSelection = () => {
+  clearTimeout(selectionTimeout)
+  selectionTimeout = setTimeout(checkSelection, 300)
+}
+
+const openTagModal = () => {
+  if (!selectionPopup.value) return
+  pendingHighlight.value = {
+    text: selectionPopup.value.text,
+    source: selectionPopup.value.source
+  }
+  showTagModal.value = true
+  selectedTags.value = new Set()
+  customTagInput.value = ''
+}
+
+const closeTagModal = () => {
+  showTagModal.value = false
+  pendingHighlight.value = null
+  selectionPopup.value = null
+  window.getSelection().removeAllRanges()
+}
+
+const toggleTag = (tag) => {
+  const newSet = new Set(selectedTags.value)
+  if (newSet.has(tag)) {
+    newSet.delete(tag)
+  } else {
+    newSet.add(tag)
+  }
+  selectedTags.value = newSet
+}
+
+const addCustomTag = () => {
+  const tag = customTagInput.value.trim()
+  if (tag && tag.length > 0) {
+    const newSet = new Set(selectedTags.value)
+    newSet.add(tag)
+    selectedTags.value = newSet
+    customTagInput.value = ''
+  }
+}
+
+const confirmAddToKnowledge = () => {
+  if (!pendingHighlight.value) return
+  
+  emit('add-to-knowledge', {
+    content: pendingHighlight.value.text,
+    source: pendingHighlight.value.source,
+    tags: Array.from(selectedTags.value)
+  })
+  
+  addLog(`Added to Knowledge: "${pendingHighlight.value.text.substring(0, 40)}..." with ${selectedTags.value.size} tag(s)`)
+  closeTagModal()
+}
+
+const clearSelection = () => {
+  // Only clear if there's no active text selection and tag modal is not open
+  if (showTagModal.value) return
+  const selection = window.getSelection()
+  const text = selection.toString().trim()
+  if (text.length < 5) {
+    selectionPopup.value = null
+  }
+}
+
+const sendPanelMessage = async () => {
+  // Filter out muted participants
+  const activeParticipants = Array.from(panelParticipants.value)
+    .filter(idx => !mutedParticipants.value.has(idx))
+  
+  if (activeParticipants.length === 0 || !panelInput.value.trim()) {
+    if (panelParticipants.value.size > 0 && activeParticipants.length === 0) {
+      addLog('All participants are muted. Unmute at least one to send a question.')
+    }
+    return
+  }
+  
+  isPanelSending.value = true
+  const question = panelInput.value.trim()
+  addLog(`Sending question to ${activeParticipants.length} active panel members...`)
   
   try {
-    const interviews = Array.from(selectedAgents.value).map(idx => ({
-      agent_id: idx,
-      prompt: surveyQuestion.value.trim()
-    }))
+    let promptWithContext = question
+    
+    // Check if this is a focused reply (quote active) vs general question
+    if (quotedResponse.value) {
+      // FOCUSED REPLY: Only include the quoted response, no general history
+      const quoteName = cleanAgentName(quotedResponse.value.agent_name)
+      const quoteContent = quotedResponse.value.answer.substring(0, 500)
+      promptWithContext = `You are being asked to respond specifically to what ${quoteName} said.\n\n` +
+        `${quoteName}'s statement:\n"${quoteContent}"\n\n` +
+        `Question about this statement: ${question}`
+      quotedResponse.value = null  // Clear after use
+      addLog(`Focused reply about ${quoteName}'s response`)
+    } else if (panelHistory.value.length > 0) {
+      // GENERAL QUESTION: Include recent history context
+      const historyContext = panelHistory.value.slice(-3).map(exchange => 
+        `Previous question: "${exchange.question}"\n` + 
+        exchange.responses.slice(0, 3).map(r => 
+          `${cleanAgentName(r.agent_name)}: ${r.answer.substring(0, 200)}...`
+        ).join('\n')
+      ).join('\n---\n')
+      promptWithContext = `Context from our previous discussion:\n${historyContext}\n\nNew question: ${question}`
+    }
+    
+    const interviews = activeParticipants.map(idx => {
+      // Collect all injected knowledge for this agent
+      const agentKnowledge = []
+      
+      // 1. Global knowledge (applies to all)
+      if (props.injectedKnowledge['global']?.length) {
+        agentKnowledge.push(...props.injectedKnowledge['global'])
+      }
+      
+      // 2. Panel-wide knowledge
+      if (props.injectedKnowledge['panel_all']?.length) {
+        agentKnowledge.push(...props.injectedKnowledge['panel_all'])
+      }
+      
+      // 3. Agent-specific knowledge
+      const agentKey = `agent_${idx}`
+      if (props.injectedKnowledge[agentKey]?.length) {
+        agentKnowledge.push(...props.injectedKnowledge[agentKey])
+      }
+      
+      // Build final prompt with injected knowledge prepended
+      let finalPrompt = promptWithContext
+      if (agentKnowledge.length > 0) {
+        const knowledgeContext = agentKnowledge.map((k, i) => `${i + 1}. ${k}`).join('\n')
+        finalPrompt = `[Important context to consider in your response]:\n${knowledgeContext}\n\n---\n\n${promptWithContext}`
+        addLog(`Agent #${idx} prompt includes ${agentKnowledge.length} injected knowledge item(s)`)
+      }
+      
+      return {
+        agent_id: idx,
+        prompt: finalPrompt
+      }
+    })
     
     const res = await interviewAgents({
       simulation_id: props.simulationId,
@@ -788,19 +1274,16 @@ const submitSurvey = async () => {
     })
     
     if (res.success && res.data) {
-      // Correct data path: res.data.result.results is an object dictionary
-      // Format: {"twitter_0": {...}, "reddit_0": {...}, "twitter_1": {...}, ...}
       const resultData = res.data.result || res.data
       const resultsDict = resultData.results || resultData
       
-      // Convert object dictionary to array format
-      const surveyResultsList = []
+      // Build responses array
+      const responses = []
       
       for (const interview of interviews) {
         const agentIdx = interview.agent_id
         const agent = profiles.value[agentIdx]
         
-        // Prioritize Reddit platform reply, then Twitter
         let responseContent = 'No Response'
         
         if (typeof resultsDict === 'object' && !Array.isArray(resultsDict)) {
@@ -811,31 +1294,43 @@ const submitSurvey = async () => {
             responseContent = agentResult.response || agentResult.answer || 'No Response'
           }
         } else if (Array.isArray(resultsDict)) {
-          // Compatible array format
           const matchedResult = resultsDict.find(r => r.agent_id === agentIdx)
           if (matchedResult) {
             responseContent = matchedResult.response || matchedResult.answer || 'No Response'
           }
         }
         
-        surveyResultsList.push({
+        responses.push({
           agent_id: agentIdx,
           agent_name: agent?.username || `Agent ${agentIdx}`,
           profession: agent?.profession,
-          question: surveyQuestion.value.trim(),
           answer: responseContent
         })
       }
       
-      surveyResults.value = surveyResultsList
-      addLog(`Received ${surveyResults.value.length} replies`)
+      // Append to history instead of replacing
+      panelHistory.value.push({
+        question: question,
+        responses: responses,
+        timestamp: new Date().toISOString()
+      })
+      
+      panelInput.value = ''  // Clear input for next question
+      addLog(`Received ${responses.length} panel responses`)
+      
+      // Scroll to bottom
+      nextTick(() => {
+        if (panelThreadRef.value) {
+          panelThreadRef.value.scrollTop = panelThreadRef.value.scrollHeight
+        }
+      })
     } else {
       throw new Error(res.error || 'Request Failed')
     }
   } catch (err) {
-    addLog(`Survey failed to send: ${err.message}`)
+    addLog(`Panel discussion failed: ${err.message}`)
   } finally {
-    isSurveying.value = false
+    isPanelSending.value = false
   }
 }
 
@@ -910,10 +1405,13 @@ onMounted(() => {
   loadReportData()
   loadProfiles()
   document.addEventListener('click', handleClickOutside)
+  document.addEventListener('selectionchange', handleTextSelection)
 })
 
 onUnmounted(() => {
   document.removeEventListener('click', handleClickOutside)
+  document.removeEventListener('selectionchange', handleTextSelection)
+  clearTimeout(selectionTimeout)
 })
 
 watch(() => props.reportId, (newId) => {
@@ -2542,5 +3040,834 @@ watch(() => props.simulationId, (newId) => {
   border: none;
   border-top: 1px solid #E5E7EB;
   margin: 24px 0;
+}
+
+/* ============ Panel Discussion Styles ============ */
+.panel-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.panel-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid #E5E7EB;
+  background: #FAFAFA;
+}
+
+.participants-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.participants-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.participants-label .label-text {
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.participant-count {
+  font-size: 12px;
+  color: #9CA3AF;
+}
+
+.participants-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.participant-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px 4px 4px;
+  background: #FFFFFF;
+  border: 1px solid #E5E7EB;
+  border-radius: 20px;
+  font-size: 12px;
+}
+
+.chip-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #6366F1, #8B5CF6);
+  color: #FFFFFF;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.chip-name {
+  color: #374151;
+  max-width: 80px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chip-remove {
+  background: none;
+  border: none;
+  color: #9CA3AF;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0 2px;
+  line-height: 1;
+}
+
+.chip-remove:hover {
+  color: #EF4444;
+}
+
+/* Mute toggle button */
+.chip-mute {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 11px;
+  padding: 0 2px;
+  line-height: 1;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+}
+
+.chip-mute:hover {
+  opacity: 1;
+}
+
+/* Muted participant chip */
+.participant-chip.muted {
+  opacity: 0.5;
+  border-style: dashed;
+  background: #F9FAFB;
+}
+
+.participant-chip.muted .chip-avatar {
+  background: #9CA3AF;
+}
+
+.more-chip {
+  background: #F3F4F6;
+  color: #6B7280;
+  font-weight: 500;
+}
+
+/* Injection indicator and badges */
+.injection-indicator {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  font-size: 11px;
+  border-radius: 12px;
+  font-weight: 500;
+}
+
+.injection-indicator.global {
+  background: linear-gradient(135deg, #EEF2FF 0%, #E0E7FF 100%);
+  color: #6366F1;
+  border: 1px solid #C7D2FE;
+}
+
+.chip-injection-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 6px;
+  font-size: 10px;
+  background: #6366F1;
+  color: #FFF;
+  border-radius: 10px;
+  font-weight: 600;
+  border: none;
+}
+
+.chip-injection-badge.clickable,
+.injection-indicator.clickable,
+.agent-injection-badge {
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.chip-injection-badge.clickable:hover,
+.injection-indicator.clickable:hover,
+.agent-injection-badge:hover {
+  transform: scale(1.05);
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.4);
+}
+
+.agent-injection-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  font-size: 11px;
+  background: linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%);
+  color: #FFF;
+  border: none;
+  border-radius: 16px;
+  font-weight: 600;
+  margin-left: auto;
+  margin-right: 8px;
+}
+
+/* Removal Modal */
+.removal-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10001;
+}
+
+.removal-modal {
+  background: #FFF;
+  border-radius: 16px;
+  width: 400px;
+  max-width: 90vw;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+  animation: modalSlideIn 0.2s ease;
+}
+
+.removal-modal-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid #E5E7EB;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.removal-modal-header h3 {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.removal-modal-close {
+  background: none;
+  border: none;
+  font-size: 22px;
+  color: #9CA3AF;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.removal-modal-body {
+  padding: 16px 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.removal-empty {
+  text-align: center;
+  padding: 24px;
+  color: #9CA3AF;
+}
+
+.removal-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.removal-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
+  background: #F9FAFB;
+  border-radius: 8px;
+  border: 1px solid #E5E7EB;
+}
+
+.removal-text {
+  flex: 1;
+  font-size: 12px;
+  color: #374151;
+  font-style: italic;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.removal-btn {
+  background: none;
+  border: none;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 4px;
+  opacity: 0.6;
+  transition: opacity 0.15s;
+}
+
+.removal-btn:hover {
+  opacity: 1;
+}
+
+.removal-modal-footer {
+  padding: 12px 20px;
+  border-top: 1px solid #E5E7EB;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.removal-clear-btn {
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  background: #FEE2E2;
+  border: 1px solid #FCA5A5;
+  color: #DC2626;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.removal-clear-btn:hover {
+  background: #FECACA;
+}
+
+.removal-done-btn {
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  background: #6366F1;
+  border: none;
+  color: #FFF;
+  border-radius: 6px;
+  cursor: pointer;
+  margin-left: auto;
+}
+
+.removal-done-btn:hover {
+  background: #4F46E5;
+}
+
+.add-participants-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: #1F2937;
+  color: #FFFFFF;
+  border: none;
+  border-radius: 20px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.add-participants-btn:hover {
+  background: #374151;
+}
+
+/* Panel Thread */
+.panel-thread {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.empty-thread {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #9CA3AF;
+  text-align: center;
+}
+
+.empty-icon {
+  font-size: 48px;
+  margin-bottom: 12px;
+}
+
+.empty-thread p {
+  max-width: 280px;
+  line-height: 1.5;
+}
+
+.exchange-block {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.exchange-question {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.question-bubble {
+  background: #1F2937;
+  color: #FFFFFF;
+  padding: 12px 16px;
+  border-radius: 16px 16px 4px 16px;
+  max-width: 80%;
+}
+
+.question-label {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.6);
+  display: block;
+  margin-bottom: 4px;
+}
+
+.question-bubble p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.exchange-time {
+  font-size: 11px;
+  color: #9CA3AF;
+}
+
+.exchange-responses {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-left: 20px;
+}
+
+.response-card {
+  background: #F9FAFB;
+  border: 1px solid #E5E7EB;
+  border-radius: 12px;
+  padding: 14px;
+}
+
+.resp-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.resp-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #10B981, #059669);
+  color: #FFFFFF;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.resp-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.resp-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1F2937;
+}
+
+.resp-role {
+  font-size: 11px;
+  color: #9CA3AF;
+}
+
+.resp-content {
+  font-size: 14px;
+  line-height: 1.7;
+  color: #374151;
+}
+
+/* Reply button on response cards */
+.resp-reply-btn {
+  margin-left: auto;
+  background: none;
+  border: 1px solid #E5E7EB;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 11px;
+  color: #6B7280;
+  cursor: pointer;
+  transition: all 0.2s;
+  opacity: 0;
+}
+
+.response-card:hover .resp-reply-btn {
+  opacity: 1;
+}
+
+.resp-reply-btn:hover {
+  background: #F3F4F6;
+  border-color: #9CA3AF;
+  color: #374151;
+}
+
+/* Panel Input Area */
+.panel-input-area {
+  padding: 16px 20px;
+  border-top: 1px solid #E5E7EB;
+  background: #FFFFFF;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+}
+
+/* Quote indicator */
+.quote-indicator {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%);
+  border-radius: 8px;
+  margin-bottom: 4px;
+}
+
+.quote-text {
+  font-size: 12px;
+  color: #FFFFFF;
+  font-weight: 500;
+}
+
+.quote-clear {
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  border-radius: 4px;
+  color: #FFFFFF;
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.quote-clear:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* Selection Popup for Knowledge Pad */
+.selection-popup {
+  position: fixed;
+  transform: translate(-50%, -100%);
+  z-index: 10000;
+  animation: fadeIn 0.15s ease;
+}
+
+.add-knowledge-btn {
+  background: linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%);
+  border: none;
+  color: #FFF;
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 8px;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
+  white-space: nowrap;
+  transition: all 0.2s;
+}
+
+.add-knowledge-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(99, 102, 241, 0.5);
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translate(-50%, -90%); }
+  to { opacity: 1; transform: translate(-50%, -100%); }
+}
+
+/* Tag Modal */
+.tag-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10001;
+}
+
+.tag-modal {
+  background: #FFF;
+  border-radius: 16px;
+  width: 440px;
+  max-width: 90vw;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+  animation: modalSlideIn 0.2s ease;
+}
+
+@keyframes modalSlideIn {
+  from { opacity: 0; transform: translateY(-20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.tag-modal-header {
+  padding: 20px 24px;
+  border-bottom: 1px solid #E5E7EB;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.tag-modal-header h3 {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.tag-modal-close {
+  background: none;
+  border: none;
+  font-size: 24px;
+  color: #9CA3AF;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.tag-modal-body {
+  padding: 24px;
+}
+
+.tag-preview {
+  background: #F9FAFB;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 20px;
+}
+
+.preview-text {
+  font-size: 13px;
+  font-style: italic;
+  color: #374151;
+  margin: 0 0 8px 0;
+  line-height: 1.5;
+}
+
+.preview-source {
+  font-size: 11px;
+  color: #9CA3AF;
+  margin: 0;
+}
+
+.tag-section {
+  margin-bottom: 16px;
+}
+
+.tag-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 8px;
+}
+
+.predefined-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tag-chip {
+  padding: 6px 14px;
+  font-size: 12px;
+  border: 1px solid #E5E7EB;
+  border-radius: 20px;
+  background: #FFF;
+  color: #6B7280;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.tag-chip:hover {
+  border-color: #6366F1;
+  color: #6366F1;
+}
+
+.tag-chip.selected {
+  background: #6366F1;
+  border-color: #6366F1;
+  color: #FFF;
+}
+
+.custom-tag-section {
+  margin-bottom: 16px;
+}
+
+.custom-tag-input {
+  display: flex;
+  gap: 8px;
+}
+
+.custom-tag-input input {
+  flex: 1;
+  padding: 10px 14px;
+  font-size: 13px;
+  border: 1px solid #E5E7EB;
+  border-radius: 8px;
+  outline: none;
+}
+
+.custom-tag-input input:focus {
+  border-color: #6366F1;
+}
+
+.add-tag-btn {
+  width: 40px;
+  background: #6366F1;
+  border: none;
+  border-radius: 8px;
+  color: #FFF;
+  font-size: 18px;
+  cursor: pointer;
+}
+
+.add-tag-btn:hover {
+  background: #4F46E5;
+}
+
+.selected-tags-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 12px;
+  background: #EEF2FF;
+  border-radius: 8px;
+}
+
+.tags-label {
+  font-size: 11px;
+  color: #6366F1;
+  font-weight: 600;
+}
+
+.selected-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  background: #6366F1;
+  color: #FFF;
+  font-size: 11px;
+  border-radius: 12px;
+}
+
+.selected-tag button {
+  background: none;
+  border: none;
+  color: rgba(255,255,255,0.7);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+
+.selected-tag button:hover {
+  color: #FFF;
+}
+
+.tag-modal-footer {
+  padding: 16px 24px;
+  border-top: 1px solid #E5E7EB;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.tag-btn {
+  padding: 10px 20px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.tag-btn.secondary {
+  background: #FFF;
+  border: 1px solid #E5E7EB;
+  color: #374151;
+}
+
+.tag-btn.secondary:hover {
+  background: #F3F4F6;
+}
+
+.tag-btn.primary {
+  background: linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%);
+  border: none;
+  color: #FFF;
+}
+
+.tag-btn.primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+}
+
+.panel-input {
+  flex: 1;
+  padding: 12px 16px;
+  font-size: 14px;
+  border: 1px solid #E5E7EB;
+  border-radius: 12px;
+  resize: none;
+  font-family: inherit;
+}
+
+.panel-input:focus {
+  outline: none;
+  border-color: #1F2937;
+}
+
+.panel-send-btn {
+  padding: 12px 24px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #FFFFFF;
+  background: #1F2937;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.panel-send-btn:hover:not(:disabled) {
+  background: #374151;
+}
+
+.panel-send-btn:disabled {
+  background: #E5E7EB;
+  color: #9CA3AF;
+  cursor: not-allowed;
 }
 </style>

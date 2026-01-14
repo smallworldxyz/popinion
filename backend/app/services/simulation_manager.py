@@ -232,6 +232,7 @@ class SimulationManager:
         simulation_requirement: str,
         document_text: str,
         defined_entity_types: Optional[List[str]] = None,
+        selected_entity_ids: Optional[List[str]] = None,
         use_llm_for_profiles: bool = True,
         progress_callback: Optional[callable] = None,
         parallel_profile_count: int = 3,
@@ -243,6 +244,7 @@ class SimulationManager:
         
         Steps:
         1. Read and filter entities from Neo4j graph
+        1.5. Filter to user-selected entities (if specified)
         2. [NEW] Scrape real-world news/posts about entities (pubop integration)
         3. Generate OASIS Agent Profile for each entity (optional LLM enhancement, supports parallel)
         4. Use LLM to intelligently generate simulation configuration parameters (time, activity, post frequency, etc.)
@@ -254,6 +256,7 @@ class SimulationManager:
             simulation_requirement: Simulation requirement description (for LLM configuration generation)
             document_text: Original document content (for LLM background understanding)
             defined_entity_types: Predefined entity types (optional)
+            selected_entity_ids: List of entity UUIDs to include as agents (optional, if None uses all)
             use_llm_for_profiles: Whether to use LLM to generate detailed profiles
             progress_callback: Progress callback function (stage, progress, message)
             parallel_profile_count: Number of profiles to generate in parallel, default 3
@@ -305,7 +308,12 @@ class SimulationManager:
                 self._save_simulation_state(state)
                 return state
             
+            # Store all entities for context scraping (before filtering)
+            all_entities = filtered.entities.copy()
+            all_entity_count = len(all_entities)
+            
             # ========== Phase 2: Real-World Data Scraping (pubop) ==========
+            # Scrape for ALL entities to provide rich context, not just selected ones
             real_data_seed = None
             
             if enable_realworld_scraping:
@@ -314,17 +322,17 @@ class SimulationManager:
                         "scraping_realworld", 0,
                         "Starting smart real-world scraping...",
                         current=0,
-                        total=len(filtered.entities)
+                        total=all_entity_count
                     )
                 
                 try:
                     from .pubop_realworld_scraper import RealWorldScraper
                     import asyncio
                     
-                    # Extract entity names for scraping
-                    entity_names = [e.name for e in filtered.entities]
+                    # Extract ALL entity names for scraping (not just selected)
+                    entity_names = [e.name for e in all_entities]
                     
-                    logger.info(f"Starting real-world scraping for {len(entity_names)} entities")
+                    logger.info(f"Starting real-world scraping for {len(entity_names)} entities (full context)")
                     
                     def scrape_progress(current, total, msg):
                         if progress_callback:
@@ -356,8 +364,8 @@ class SimulationManager:
                         progress_callback(
                             "scraping_realworld", 100,
                             f"Smart Scraped {len(real_data_seed.initial_posts)} real articles",
-                            current=len(filtered.entities),
-                            total=len(filtered.entities)
+                            current=all_entity_count,
+                            total=all_entity_count
                         )
                     
                     logger.info(
@@ -371,9 +379,37 @@ class SimulationManager:
                         progress_callback(
                             "scraping_realworld", 100,
                             f"Scraping skipped: {str(e)[:50]}",
-                            current=len(filtered.entities),
-                            total=len(filtered.entities)
+                            current=all_entity_count,
+                            total=all_entity_count
                         )
+            
+            # ========== Phase 2.5: Filter to Selected Entities ==========
+            # After scraping ALL entities for context, now filter to only selected ones for profile generation
+            if selected_entity_ids:
+                selected_set = set(selected_entity_ids)
+                original_count = len(filtered.entities)
+                filtered.entities = [
+                    e for e in filtered.entities 
+                    if e.uuid in selected_set
+                ]
+                filtered.filtered_count = len(filtered.entities)
+                state.entities_count = filtered.filtered_count
+                
+                if progress_callback:
+                    progress_callback(
+                        "filtering", 100,
+                        f"Selected {filtered.filtered_count} of {original_count} entities as active agents",
+                        current=filtered.filtered_count,
+                        total=original_count
+                    )
+                
+                logger.info(f"Filtered to {filtered.filtered_count} selected entities for profile generation (scraped {original_count} for context)")
+                
+                if filtered.filtered_count == 0:
+                    state.status = SimulationStatus.FAILED
+                    state.error = "No selected entities found in graph"
+                    self._save_simulation_state(state)
+                    return state
             
             # ========== Phase 3: Generate Agent Profiles ==========
             total_entities = len(filtered.entities)

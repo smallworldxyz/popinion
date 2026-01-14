@@ -15,10 +15,9 @@ from typing import Dict, Any, List, Optional, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from openai import OpenAI
-
 from ..config import Config
 from ..utils.logger import get_logger
+from ..utils.llm_client import LLMClient
 from .neo4j_entity_reader import EntityNode, Neo4jEntityReader
 from .neo4j_tools import Neo4jToolsService
 
@@ -186,17 +185,13 @@ class OasisProfileGenerator:
         model_name: Optional[str] = None,
         graph_id: Optional[str] = None
     ):
-        self.api_key = api_key or Config.LLM_API_KEY
-        self.base_url = base_url or Config.LLM_BASE_URL
-        self.model_name = model_name or Config.LLM_MODEL_NAME
-        
-        if not self.api_key:
-            raise ValueError("LLM_API_KEY not configured")
-        
-        self.client = OpenAI(
-            api_key=self.api_key,
-            base_url=self.base_url
+        # Use centralized LLMClient for retry logic and rate limit handling
+        self.llm_client = LLMClient(
+            api_key=api_key,
+            base_url=base_url,
+            model=model_name
         )
+        self.model_name = model_name or Config.LLM_MODEL_NAME
         
         # Neo4j tools for retrieving rich context
         self.graph_id = graph_id
@@ -450,8 +445,8 @@ Generate a 2-3 sentence persona describing:
 
 Keep it concise and authentic."""
 
-            response = self.client.chat.completions.create(
-                model=self.model_name,
+            # Use LLMClient for centralized retry logic
+            response = self.llm_client.chat(
                 messages=[
                     {"role": "system", "content": "You are a persona analyst. Generate realistic social media user personas."},
                     {"role": "user", "content": prompt}
@@ -460,7 +455,7 @@ Keep it concise and authentic."""
                 temperature=0.7
             )
             
-            return response.choices[0].message.content.strip()
+            return response.strip()
             
         except Exception as e:
             logger.warning(f"LLM persona generation failed: {e}")
@@ -704,47 +699,29 @@ Keep it concise and authentic."""
         
         for attempt in range(max_attempts):
             try:
-                response = self.client.chat.completions.create(
-                    model=self.model_name,
-                    messages=[
-                        {"role": "system", "content": self._get_system_prompt(is_individual)},
-                        {"role": "user", "content": prompt}
-                    ],
-                    response_format={"type": "json_object"},
+                # Use LLMClient.chat_json for centralized retry logic
+                messages = [
+                    {"role": "system", "content": self._get_system_prompt(is_individual)},
+                    {"role": "user", "content": prompt}
+                ]
+                
+                result = self.llm_client.chat_json(
+                    messages=messages,
                     temperature=0.7 - (attempt * 0.1)  # Reduce temperature each retry
-                    # do not set max_tokens, let LLM decide
                 )
                 
-                content = response.choices[0].message.content
+                # Validate required fields
+                if "bio" not in result or not result["bio"]:
+                    result["bio"] = entity_summary[:200] if entity_summary else f"{entity_type}: {entity_name}"
+                if "persona" not in result or not result["persona"]:
+                    result["persona"] = entity_summary or f"{entity_name} is a {entity_type}."
                 
-                # Check if truncated (finish_reason is not 'stop')
-                finish_reason = response.choices[0].finish_reason
-                if finish_reason == 'length':
-                    logger.warning(f"LLM output truncated (attempt {attempt+1}), attempting to fix...")
-                    content = self._fix_truncated_json(content)
-                
-                # Try parsing JSON
-                try:
-                    result = json.loads(content)
+                return result
                     
-                    # Validate required fields
-                    if "bio" not in result or not result["bio"]:
-                        result["bio"] = entity_summary[:200] if entity_summary else f"{entity_type}: {entity_name}"
-                    if "persona" not in result or not result["persona"]:
-                        result["persona"] = entity_summary or f"{entity_name} is a {entity_type}."
-                    
-                    return result
-                    
-                except json.JSONDecodeError as je:
-                    logger.warning(f"JSON parse failed (attempt {attempt+1}): {str(je)[:80]}")
-                    
-                    # Attempt to fix JSON
-                    result = self._try_fix_json(content, entity_name, entity_type, entity_summary)
-                    if result.get("_fixed"):
-                        del result["_fixed"]
-                        return result
-                    
-                    last_error = je
+            except ValueError as e:
+                # LLMClient.chat_json raises ValueError for invalid JSON
+                logger.warning(f"JSON parse failed (attempt {attempt+1}): {str(e)[:80]}")
+                last_error = e
                     
             except Exception as e:
                 logger.warning(f"LLM call failed (attempt {attempt+1}): {str(e)[:80]}")

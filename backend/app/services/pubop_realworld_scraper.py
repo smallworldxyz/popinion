@@ -46,17 +46,13 @@ class RealWorldScraper:
         self.max_posts_per_entity = max_posts_per_entity
         self.timeout = timeout
         
-        # Initialize LLM client for smart planning
+        # Initialize LLM client for smart planning (using centralized LLMClient)
         self.llm_client = None
         try:
-            from openai import OpenAI
+            from ..utils.llm_client import LLMClient
             if Config.LLM_API_KEY:
-                self.llm_client = OpenAI(
-                    api_key=Config.LLM_API_KEY, 
-                    base_url=Config.LLM_BASE_URL
-                )
-                self.llm_model = Config.LLM_MODEL
-                logger.info(f"LLM Search Planner initialized: {self.llm_model}")
+                self.llm_client = LLMClient()
+                logger.info(f"LLM Search Planner initialized: {self.llm_client.model}")
         except Exception as e:
             logger.warning(f"LLM client init failed: {e}")
     
@@ -200,14 +196,11 @@ class RealWorldScraper:
             }}
             """
             
-            response = self.llm_client.chat.completions.create(
-                model=self.llm_model,
-                messages=[{"role": "user", "content": prompt}],
-                response_format={"type": "json_object"}
+            # Use LLMClient.chat_json for centralized retry logic
+            plan = self.llm_client.chat_json(
+                messages=[{"role": "user", "content": prompt}]
             )
             
-            content = response.choices[0].message.content
-            plan = json.loads(content)
             logger.info(f"AI Search Plan Generated: {len(plan)} entities")
             return plan
             
