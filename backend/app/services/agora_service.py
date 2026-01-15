@@ -582,6 +582,10 @@ COMMUNICATION STYLE:
         elif state.debate_mode == "review":
             state.status = DebateStatus.PAUSED
         
+        # V3: Generate round summary
+        round_summary = self._generate_round_summary(state, state.current_round)
+        state.round_summaries.append(round_summary)
+        
         self._save_debate(state)
         
         return {
@@ -589,7 +593,8 @@ COMMUNICATION STYLE:
             "round": state.current_round,
             "turns": [t.to_dict() for t in round_turns],
             "status": state.status.value,
-            "is_complete": state.status == DebateStatus.COMPLETED
+            "is_complete": state.status == DebateStatus.COMPLETED,
+            "round_summary": round_summary
         }
     
     def execute_timed_round(
@@ -771,6 +776,10 @@ RULES:
             state.completed_at = datetime.now().isoformat()
         elif state.debate_mode == "review":
             state.status = DebateStatus.PAUSED
+            
+        # V3: Generate round summary
+        round_summary = self._generate_round_summary(state, state.current_round)
+        state.round_summaries.append(round_summary)
         
         self._save_debate(state)
         
@@ -781,7 +790,8 @@ RULES:
             "exchanges": exchange_count,
             "duration_seconds": time.time() - round_start,
             "status": state.status.value,
-            "is_complete": state.status == DebateStatus.COMPLETED
+            "is_complete": state.status == DebateStatus.COMPLETED,
+            "round_summary": round_summary
         }
     
     def pause_debate(self, debate_id: str) -> DebateState:
@@ -887,6 +897,79 @@ RULES:
         else:
             return "neutral", 0
     
+    def _generate_round_summary(self, state: DebateState, round_num: int) -> Dict[str, Any]:
+        """Generate a concise summary of a specific debate round"""
+        round_turns = [t for t in state.turns if t.round_num == round_num]
+        if not round_turns:
+            return {"round": round_num, "summary": "No activity recorded.", "key_points": []}
+            
+        # Build round transcript
+        transcript = []
+        for turn in round_turns:
+            name = state.agent_names.get(turn.agent_id, turn.agent_name)
+            transcript.append(f"{name}: {turn.response}")
+            
+        try:
+            prompt = f"""Summarize this single round of a debate in 2-3 sentences.
+Focus on the most significant point of disagreement or progress made in this specific round.
+
+TOPIC: {state.topic}
+PARTICIPANTS: {', '.join(state.agent_names.values())}
+
+ROUND TRANSCRIPT:
+{chr(10).join(transcript)}
+
+Write a concise one-paragraph summary. 
+Then, list 2-3 'Key Points' from this round as short bullet points.
+Return format:
+Summary: [The paragraph]
+Points:
+- [Point 1]
+- [Point 2]"""
+
+            response = self.llm.chat(
+                messages=[
+                    {"role": "system", "content": "You are a legislative clerk summarizing a floor debate. Be objective and concise."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.3,
+                max_tokens=400
+            )
+            
+            # Parse response
+            summary_text = ""
+            key_points = []
+            
+            lines = response.split('\n')
+            current_section = None
+            for line in lines:
+                line = line.strip()
+                if not line: continue
+                
+                if line.lower().startswith("summary:"):
+                    summary_text = line[8:].strip()
+                elif line.lower().startswith("points:"):
+                    current_section = "points"
+                elif current_section == "points" and (line.startswith("-") or line.startswith("*")):
+                    key_points.append(line[1:].strip())
+                elif not summary_text and not current_section:
+                    summary_text = line
+            
+            return {
+                "round": round_num,
+                "summary": summary_text or response,
+                "key_points": key_points,
+                "timestamp": datetime.now().isoformat()
+            }
+        except Exception as e:
+            logger.error(f"Failed to generate round summary for round {round_num}: {e}")
+            return {
+                "round": round_num,
+                "summary": f"Round {round_num} completed with {len(round_turns)} exchanges.",
+                "key_points": [],
+                "timestamp": datetime.now().isoformat()
+            }
+
     def _generate_summary(self, state: DebateState) -> str:
         """Generate a proper synopsis summary of the debate using LLM"""
         if not state.turns:

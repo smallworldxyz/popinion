@@ -398,6 +398,37 @@
               </div>
             </div>
           </Teleport>
+          
+          <!-- Round Summary Modal -->
+          <Teleport to="body">
+            <div v-if="showRoundSummary && currentRoundSummary" class="agora-tag-modal-overlay">
+              <div class="agora-tag-modal round-summary-modal">
+                <div class="tag-modal-header">
+                  <h3>Round {{ currentRoundSummary.round }} Summary</h3>
+                  <button class="tag-modal-close" @click="showRoundSummary = false">×</button>
+                </div>
+                <div class="tag-modal-body">
+                  <div class="summary-section">
+                    <p class="round-summary-text">{{ currentRoundSummary.summary }}</p>
+                  </div>
+                  
+                  <div v-if="currentRoundSummary.key_points && currentRoundSummary.key_points.length > 0" class="key-points-section">
+                    <span class="tag-label">Key Points:</span>
+                    <ul class="round-key-points">
+                      <li v-for="(point, idx) in currentRoundSummary.key_points" :key="idx">
+                        {{ point }}
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+                <div class="tag-modal-footer">
+                  <button class="tag-btn primary" @click="showRoundSummary = false">
+                    Continue to Next Round
+                  </button>
+                </div>
+              </div>
+            </div>
+          </Teleport>
 
           <!-- Actions -->
           <div class="action-buttons">
@@ -503,6 +534,10 @@ const pendingHighlight = ref(null)
 const selectedTags = ref(new Set())
 const customTagInput = ref('')
 const predefinedTags = ['key_insight', 'quote', 'evidence', 'argument', 'counter_argument', 'consensus', 'disagreement']
+
+// V3: Round Summaries
+const showRoundSummary = ref(false)
+const currentRoundSummary = ref(null)
 
 // Computed
 const debateActive = computed(() => {
@@ -802,6 +837,12 @@ const executeNextRound = async () => {
       console.log('[Agora] Round complete, refreshing full state...')
       await refreshDebateState()
       
+      // V3: Show round summary
+      if (roundData.round_summary) {
+        currentRoundSummary.value = roundData.round_summary
+        showRoundSummary.value = true
+      }
+      
       pivotTopic.value = ''
 
       // Scroll to bottom
@@ -885,6 +926,12 @@ const startTimedRound = async () => {
               // Round completed
               console.log(`[Agora] Round ${data.round} complete: ${data.exchanges} exchanges in ${data.duration_seconds.toFixed(1)}s`)
               emit('add-log', `[Agora] Round ${data.round} complete (${data.exchanges} exchanges)`)
+              
+              // V3: Show round summary
+              if (data.round_summary) {
+                currentRoundSummary.value = data.round_summary
+                showRoundSummary.value = true
+              }
               
               // Update debate state
               await refreshDebateState()
@@ -2387,5 +2434,36 @@ watch(() => props.simulationId, (newId, oldId) => {
 
 .tag-btn:hover {
   filter: brightness(1.1);
+}
+
+/* V3: Round Summary Modal Specifics */
+.round-summary-modal {
+  max-width: 550px;
+}
+
+.round-summary-text {
+  color: #e5e5e5;
+  font-size: 15px;
+  line-height: 1.6;
+  margin-bottom: 24px;
+}
+
+.round-key-points {
+  margin: 12px 0 0 0;
+  padding-left: 20px;
+  color: #d1d1d6;
+}
+
+.round-key-points li {
+  font-size: 13px;
+  margin-bottom: 8px;
+  line-height: 1.4;
+}
+
+.key-points-section {
+  background: rgba(124, 58, 237, 0.05);
+  padding: 16px;
+  border-radius: 8px;
+  border: 1px solid rgba(124, 58, 237, 0.1);
 }
 </style>
