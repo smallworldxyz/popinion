@@ -39,6 +39,7 @@ from .simulation_ipc import (
 from .neo4j_tools import Neo4jToolsService
 from .panel_chat_service import PanelChatService, PanelChatResult, AgentResponse, Stance
 from .survey_service import SurveyService, SurveyTemplate, SurveyQuestion, SurveyType, SurveyResult
+from .agora_service import AgoraService, DebateState, DebateTurn, DebateStatus, DebateGoal, DEBATE_TEMPLATES
 
 __all__ = [
     'OntologyGenerator', 
@@ -77,4 +78,15 @@ __all__ = [
     'PanelChatResult',
     'AgentResponse',
     'Stance',
+    'SurveyService',
+    'SurveyTemplate',
+    'SurveyQuestion',
+    'SurveyType',
+    'SurveyResult',
+    'AgoraService',
+    'DebateState',
+    'DebateTurn',
+    'DebateStatus',
+    'DebateGoal',
+    'DEBATE_TEMPLATES',
 ]

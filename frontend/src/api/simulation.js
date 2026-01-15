@@ -225,4 +225,89 @@ export const getSurvey = (surveyId) => {
 }
 
 
+// ============== Agora Debate API ==============
 
+/**
+ * Get available debate templates/goals
+ */
+export const getAgoraTemplates = () => {
+  return service.get('/api/simulation/agora/templates')
+}
+
+/**
+ * Create a new Agora debate
+ * @param {Object} data - { simulation_id, topic, goal_type, agent_ids, agent_names, max_rounds?, debate_mode?, moderator_mode? }
+ */
+export const createAgoraDebate = (data) => {
+  return service.post('/api/simulation/agora/create', data)
+}
+
+/**
+ * Execute a debate round
+ * @param {string} debateId
+ * @param {Object} data - { pivot_topic? }
+ */
+export const executeAgoraRound = (debateId, data = {}) => {
+  return requestWithRetry(() => service.post(`/api/simulation/agora/${debateId}/round`, data), 3, 2000)
+}
+
+/**
+ * List all debates for a simulation
+ * @param {string} simulationId
+ */
+export const listAgoraDebates = (simulationId) => {
+  return service.get(`/api/simulation/agora/list/${simulationId}`)
+}
+
+/**
+ * Execute a timed debate round with real-time SSE streaming.
+ * Returns a URL that can be used with EventSource for real-time updates.
+ * @param {string} debateId
+ * @param {Object} data - { round_duration_seconds?, pivot_topic? }
+ * @returns {string} SSE stream URL
+ */
+export const getStreamAgoraRoundUrl = (debateId) => {
+  const baseUrl = import.meta.env.VITE_API_BASE_URL || ''
+  return `${baseUrl}/api/simulation/agora/${debateId}/stream-round`
+}
+
+/**
+ * Get debate status
+ * @param {string} debateId
+ */
+export const getAgoraStatus = (debateId) => {
+  return service.get(`/api/simulation/agora/${debateId}/status`)
+}
+
+/**
+ * Get full debate state by ID
+ * @param {string} debateId
+ */
+export const getAgoraDebate = (debateId) => {
+  return service.get(`/api/simulation/agora/${debateId}`)
+}
+
+/**
+ * Pause a running debate
+ * @param {string} debateId
+ */
+export const pauseAgoraDebate = (debateId) => {
+  return service.post(`/api/simulation/agora/${debateId}/pause`)
+}
+
+/**
+ * Resume a paused debate
+ * @param {string} debateId
+ */
+export const resumeAgoraDebate = (debateId) => {
+  return service.post(`/api/simulation/agora/${debateId}/resume`)
+}
+
+/**
+ * Stop a debate permanently
+ * @param {string} debateId
+ * @param {Object} data - { generate_summary? }
+ */
+export const stopAgoraDebate = (debateId, data = {}) => {
+  return service.post(`/api/simulation/agora/${debateId}/stop`, data)
+}

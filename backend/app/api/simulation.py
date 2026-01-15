@@ -15,6 +15,7 @@ from ..services.simulation_manager import SimulationManager, SimulationStatus
 from ..services.simulation_runner import SimulationRunner, RunnerStatus
 from ..services.panel_chat_service import PanelChatService
 from ..services.survey_service import SurveyService
+from ..services.agora_service import AgoraService, DebateStatus, DEBATE_TEMPLATES
 from ..utils.logger import get_logger
 from ..models.project import ProjectManager
 
@@ -2729,34 +2730,72 @@ def panel_chat():
                 "error": "platform must be 'twitter' or 'reddit'"
             }), 400
         
-        # Check environment status
-        if not SimulationRunner.check_env_alive(simulation_id):
-            return jsonify({
-                "success": False,
-                "error": "Simulation environment is not running. Please ensure simulation is completed and in waiting command mode."
-            }), 400
-        
-        # Optimize prompt
-        optimized_prompt = optimize_interview_prompt(prompt)
-        
-        # Interview all agents
-        raw_result = SimulationRunner.interview_all_agents(
-            simulation_id=simulation_id,
-            prompt=optimized_prompt,
-            platform=platform,
-            timeout=timeout
-        )
-        
-        if not raw_result.get("success", False):
-            return jsonify({
-                "success": False,
-                "error": raw_result.get("error", "Interview failed"),
-                "data": raw_result
-            }), 500
-        
-        # Load agent profiles for faction information
+        # Load agent profiles for faction information (needed for both modes)
         manager = SimulationManager()
         profiles = manager.get_profiles(simulation_id, platform=platform or "reddit")
+        
+        if not profiles:
+            return jsonify({
+                "success": False,
+                "error": "No agent profiles found for this simulation"
+            }), 400
+        
+        # Check environment status - use profile-based LLM if env not alive
+        env_alive = SimulationRunner.check_env_alive(simulation_id)
+        
+        if env_alive:
+            # Use live interview (original behavior)
+            optimized_prompt = optimize_interview_prompt(prompt)
+            
+            raw_result = SimulationRunner.interview_all_agents(
+                simulation_id=simulation_id,
+                prompt=optimized_prompt,
+                platform=platform,
+                timeout=timeout
+            )
+            
+            if not raw_result.get("success", False):
+                logger.error(f"Panel chat interview failed: {raw_result}")
+                return jsonify({
+                    "success": False,
+                    "error": raw_result.get("error", "Interview failed")
+                }), 500
+        else:
+            # Fallback: Use profile-based LLM (no live env required)
+            logger.info(f"[Panel Chat] Env not alive, using profile-based LLM for {len(profiles)} agents")
+            
+            from app.services.agora_service import AgoraService
+            agora_service = AgoraService()
+            
+            # Generate responses using profile-based LLM
+            llm_responses = []
+            for idx, profile in enumerate(profiles):
+                agent_name = profile.get('username') or profile.get('display_name') or f"Agent_{idx}"
+                
+                try:
+                    response_text = agora_service._generate_profile_response(
+                        profile=profile,
+                        debate_prompt=prompt,
+                        system_context="You are being interviewed for a panel discussion. Answer the question directly and honestly based on your perspective and beliefs. Be concise but substantive in 2-3 sentences.",
+                        agent_name=agent_name
+                    )
+                    
+                    llm_responses.append({
+                        "agent_id": idx,
+                        "agent_name": agent_name,
+                        "response": response_text
+                    })
+                except Exception as e:
+                    logger.error(f"LLM response failed for agent {idx}: {e}")
+            
+            # Format as raw_result structure expected by aggregate_responses
+            raw_result = {
+                "success": True,
+                "result": {
+                    "responses": llm_responses
+                }
+            }
+            logger.info(f"[Panel Chat] Generated {len(llm_responses)} profile-based LLM responses")
         
         # Aggregate responses using PanelChatService
         panel_service = PanelChatService()
@@ -3055,3 +3094,382 @@ def get_survey(survey_id: str):
         }), 500
 
 
+# ============== Agora Debate Interface ==============
+
+@simulation_bp.route('/agora/templates', methods=['GET'])
+def get_agora_templates():
+    """
+    Get available debate templates (goal types)
+    
+    Returns:
+        List of available debate goals with descriptions
+    """
+    templates = []
+    goal_descriptions = {
+        "stress_test": "Stress-test a single decision - Find weaknesses in your proposal",
+        "risk_id": "Identify risks & blind spots - Uncover what you'd miss",
+        "stakeholder": "Understand stakeholder perspectives - See how different groups react",
+        "competitive": "Simulate competitive attacks - How would competitors respond?",
+        "consensus": "Find middle ground - Identify compromise positions",
+        "socratic": "Expose hidden assumptions - Deep dive into beliefs"
+    }
+    
+    for goal_type, template in DEBATE_TEMPLATES.items():
+        templates.append({
+            "goal_type": goal_type,
+            "name": template["name"],
+            "description": goal_descriptions.get(goal_type, "")
+        })
+    
+    return jsonify({
+        "success": True,
+        "data": templates
+    })
+
+
+@simulation_bp.route('/agora/list/<simulation_id>', methods=['GET'])
+def list_agora_debates(simulation_id: str):
+    """
+    List all debates for a simulation
+    
+    Returns:
+        List of debate summaries (id, topic, status, etc.)
+    """
+    try:
+        agora_service = AgoraService()
+        debates = agora_service.list_debates(simulation_id)
+        
+        return jsonify({
+            "success": True,
+            "data": debates
+        })
+        
+    except Exception as e:
+        logger.error(f"List agora debates failed: {str(e)}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@simulation_bp.route('/agora/create', methods=['POST'])
+def create_agora_debate():
+    """
+    Create a new Agora debate
+    
+    Request (JSON):
+        {
+            "simulation_id": "sim_xxxx",
+            "topic": "Should we increase minimum wage?",
+            "goal_type": "stress_test",
+            "agent_ids": [0, 1, 2],
+            "agent_names": {"0": "Agent A", "1": "Agent B", "2": "Agent C"},
+            "max_rounds": 5,
+            "debate_mode": "continuous",  // or "review"
+            "moderator_mode": "user_only"  // or "synthesized" or "forced_neutral"
+        }
+    
+    Returns:
+        Debate state
+    """
+    try:
+        data = request.get_json() or {}
+        
+        simulation_id = data.get('simulation_id')
+        if not simulation_id:
+            return jsonify({
+                "success": False,
+                "error": "simulation_id is required"
+            }), 400
+        
+        topic = data.get('topic')
+        if not topic:
+            return jsonify({
+                "success": False,
+                "error": "topic is required"
+            }), 400
+        
+        agent_ids = data.get('agent_ids', [])
+        if len(agent_ids) < 2:
+            return jsonify({
+                "success": False,
+                "error": "At least 2 agents required for debate"
+            }), 400
+        
+        # Convert agent_names keys to integers
+        agent_names_raw = data.get('agent_names', {})
+        agent_names = {int(k): v for k, v in agent_names_raw.items()}
+        
+        agora_service = AgoraService()
+        state = agora_service.create_debate(
+            simulation_id=simulation_id,
+            topic=topic,
+            goal_type=data.get('goal_type', 'stress_test'),
+            agent_ids=agent_ids,
+            agent_names=agent_names,
+            max_rounds=data.get('max_rounds', 5),
+            debate_mode=data.get('debate_mode', 'continuous'),
+            moderator_mode=data.get('moderator_mode', 'user_only'),
+            turn_timeout=float(data.get('turn_timeout', 60.0)),
+            round_duration_seconds=int(data.get('round_duration_seconds', 30))
+        )
+        
+        return jsonify({
+            "success": True,
+            "data": state.to_dict()
+        })
+        
+    except ValueError as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 400
+        
+    except Exception as e:
+        logger.error(f"Create agora debate failed: {str(e)}")
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }), 500
+
+
+@simulation_bp.route('/agora/<debate_id>/round', methods=['POST'])
+def execute_agora_round(debate_id: str):
+    """
+    Execute a single debate round
+    
+    Request (JSON):
+        {
+            "pivot_topic": "Optional new topic to pivot discussion"
+        }
+    
+    Returns:
+        Round result with turns
+    """
+    try:
+        data = request.get_json() or {}
+        pivot_topic = data.get('pivot_topic')
+        
+        agora_service = AgoraService()
+        result = agora_service.execute_round(
+            debate_id=debate_id,
+            pivot_topic=pivot_topic
+        )
+        
+        return jsonify({
+            "success": True,
+            "data": result
+        })
+        
+    except ValueError as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 400
+        
+    except Exception as e:
+        logger.error(f"Execute agora round failed: {str(e)}")
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }), 500
+
+
+@simulation_bp.route('/agora/<debate_id>/stream-round', methods=['POST'])
+def stream_agora_round(debate_id: str):
+    """
+    Execute a timed debate round with real-time SSE streaming.
+    
+    This endpoint streams turn objects as they complete during the timed round,
+    allowing the frontend to display the debate in real-time.
+    
+    Request (JSON):
+        {
+            "round_duration_seconds": 30,
+            "pivot_topic": "Optional topic to pivot discussion"
+        }
+    
+    Returns:
+        Server-Sent Events stream of turn objects
+    """
+    from flask import Response
+    import json as json_module
+    
+    # Extract request data BEFORE entering the generator (Flask context issue)
+    data = request.get_json() or {}
+    round_duration = data.get('round_duration_seconds', 30)
+    pivot_topic = data.get('pivot_topic')
+    
+    def generate():
+        try:
+            agora_service = AgoraService()
+            
+            # Stream turns as they complete
+            for turn_data in agora_service.execute_timed_round(
+                debate_id=debate_id,
+                round_duration_seconds=round_duration,
+                pivot_topic=pivot_topic
+            ):
+                # Format as SSE
+                yield f"data: {json_module.dumps(turn_data)}\n\n"
+                
+        except ValueError as e:
+            yield f"data: {json_module.dumps({'_type': 'error', 'error': str(e)})}\n\n"
+            
+        except Exception as e:
+            logger.error(f"Stream agora round failed: {str(e)}")
+            yield f"data: {json_module.dumps({'_type': 'error', 'error': str(e)})}\n\n"
+    
+    return Response(
+        generate(),
+        mimetype='text/event-stream',
+        headers={
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+            'X-Accel-Buffering': 'no'
+        }
+    )
+
+@simulation_bp.route('/agora/<debate_id>', methods=['GET'])
+def get_agora_debate_by_id(debate_id: str):
+    """Get full debate state by ID"""
+    try:
+        agora_service = AgoraService()
+        state = agora_service.get_debate(debate_id)
+        
+        if not state:
+            return jsonify({
+                "success": False,
+                "error": f"Debate not found: {debate_id}"
+            }), 404
+        
+        return jsonify({
+            "success": True,
+            "data": state.to_dict()
+        })
+        
+    except Exception as e:
+        logger.error(f"Get agora debate failed: {str(e)}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@simulation_bp.route('/agora/<debate_id>/status', methods=['GET'])
+def get_agora_status(debate_id: str):
+    """Get current debate status"""
+    try:
+        agora_service = AgoraService()
+        state = agora_service.get_debate(debate_id)
+        
+        if not state:
+            return jsonify({
+                "success": False,
+                "error": f"Debate not found: {debate_id}"
+            }), 404
+        
+        return jsonify({
+            "success": True,
+            "data": state.to_dict()
+        })
+        
+    except Exception as e:
+        logger.error(f"Get agora status failed: {str(e)}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@simulation_bp.route('/agora/<debate_id>/pause', methods=['POST'])
+def pause_agora_debate(debate_id: str):
+    """Pause a running debate"""
+    try:
+        agora_service = AgoraService()
+        state = agora_service.pause_debate(debate_id)
+        
+        return jsonify({
+            "success": True,
+            "data": state.to_dict()
+        })
+        
+    except ValueError as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 400
+        
+    except Exception as e:
+        logger.error(f"Pause agora debate failed: {str(e)}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@simulation_bp.route('/agora/<debate_id>/resume', methods=['POST'])
+def resume_agora_debate(debate_id: str):
+    """Resume a paused debate"""
+    try:
+        agora_service = AgoraService()
+        state = agora_service.resume_debate(debate_id)
+        
+        return jsonify({
+            "success": True,
+            "data": state.to_dict()
+        })
+        
+    except ValueError as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 400
+        
+    except Exception as e:
+        logger.error(f"Resume agora debate failed: {str(e)}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@simulation_bp.route('/agora/<debate_id>/stop', methods=['POST'])
+def stop_agora_debate(debate_id: str):
+    """
+    Stop a debate permanently and generate summary
+    
+    Request (JSON):
+        {
+            "generate_summary": true  // Optional, default true
+        }
+    """
+    try:
+        data = request.get_json() or {}
+        generate_summary = data.get('generate_summary', True)
+        
+        agora_service = AgoraService()
+        state = agora_service.stop_debate(
+            debate_id=debate_id,
+            generate_summary=generate_summary
+        )
+        
+        return jsonify({
+            "success": True,
+            "data": state.to_dict()
+        })
+        
+    except ValueError as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 400
+        
+    except Exception as e:
+        logger.error(f"Stop agora debate failed: {str(e)}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500

@@ -110,9 +110,9 @@
       </div>
     </Teleport>
     <!-- Main Split Layout -->
-    <div class="main-split-layout">
+    <div class="main-split-layout" :class="{ 'agora-mode': activeTab === 'agora' && agoraDebateActive }">
       <!-- LEFT PANEL: Report Style -->
-      <div class="left-panel report-style" ref="leftPanel">
+      <div class="left-panel report-style" :class="{ 'hidden': activeTab === 'agora' && agoraDebateActive }" ref="leftPanel">
         <div v-if="reportOutline" class="report-content-wrapper">
           <!-- Report Header -->
           <div class="report-header-block">
@@ -252,6 +252,16 @@
                 <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
               </svg>
               <span>Panel Discussion</span>
+            </button>
+            <button 
+              class="tab-pill agora-pill"
+              :class="{ active: activeTab === 'agora' }"
+              @click="selectAgoraTab"
+            >
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M3 21h18M5 21V7l7-4 7 4v14M9 21v-6h6v6"></path>
+              </svg>
+              <span>Agora Debate</span>
             </button>
           </div>
         </div>
@@ -564,6 +574,38 @@
           @close="showParticipantModal = false"
           @confirm="handleParticipantSelection"
         />
+
+        <!-- Agora Debate Mode -->
+        <div v-if="activeTab === 'agora'" class="agora-container">
+          <AgoraPanel
+            :simulation-id="simulationId"
+            :profiles="profiles"
+            @debate-started="handleDebateStarted"
+            @debate-ended="handleDebateEnded"
+            @add-log="addLog"
+            @add-to-knowledge="handleAddToKnowledge"
+          />
+        </div>
+
+        <!-- System Logs Panel -->
+        <div class="system-logs-mini">
+          <div class="logs-header">
+            <span class="logs-title">Interaction Monitor</span>
+            <button class="clear-logs-btn" @click="systemLogs.length = 0" v-if="systemLogs.length > 0">Clear</button>
+          </div>
+          <div class="logs-content" ref="logsContentRef">
+            <div 
+              v-for="(log, idx) in systemLogs" 
+              :key="idx" 
+              class="log-entry"
+              :class="{ 'log-warning': log.msg.includes('⚠️'), 'log-error': log.msg.includes('❌') }"
+            >
+              <span class="log-entry-time">{{ log.time }}</span>
+              <span class="log-entry-msg">{{ log.msg }}</span>
+            </div>
+            <div v-if="systemLogs.length === 0" class="logs-empty">No activity recorded yet</div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -574,6 +616,7 @@ import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { chatWithReport, getReport, getAgentLog } from '../api/report'
 import { interviewAgents, getSimulationProfilesRealtime } from '../api/simulation'
 import EntitySelectionModal from './EntitySelectionModal.vue'
+import AgoraPanel from './AgoraPanel.vue'
 
 const props = defineProps({
   reportId: String,
@@ -585,6 +628,10 @@ const props = defineProps({
   injectedKnowledge: {
     type: Object,
     default: () => ({})
+  },
+  systemLogs: {
+    type: Array,
+    default: () => []
   }
 })
 
@@ -596,6 +643,16 @@ const chatTarget = ref('report_agent')
 const showAgentDropdown = ref(false)
 const selectedAgent = ref(null)
 const selectedAgentIndex = ref(null)
+const logsContentRef = ref(null)
+
+// Watch for logs to scroll to bottom
+watch(() => props.systemLogs.length, () => {
+  nextTick(() => {
+    if (logsContentRef.value) {
+      logsContentRef.value.scrollTop = logsContentRef.value.scrollHeight
+    }
+  })
+})
 const showFullProfile = ref(true)
 const showToolsDetail = ref(true)
 
@@ -1037,6 +1094,26 @@ const selectPanelTab = () => {
   showAgentDropdown.value = false
 }
 
+const selectAgoraTab = () => {
+  activeTab.value = 'agora'
+  selectedAgent.value = null
+  selectedAgentIndex.value = null
+  showAgentDropdown.value = false
+}
+
+// Agora debate state
+const agoraDebateActive = ref(false)
+
+const handleDebateStarted = (debateId) => {
+  agoraDebateActive.value = true
+  addLog(`Agora debate started: ${debateId}`)
+}
+
+const handleDebateEnded = (debateId) => {
+  agoraDebateActive.value = false
+  addLog(`Agora debate ended: ${debateId}`)
+}
+
 const removeParticipant = (idx) => {
   const newSet = new Set(panelParticipants.value)
   newSet.delete(idx)
@@ -1182,6 +1259,12 @@ const confirmAddToKnowledge = () => {
   
   addLog(`Added to Knowledge: "${pendingHighlight.value.text.substring(0, 40)}..." with ${selectedTags.value.size} tag(s)`)
   closeTagModal()
+}
+
+// Handle add-to-knowledge emit from child components (e.g., AgoraPanel)
+const handleAddToKnowledge = (data) => {
+  emit('add-to-knowledge', data)
+  addLog(`Added to Knowledge: "${data.content.substring(0, 40)}..." from ${data.source}`)
 }
 
 const clearSelection = () => {
@@ -1459,6 +1542,21 @@ watch(() => props.simulationId, (newId) => {
   display: flex;
   flex-direction: column;
   padding: 30px 50px 60px 50px;
+  transition: all 0.3s ease;
+}
+
+/* Agora Mode - Hide left panel, expand right panel */
+.main-split-layout.agora-mode .left-panel {
+  width: 0;
+  min-width: 0;
+  padding: 0;
+  opacity: 0;
+  overflow: hidden;
+  border: none;
+}
+
+.main-split-layout.agora-mode .right-panel {
+  width: 100%;
 }
 
 .left-panel::-webkit-scrollbar {
@@ -1837,9 +1935,9 @@ watch(() => props.simulationId, (newId) => {
   padding: 8px 14px;
   font-size: 12px;
   font-weight: 500;
-  color: #6B7280;
+  color: #374151;
   background: #F3F4F6;
-  border: 1px solid transparent;
+  border: 2px solid #E5E7EB;
   border-radius: 20px;
   cursor: pointer;
   transition: all 0.2s ease;
@@ -1847,14 +1945,15 @@ watch(() => props.simulationId, (newId) => {
 }
 
 .tab-pill:hover {
-  background: #E5E7EB;
-  color: #374151;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .tab-pill.active {
   background: #1F2937;
   color: #FFFFFF;
-  box-shadow: 0 2px 8px rgba(31, 41, 55, 0.15);
+  border-color: #1F2937;
+  box-shadow: 0 2px 8px rgba(31, 41, 55, 0.2);
 }
 
 .tab-pill svg {
@@ -1876,6 +1975,21 @@ watch(() => props.simulationId, (newId) => {
 .agent-pill {
   width: 200px;
   justify-content: space-between;
+  background: #EFF6FF;
+  color: #1D4ED8;
+  border-color: #BFDBFE;
+}
+
+.agent-pill:hover {
+  background: #DBEAFE;
+  border-color: #93C5FD;
+}
+
+.agent-pill.active {
+  background: #1D4ED8;
+  color: #FFFFFF;
+  border-color: #1D4ED8;
+  box-shadow: 0 2px 8px rgba(29, 78, 216, 0.25);
 }
 
 .agent-pill span {
@@ -1886,20 +2000,61 @@ watch(() => props.simulationId, (newId) => {
   text-align: left;
 }
 
+/* Report Agent Chat - Orange accent */
+.tab-pill:not(.agent-pill):not(.survey-pill):not(.agora-pill) {
+  background: #FFF7ED;
+  color: #C2410C;
+  border-color: #FED7AA;
+}
+
+.tab-pill:not(.agent-pill):not(.survey-pill):not(.agora-pill):hover {
+  background: #FFEDD5;
+  border-color: #FDBA74;
+}
+
+.tab-pill:not(.agent-pill):not(.survey-pill):not(.agora-pill).active {
+  background: #EA580C;
+  color: #FFFFFF;
+  border-color: #EA580C;
+  box-shadow: 0 2px 8px rgba(234, 88, 12, 0.25);
+}
+
+/* Panel Discussion - Green accent */
 .survey-pill {
   background: #ECFDF5;
   color: #047857;
+  border-color: #A7F3D0;
 }
 
 .survey-pill:hover {
   background: #D1FAE5;
-  color: #065F46;
+  border-color: #6EE7B7;
 }
 
 .survey-pill.active {
   background: #047857;
   color: #FFFFFF;
-  box-shadow: 0 2px 8px rgba(4, 120, 87, 0.2);
+  border-color: #047857;
+  box-shadow: 0 2px 8px rgba(4, 120, 87, 0.25);
+}
+
+/* Agora Debate - Purple accent */
+.agora-pill {
+  background: #F5F3FF;
+  color: #7C3AED;
+  border-color: #DDD6FE;
+}
+
+.agora-pill:hover {
+  background: #EDE9FE;
+  border-color: #C4B5FD;
+}
+
+.agora-pill.active {
+  background: #7C3AED;
+  color: #FFFFFF;
+  border-color: #7C3AED;
+  box-shadow: 0 2px 8px rgba(124, 58, 237, 0.25);
 }
 
 /* Interaction Header */
@@ -3869,5 +4024,122 @@ watch(() => props.simulationId, (newId) => {
   background: #E5E7EB;
   color: #9CA3AF;
   cursor: not-allowed;
+}
+
+/* Agora Container */
+
+.agora-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* --- Mini Logs Panel (Step 5 Style) --- */
+.system-logs-mini {
+  background: #0f172a;
+  border-top: 1px solid #1e293b;
+  height: 180px;
+  display: flex;
+  flex-direction: column;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  position: relative;
+  z-index: 100;
+}
+
+.logs-header {
+  padding: 8px 16px;
+  background: #1e293b;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.logs-title {
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.clear-logs-btn {
+  background: transparent;
+  border: 1px solid #334155;
+  color: #64748b;
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.clear-logs-btn:hover {
+  background: #334155;
+  color: #f1f5f9;
+}
+
+.logs-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 16px;
+  background: #020617;
+}
+
+.log-entry {
+  font-size: 12px;
+  line-height: 1.5;
+  margin-bottom: 4px;
+  display: flex;
+  gap: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+  padding-bottom: 2px;
+}
+
+.log-entry-time {
+  color: #64748b;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.log-entry-msg {
+  color: #cbd5e1;
+  word-break: break-all;
+}
+
+.log-warning .log-entry-msg {
+  color: #fbbf24;
+}
+
+.log-error .log-entry-msg {
+  color: #f87171;
+}
+
+.logs-empty {
+  color: #475569;
+  font-size: 12px;
+  text-align: center;
+  margin-top: 20px;
+  font-style: italic;
+}
+
+/* Custom Scrollbar for Logs */
+.logs-content::-webkit-scrollbar {
+  width: 6px;
+}
+.logs-content::-webkit-scrollbar-track {
+  background: #020617;
+}
+.logs-content::-webkit-scrollbar-thumb {
+  background: #1e293b;
+  border-radius: 3px;
+}
+.logs-content::-webkit-scrollbar-thumb:hover {
+  background: #334155;
+}
+
+.agora-pill.active {
+  background: linear-gradient(135deg, #8b5cf6, #6366f1) !important;
+  color: white !important;
 }
 </style>
