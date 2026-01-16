@@ -372,6 +372,81 @@ OBSERVE → CAPTURE → IDENTIFY GAPS → INJECT → SIMULATE AGAIN
 
 ---
 
+#### Gap Injection: How It Works
+
+> *"When a gap is injected, what does the agent actually receive?"*
+
+This is a critical design decision. There are two approaches:
+
+**Option A: Verbatim Reminder (MVP)**
+
+The gap text is injected directly into the agent's context as written:
+
+```
+User authors gap: "Agent X did not consider labor unions"
+        ↓
+Injected to prompt: "[Important context to consider]: Agent X did not consider labor unions"
+        ↓
+Agent sees: A reminder to think about labor unions
+```
+
+| Pros | Cons |
+|------|------|
+| Simple to implement | Agent only knows *that* something was missing |
+| No additional LLM calls | Doesn't provide substantive knowledge |
+| User has full control over wording | Requires user to write actionable gaps |
+
+**Best Practice for Option A**: Write substantive gaps, not just alerts:
+- ❌ *"Agent X didn't consider labor unions"*
+- ✅ *"Labor unions typically oppose automation due to job security concerns and diminished collective bargaining power"*
+
+---
+
+**Option B: LLM Research & Fill (Future Enhancement)**
+
+Before injection, the system researches the gap and generates substantive content:
+
+```
+User authors gap: "Agent X did not consider labor unions"
+        ↓
+System: LLM call to research labor union perspectives
+        ↓
+Generated: "Labor unions have historically opposed automation...
+           Key concerns include job displacement, wage stagnation..."
+        ↓
+Injected: Substantive knowledge, not just a reminder
+```
+
+| Pros | Cons |
+|------|------|
+| Agent receives real, actionable knowledge | Additional LLM calls = cost and latency |
+| User can identify gaps without expertise | Less user control over exact content |
+| Addresses gaps user can't fill themselves | May generate inaccurate or biased content |
+
+---
+
+**Implementation Roadmap:**
+
+| Phase | Approach | Why |
+|-------|----------|-----|
+| **MVP** | Option A (Verbatim) | Fastest to implement, no backend changes, user maintains control |
+| **Future** | Option B (Research) | Enables gap-filling when user lacks domain expertise |
+
+**Future UI for Option B:**
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  Gap: "Labor unions not considered"                                 │
+├─────────────────────────────────────────────────────────────────────┤
+│  [ 💉 Inject as-is ]  [ 🔍 Research & Fill ]  [ ✏️ Edit ]  [ 🗑️ ] │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+- **Inject as-is**: Option A behavior (verbatim)
+- **Research & Fill**: Calls LLM to expand gap into substantive knowledge before injection
+
+---
+
 ### Feature Synergy: The Full Workflow
 
 These three features work together as a **complete stress-testing and perspective-building system**:
