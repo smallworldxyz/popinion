@@ -368,32 +368,24 @@
             </div>
           </div>
 
-          <!-- Phase 3: Completed -->
-          <div class="process-phase" :class="{ 'active': currentPhase === 2, 'completed': currentPhase > 2 }">
+          <!-- Phase 3: Graph Verification (NEW - appears after graph completes) -->
+          <div class="process-phase verification-phase" :class="{ 'active': currentPhase >= 2 && !graphVerified, 'completed': graphVerified }">
             <div class="phase-header">
               <span class="phase-num">03</span>
               <div class="phase-info">
-                <div class="phase-title">Build Complete</div>
-                <div class="phase-api">Prepare Next Step</div>
+                <div class="phase-title">Graph Verification</div>
+                <div class="phase-api">Review extracted entities and relationships</div>
               </div>
-              <span class="phase-status" :class="getPhaseStatusClass(2)">
-                {{ getPhaseStatusText(2) }}
+              <span class="phase-status" :class="graphVerified ? 'completed' : (currentPhase >= 2 ? 'in-progress' : 'pending')">
+                {{ graphVerified ? 'VERIFIED' : (currentPhase >= 2 ? 'ACTION REQUIRED' : 'PENDING') }}
               </span>
             </div>
-          </div>
-
-          <!-- Graph Verification Section (Inline - appears after graph completion) -->
-          <div v-if="currentPhase >= 2 && !graphVerified" class="verification-inline">
-            <div class="verify-inline-header">
-              <h3>🔍 Review Your Knowledge Graph</h3>
-              <p class="verify-subtitle">Before proceeding, please verify the extracted graph looks correct.</p>
-            </div>
             
-            <div class="verify-inline-body">
-              <!-- Quick Checks -->
-              <div class="verify-checks-inline">
-                <div class="check-row">
-                  <span class="check-label">Entity Types:</span>
+            <!-- Verification Content (only when active) -->
+            <div v-if="currentPhase >= 2 && !graphVerified" class="phase-content verification-content">
+              <div class="verify-summary">
+                <div class="verify-check-row">
+                  <span class="verify-label">Entity Types:</span>
                   <div class="entity-type-pills">
                     <span v-for="type in entityTypes" :key="type.name" class="type-pill" :style="{ borderColor: type.color }">
                       {{ type.name }} ({{ type.count }})
@@ -401,45 +393,49 @@
                   </div>
                 </div>
                 
-                <div class="check-row">
-                  <span class="check-label">Graph Size:</span>
-                  <div class="size-summary-inline">
-                    <span class="size-stat">{{ graphData?.node_count || 0 }} entities</span>
-                    <span class="size-divider">•</span>
-                    <span class="size-stat">{{ graphData?.edge_count || 0 }} relationships</span>
-                  </div>
+                <div class="verify-check-row">
+                  <span class="verify-label">Graph Size:</span>
+                  <span class="verify-value">{{ graphData?.node_count || 0 }} entities • {{ graphData?.edge_count || 0 }} relationships</span>
                 </div>
                 
-                <p class="size-warning" v-if="(graphData?.node_count || 0) < 10">
+                <div v-if="(graphData?.node_count || 0) < 10" class="verify-warning">
                   ⚠️ Low entity count — simulation may be shallow
-                </p>
-                <p class="size-warning high" v-else-if="(graphData?.node_count || 0) > 80">
+                </div>
+                <div v-else-if="(graphData?.node_count || 0) > 80" class="verify-warning high">
                   ⚠️ High entity count — simulation may be expensive and slow
-                </p>
+                </div>
               </div>
               
-              <!-- Flagged Items -->
-              <div v-if="flaggedItems.length > 0" class="flagged-inline">
-                <span class="flagged-label">📋 Review Notes: {{ flaggedItems.length }}</span>
+              <div class="verify-actions">
+                <button class="verify-action-btn secondary" @click="enterReviewMode">
+                  🔍 Inspect Graph
+                </button>
+                <button class="verify-action-btn primary" @click="confirmGraphVerification">
+                  ✓ Looks Good, Continue
+                </button>
               </div>
-            </div>
-            
-            <div class="verify-inline-actions">
-              <button class="verify-btn secondary" @click="enterReviewMode">
-                🔍 Inspect Graph
-              </button>
-              <button class="verify-btn primary" @click="confirmGraphVerification">
-                ✓ Looks Good, Continue
-              </button>
             </div>
           </div>
 
-          <!-- Next Step Button (only after verification) -->
-          <div class="next-step-section" v-if="currentPhase >= 2 && graphVerified">
-            <button class="next-step-btn" @click="goToNextStep">
-              Enter Environment Setup
-              <span class="btn-arrow">→</span>
-            </button>
+          <!-- Phase 4: Proceed to Simulation (only after verification) -->
+          <div class="process-phase" :class="{ 'active': graphVerified, 'completed': false }">
+            <div class="phase-header">
+              <span class="phase-num">04</span>
+              <div class="phase-info">
+                <div class="phase-title">Proceed to Simulation</div>
+                <div class="phase-api">Enter Environment Setup</div>
+              </div>
+              <span class="phase-status" :class="graphVerified ? 'ready' : 'pending'">
+                {{ graphVerified ? 'READY' : 'PENDING' }}
+              </span>
+            </div>
+            
+            <div v-if="graphVerified" class="phase-content">
+              <button class="next-step-btn" @click="goToNextStep">
+                Enter Environment Setup
+                <span class="btn-arrow">→</span>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -2105,6 +2101,123 @@ onUnmounted(() => {
 .phase-status.completed {
   background: #1A936F;
   color: #fff;
+}
+
+.phase-status.in-progress {
+  background: #FF6B35;
+  color: #fff;
+  animation: pulse 1.5s infinite;
+}
+
+.phase-status.ready {
+  background: #10B981;
+  color: #fff;
+}
+
+.phase-status.pending {
+  background: #E5E5E5;
+  color: #999;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+/* Verification Phase Special Styling */
+.verification-phase.active {
+  background: linear-gradient(135deg, #FFF9E6 0%, #FFF3CD 100%);
+  border: 2px solid #FFD93D;
+}
+
+.verification-phase .phase-num {
+  color: #D97706;
+}
+
+/* Phase Content */
+.phase-content {
+  padding: 16px 24px 20px 60px;
+  background: rgba(0, 0, 0, 0.02);
+  border-top: 1px solid #E5E5E5;
+}
+
+.verification-content {
+  background: transparent;
+}
+
+/* Verify Summary */
+.verify-summary {
+  margin-bottom: 16px;
+}
+
+.verify-check-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.verify-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #333;
+  min-width: 100px;
+}
+
+.verify-value {
+  font-size: 0.85rem;
+  color: #666;
+}
+
+.verify-warning {
+  margin: 12px 0 0 0;
+  padding: 8px 12px;
+  background: #FFF3CD;
+  border-left: 3px solid #FFC107;
+  font-size: 0.85rem;
+  color: #856404;
+}
+
+.verify-warning.high {
+  background: #F8D7DA;
+  border-left-color: #DC3545;
+  color: #721C24;
+}
+
+/* Verify Actions */
+.verify-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.verify-action-btn {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.verify-action-btn.secondary {
+  background: #FFF;
+  border: 2px solid #E0E0E0;
+  color: #333;
+}
+
+.verify-action-btn.secondary:hover {
+  border-color: #FF6B35;
+  color: #FF6B35;
+}
+
+.verify-action-btn.primary {
+  background: #10B981;
+  color: #FFF;
+}
+
+.verify-action-btn.primary:hover {
+  background: #059669;
 }
 
 /* Phase Details */
