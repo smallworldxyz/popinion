@@ -143,28 +143,83 @@
         </div>
       </div>
 
-      <!-- Step 03: Complete -->
-      <div class="step-card" :class="{ 'active': currentPhase === 2, 'completed': currentPhase >= 2 }">
+      <!-- Step 03: Graph Verification -->
+      <div 
+        class="step-card verification-card" 
+        :class="{ 
+          'active': currentPhase >= 2 && !graphVerified, 
+          'completed': graphVerified,
+          'attention': currentPhase >= 2 && !graphVerified
+        }"
+      >
         <div class="card-header">
           <div class="step-info">
             <span class="step-num">03</span>
-            <span class="step-title">Build Complete</span>
+            <span class="step-title">Graph Verification</span>
           </div>
           <div class="step-status">
-            <span v-if="currentPhase >= 2" class="badge accent">In Progress</span>
+            <span v-if="graphVerified" class="badge success">Verified</span>
+            <span v-else-if="currentPhase >= 2" class="badge warning pulse">Action Required</span>
+            <span v-else class="badge pending">Pending</span>
           </div>
         </div>
         
         <div class="card-content">
-          <p class="api-note">POST /api/simulation/create</p>
-          <p class="description">Graph Building Completed, please proceed to Next Step for simulation environment setup</p>
+          <p class="description">Review the extracted graph structure and entity types before proceeding to simulation setup.</p>
+          
+          <div v-if="currentPhase >= 2 && !graphVerified" class="verification-details">
+            <div class="summary-row">
+              <span class="summary-label">Entities:</span>
+              <span class="summary-value">{{ graphStats.nodes }}</span>
+            </div>
+            <div class="summary-row">
+              <span class="summary-label">Relations:</span>
+              <span class="summary-value">{{ graphStats.edges }}</span>
+            </div>
+            <div class="summary-row">
+              <span class="summary-label">Types:</span>
+              <div class="type-mini-tags">
+                <span v-for="type in projectData?.ontology?.entity_types?.slice(0, 10)" :key="type.name" class="mini-tag">
+                  {{ type.name }}
+                </span>
+                <span v-if="projectData?.ontology?.entity_types?.length > 10" class="mini-tag more">...</span>
+              </div>
+            </div>
+
+            <div class="verification-actions">
+              <button class="verify-btn secondary" @click="$emit('verify-inspect')">
+                🔍 Inspect Graph View
+              </button>
+              <button class="verify-btn primary" @click="$emit('verify')">
+                ✓ Validated, Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 04: Proceed -->
+      <div class="step-card" :class="{ 'active': graphVerified, 'completed': false }">
+        <div class="card-header">
+          <div class="step-info">
+            <span class="step-num">04</span>
+            <span class="step-title">Proceed to Simulation</span>
+          </div>
+          <div class="step-status">
+            <span v-if="graphVerified" class="badge accent">Ready</span>
+            <span v-else class="badge pending">Pending</span>
+          </div>
+        </div>
+        
+        <div class="card-content">
+          <p class="description">Graph verified. You can now proceed to the simulation environment setup and agent configuration.</p>
           <button 
             class="action-btn" 
-            :disabled="currentPhase < 2 || creatingSimulation"
+            :disabled="!graphVerified || creatingSimulation"
             @click="handleEnterEnvSetup"
           >
             <span v-if="creatingSimulation" class="spinner-sm"></span>
-            {{ creatingSimulation ? 'Creating...' : 'Enter Environment Setup ➝' }}
+            {{ creatingSimulation ? 'Preparing Setup...' : 'Enter Environment Setup ➝' }}
           </button>
         </div>
       </div>
@@ -199,10 +254,11 @@ const props = defineProps({
   ontologyProgress: Object,
   buildProgress: Object,
   graphData: Object,
-  systemLogs: { type: Array, default: () => [] }
+  systemLogs: { type: Array, default: () => [] },
+  graphVerified: Boolean
 })
 
-defineEmits(['next-step'])
+const emit = defineEmits(['next-step', 'verify'])
 
 const selectedOntologyItem = ref(null)
 const logContent = ref(null)
@@ -640,6 +696,102 @@ watch(() => props.systemLogs.length, () => {
 }
 
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* Verification Card */
+.verification-card.attention {
+  background: linear-gradient(135deg, #FFF9E6 0%, #FFF3CD 100%);
+  border: 2px solid #FFD93D;
+  box-shadow: 0 4px 12px rgba(255, 217, 61, 0.2);
+}
+
+.verification-details {
+  margin-top: 16px;
+  background: rgba(255, 255, 255, 0.4);
+  padding: 12px;
+  border-radius: 6px;
+}
+
+.summary-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.summary-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #666;
+  min-width: 60px;
+}
+
+.summary-value {
+  font-size: 11px;
+  font-weight: 700;
+  color: #000;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.type-mini-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.mini-tag {
+  font-size: 9px;
+  padding: 2px 6px;
+  background: #FFF;
+  border: 1px solid #E0E0E0;
+  border-radius: 4px;
+  color: #333;
+}
+
+.verification-actions {
+  margin-top: 16px;
+  display: flex;
+  gap: 10px;
+}
+
+.verify-btn {
+  flex: 1;
+  padding: 10px;
+  border: none;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.verify-btn.primary {
+  background: #10B981;
+  color: #FFF;
+}
+
+.verify-btn.primary:hover {
+  background: #059669;
+}
+
+.verify-btn.secondary {
+  background: #FFF;
+  border: 1px solid #CCC;
+  color: #333;
+}
+
+.verify-btn.secondary:hover {
+  border-color: #000;
+}
+
+.badge.pulse {
+  animation: badge-pulse 1.5s infinite;
+}
+
+@keyframes badge-pulse {
+  0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 152, 0, 0.4); }
+  70% { transform: scale(1.05); box-shadow: 0 0 0 6px rgba(255, 152, 0, 0); }
+  100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 152, 0, 0); }
+}
 
 /* System Logs */
 .system-logs {

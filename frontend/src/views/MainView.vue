@@ -57,7 +57,10 @@
           :buildProgress="buildProgress"
           :graphData="graphData"
           :systemLogs="systemLogs"
+          :graphVerified="graphVerified"
           @next-step="handleNextStep"
+          @verify="graphVerified = true"
+          @verify-inspect="viewMode = 'graph'"
         />
         <!-- Step 2: Environment Setup -->
         <Step2EnvSetup
@@ -104,6 +107,7 @@ const currentPhase = ref(-1) // -1: Upload, 0: Ontology, 1: Build, 2: Complete
 const ontologyProgress = ref(null)
 const buildProgress = ref(null)
 const systemLogs = ref([])
+const graphVerified = ref(false) // User has acknowledged the graph
 
 // Polling timers
 let pollTimer = null
