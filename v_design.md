@@ -18,10 +18,11 @@
 | **Agora Debates** | ✅ Implemented | Structured multi-agent debates |
 | **Knowledge Workbench** | ✅ Implemented | Split-view: Captured Insights + Knowledge Gaps |
 | **Knowledge Injection** | ✅ Implemented | Push knowledge into agent prompts |
-| **Surveys** | 📋 Designed | Quantitative polling across agents |
+| **Quick Survey** | ✅ Implemented (MVP) | Likert/Yes-No polling across agents |
 | **Graph Editing** | 🔮 Future | Inline entity/relationship editing |
 | **Graph Fusion** | 🔮 Future | Merge graphs from multiple users |
 | **Global Graph Library** | 🔮 Future | Platform for shared worldviews |
+| **Live Env Integration** | 🔮 Future | Use live simulation env for deep interactions |
 
 ---
 
@@ -226,6 +227,9 @@ Query multiple agents simultaneously and see aggregated perspectives.
 | **Fault Line Discovery** | "Where do you see the biggest risks?" |
 | **Pre-Debate Recon** | Identify most polarizing issues before Agora |
 
+> [!IMPORTANT]
+> **Current Implementation**: Uses profile-based LLM responses (agent profiles fed to LLM) due to Flask environment constraints. This works well but future enhancement will use live simulation environment for richer, memory-aware responses.
+
 ---
 
 ## 🏛️ Agora: Structured Debate Arena
@@ -256,6 +260,9 @@ Not a free-for-all — a structured, moderated debate with clear format.
 - **Stance Visualization**: Track how positions shift across rounds
 - **Pivot Topics**: Inject new angles mid-debate to steer discussion
 - **Knowledge Capture**: Highlight and save key arguments to Knowledge Pad
+
+> [!IMPORTANT]
+> **Current Implementation**: Uses profile-based LLM responses (agent profiles fed to LLM) due to Flask environment constraints. Future enhancement will integrate with live simulation environment for debates where agents remember prior simulation events.
 
 ---
 
@@ -336,25 +343,44 @@ OBSERVE → CAPTURE → IDENTIFY GAPS → INJECT → SIMULATE AGAIN
 
 ---
 
-## 📊 Surveys (Designed, Not Yet Implemented)
+## 📊 Quick Survey
 
 > *"Quantify what agents believe."*
 
 Structured polling across the agent population.
 
-### Planned Features
+### MVP Implementation ✅
 
-| Feature | Description |
-|---------|-------------|
-| **Survey Templates** | Likert scales, multiple choice, ranking |
-| **Segment Analysis** | Compare responses by faction |
-| **Before/After** | Measure shift pre- and post-simulation |
-| **Export** | Download results as CSV/JSON |
+| Feature | Status |
+|---------|--------|
+| **Single Question Input** | ✅ Implemented |
+| **Likert Scale** | ✅ Strongly Agree → Strongly Disagree (5 options) |
+| **Yes/No/Neutral** | ✅ Agree, Disagree, Neutral (3 options) |
+| **Results Bar Chart** | ✅ Percentage distribution |
+| **Faction Breakdown** | ✅ Responses grouped by agent type |
+
+### How It Works
+
+1. Navigate to Step 5 → **Quick Survey** tab
+2. Enter survey question
+3. Select response type (Likert or Yes/No)
+4. Click **Run Survey**
+5. View aggregated results with faction breakdown
 
 ### Example Use Case
 
 > *"Survey all agents: 'Would you support a 10% increase in minimum wage?'"*
 > Results: 60% support (labor groups), 25% oppose (business), 15% neutral
+
+### Future Enhancements 🔮
+
+| Feature | Description |
+|---------|-------------|
+| **Multi-Question Surveys** | Create surveys with multiple questions |
+| **Save Templates** | Reuse surveys across simulations |
+| **Before/After Comparison** | Measure stance shift pre/post intervention |
+| **Ranking Questions** | Prioritize options instead of agree/disagree |
+| **Export Results** | Download as CSV/JSON for external analysis |
 
 ---
 

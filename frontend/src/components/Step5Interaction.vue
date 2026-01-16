@@ -263,6 +263,17 @@
               </svg>
               <span>Agora Debate</span>
             </button>
+            <button 
+              class="tab-pill survey-tab-pill"
+              :class="{ active: activeTab === 'survey' }"
+              @click="selectSurveyTab"
+            >
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M9 11l3 3L22 4"></path>
+                <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+              </svg>
+              <span>Quick Survey</span>
+            </button>
           </div>
         </div>
 
@@ -587,6 +598,17 @@
           />
         </div>
 
+        <!-- Quick Survey Mode -->
+        <div v-if="activeTab === 'survey'" class="survey-container">
+          <SurveyPanel
+            :simulation-id="simulationId"
+            :total-agents="profiles.length"
+            @result="handleSurveyResult"
+            @error="handleSurveyError"
+          />
+        </div>
+
+
         <!-- System Logs Panel -->
         <div class="system-logs-mini">
           <div class="logs-header">
@@ -617,6 +639,7 @@ import { chatWithReport, getReport, getAgentLog } from '../api/report'
 import { interviewAgents, getSimulationProfilesRealtime } from '../api/simulation'
 import EntitySelectionModal from './EntitySelectionModal.vue'
 import AgoraPanel from './AgoraPanel.vue'
+import SurveyPanel from './SurveyPanel.vue'
 
 const props = defineProps({
   reportId: String,
@@ -1112,6 +1135,15 @@ const handleDebateStarted = (debateId) => {
 const handleDebateEnded = (debateId) => {
   agoraDebateActive.value = false
   addLog(`Agora debate ended: ${debateId}`)
+}
+
+// Survey handlers
+const handleSurveyResult = (result) => {
+  addLog(`Survey completed: ${result.total_respondents} respondents`)
+}
+
+const handleSurveyError = (err) => {
+  addLog(`⚠️ Survey error: ${err.message || 'Unknown error'}`)
 }
 
 const removeParticipant = (idx) => {
