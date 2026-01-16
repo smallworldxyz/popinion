@@ -382,10 +382,62 @@
             </div>
           </div>
 
-          <!-- Next Step Button -->
-          <div class="next-step-section" v-if="currentPhase >= 2">
-            <button class="next-step-btn" @click="goToNextStep" :disabled="currentPhase < 2">
-              EnterEnvironment Setup
+          <!-- Graph Verification Section (Inline - appears after graph completion) -->
+          <div v-if="currentPhase >= 2 && !graphVerified" class="verification-inline">
+            <div class="verify-inline-header">
+              <h3>🔍 Review Your Knowledge Graph</h3>
+              <p class="verify-subtitle">Before proceeding, please verify the extracted graph looks correct.</p>
+            </div>
+            
+            <div class="verify-inline-body">
+              <!-- Quick Checks -->
+              <div class="verify-checks-inline">
+                <div class="check-row">
+                  <span class="check-label">Entity Types:</span>
+                  <div class="entity-type-pills">
+                    <span v-for="type in entityTypes" :key="type.name" class="type-pill" :style="{ borderColor: type.color }">
+                      {{ type.name }} ({{ type.count }})
+                    </span>
+                  </div>
+                </div>
+                
+                <div class="check-row">
+                  <span class="check-label">Graph Size:</span>
+                  <div class="size-summary-inline">
+                    <span class="size-stat">{{ graphData?.node_count || 0 }} entities</span>
+                    <span class="size-divider">•</span>
+                    <span class="size-stat">{{ graphData?.edge_count || 0 }} relationships</span>
+                  </div>
+                </div>
+                
+                <p class="size-warning" v-if="(graphData?.node_count || 0) < 10">
+                  ⚠️ Low entity count — simulation may be shallow
+                </p>
+                <p class="size-warning high" v-else-if="(graphData?.node_count || 0) > 80">
+                  ⚠️ High entity count — simulation may be expensive and slow
+                </p>
+              </div>
+              
+              <!-- Flagged Items -->
+              <div v-if="flaggedItems.length > 0" class="flagged-inline">
+                <span class="flagged-label">📋 Review Notes: {{ flaggedItems.length }}</span>
+              </div>
+            </div>
+            
+            <div class="verify-inline-actions">
+              <button class="verify-btn secondary" @click="enterReviewMode">
+                🔍 Inspect Graph
+              </button>
+              <button class="verify-btn primary" @click="confirmGraphVerification">
+                ✓ Looks Good, Continue
+              </button>
+            </div>
+          </div>
+
+          <!-- Next Step Button (only after verification) -->
+          <div class="next-step-section" v-if="currentPhase >= 2 && graphVerified">
+            <button class="next-step-btn" @click="goToNextStep">
+              Enter Environment Setup
               <span class="btn-arrow">→</span>
             </button>
           </div>
@@ -526,7 +578,7 @@
         <span class="review-mode-text">🔍 Review Mode — Click entities to inspect and flag issues</span>
         <div class="review-mode-actions">
           <span class="review-count">{{ flaggedItems.length }} flagged</span>
-          <button class="review-done-btn" @click="showVerificationModal = true">
+          <button class="review-done-btn" @click="finishReview">
             Done Reviewing
           </button>
         </div>
@@ -602,6 +654,7 @@ const isFullScreen = ref(false)
 // Graph Verification State
 const showVerificationModal = ref(false)
 const reviewMode = ref(false)
+const graphVerified = ref(false) // User has acknowledged the graph
 const flaggedItems = ref([]) // { id, entityId, entityName, entityType, issueType, note, createdAt }
 const showFlagModal = ref(false)
 const showGapModal = ref(false)
@@ -654,7 +707,16 @@ const goHome = () => {
 }
 
 const goToNextStep = () => {
-  showVerificationModal.value = true
+  // Navigate directly to Simulation (verification is now done inline)
+  router.push({
+    name: 'Simulation',
+    params: { projectId: currentProjectId.value }
+  })
+}
+
+const confirmGraphVerification = () => {
+  // User acknowledged the graph, show the Enter Environment Setup button
+  graphVerified.value = true
 }
 
 const confirmProceed = () => {
@@ -675,6 +737,12 @@ const enterReviewMode = () => {
 const goToReupload = () => {
   showVerificationModal.value = false
   router.push({ name: 'Home' })
+}
+
+const finishReview = () => {
+  // Exit review mode and mark graph as verified
+  reviewMode.value = false
+  graphVerified.value = true
 }
 
 // Flag issue functions
@@ -2225,6 +2293,123 @@ onUnmounted(() => {
 
 .btn-arrow {
   font-size: 1.2rem;
+}
+
+/* Inline Verification Section */
+.verification-inline {
+  margin-top: 24px;
+  padding: 20px;
+  background: linear-gradient(135deg, #FFF9E6 0%, #FFF3CD 100%);
+  border: 2px solid #FFD93D;
+  border-radius: 12px;
+}
+
+.verify-inline-header h3 {
+  margin: 0 0 4px 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #000;
+}
+
+.verify-subtitle {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #666;
+}
+
+.verify-inline-body {
+  margin-top: 16px;
+}
+
+.verify-checks-inline {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.check-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.check-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #333;
+  min-width: 90px;
+}
+
+.size-summary-inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.size-warning {
+  margin: 8px 0 0 0;
+  padding: 8px 12px;
+  background: #FFF3CD;
+  border-left: 3px solid #FFC107;
+  font-size: 0.85rem;
+  color: #856404;
+}
+
+.size-warning.high {
+  background: #F8D7DA;
+  border-left-color: #DC3545;
+  color: #721C24;
+}
+
+.flagged-inline {
+  margin-top: 12px;
+  padding: 8px 12px;
+  background: rgba(255, 107, 53, 0.1);
+  border-radius: 6px;
+}
+
+.flagged-label {
+  font-size: 0.85rem;
+  color: #FF6B35;
+  font-weight: 500;
+}
+
+.verify-inline-actions {
+  margin-top: 16px;
+  display: flex;
+  gap: 12px;
+}
+
+.verify-btn {
+  flex: 1;
+  padding: 12px 16px;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.verify-btn.secondary {
+  background: #FFF;
+  border: 2px solid #E0E0E0;
+  color: #333;
+}
+
+.verify-btn.secondary:hover {
+  border-color: #FF6B35;
+  color: #FF6B35;
+}
+
+.verify-btn.primary {
+  background: #10B981;
+  color: #FFF;
+}
+
+.verify-btn.primary:hover {
+  background: #059669;
 }
 
 /* Project Info panel */
