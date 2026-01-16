@@ -102,6 +102,16 @@
                     <span v-for="label in selectedItem.data.labels" :key="label" class="label-tag">{{ label }}</span>
                   </div>
                 </div>
+
+                <!-- Review Mode Actions -->
+                <div v-if="reviewMode" class="detail-review-actions">
+                  <button class="detail-action-btn flag-btn" @click="showFlagModal = true">
+                    🚩 Flag Issue
+                  </button>
+                  <button class="detail-action-btn gap-btn" @click="showGapModal = true">
+                    📝 Create Gap
+                  </button>
+                </div>
               </div>
               
               <!-- edgesDetails -->
@@ -408,6 +418,159 @@
         </div>
       </div>
     </div>
+
+    <!-- Graph Verification Modal -->
+    <Transition name="modal">
+      <div v-if="showVerificationModal" class="verification-overlay" @click.self="showVerificationModal = false">
+        <div class="verification-modal">
+          <div class="verify-modal-header">
+            <h2>🔍 Graph Verification</h2>
+            <button class="verify-close-btn" @click="showVerificationModal = false">×</button>
+          </div>
+          
+          <div class="verify-modal-body">
+            <!-- Purpose Section -->
+            <div class="verify-purpose">
+              <div class="purpose-section can-do">
+                <h4>✓ WHAT THIS REVIEW IS FOR</h4>
+                <ul>
+                  <li>Verify the right stakeholders were extracted</li>
+                  <li>Check if key relationships exist</li>
+                  <li>Catch obvious errors before agent generation</li>
+                  <li>Flag issues and create Knowledge Gaps</li>
+                </ul>
+              </div>
+              <div class="purpose-section cannot-do">
+                <h4>✗ CANNOT DO (YET)</h4>
+                <ul>
+                  <li>Edit entity names or types</li>
+                  <li>Add or delete entities</li>
+                  <li>Modify relationships</li>
+                </ul>
+                <p class="purpose-hint">→ For fundamental changes, improve source documents</p>
+              </div>
+            </div>
+            
+            <!-- Quick Checks -->
+            <div class="verify-checks">
+              <h4>QUICK CHECKS</h4>
+              
+              <div class="check-item">
+                <span class="check-question">Do these entity types match your domain?</span>
+                <div class="entity-type-pills">
+                  <span v-for="type in entityTypes" :key="type.name" class="type-pill" :style="{ borderColor: type.color }">
+                    {{ type.name }} ({{ type.count }})
+                  </span>
+                </div>
+              </div>
+              
+              <div class="check-item">
+                <span class="check-question">Does the graph size seem reasonable?</span>
+                <div class="size-summary">
+                  <span class="size-stat">{{ graphData?.node_count || 0 }} entities</span>
+                  <span class="size-divider">•</span>
+                  <span class="size-stat">{{ graphData?.edge_count || 0 }} relationships</span>
+                </div>
+                <p class="size-hint" v-if="(graphData?.node_count || 0) < 10">
+                  ⚠️ Low entity count — simulation may be shallow
+                </p>
+                <p class="size-hint high" v-else-if="(graphData?.node_count || 0) > 80">
+                  ⚠️ High entity count — simulation may be expensive and slow
+                </p>
+              </div>
+            </div>
+            
+            <!-- Flagged Items Summary -->
+            <div v-if="flaggedItems.length > 0" class="flagged-summary">
+              <h4>📋 YOUR REVIEW NOTES ({{ flaggedItems.length }})</h4>
+              <div class="flagged-list">
+                <div v-for="item in flaggedItems" :key="item.id" class="flagged-item">
+                  <span class="flagged-icon">🚩</span>
+                  <span class="flagged-name">"{{ item.entityName }}"</span>
+                  <span class="flagged-issue">{{ formatIssueType(item.issueType) }}</span>
+                  <span class="flagged-note" v-if="item.note">— {{ item.note }}</span>
+                  <button class="flagged-remove" @click="removeFlaggedItem(item.id)">×</button>
+                </div>
+              </div>
+              <p class="flagged-hint">These notes are saved. Use them to create Knowledge Gaps or improve future uploads.</p>
+            </div>
+            
+            <!-- Re-upload Guidance -->
+            <div class="reupload-guidance">
+              <div class="guidance-icon">💡</div>
+              <div class="guidance-content">
+                <strong>If something is fundamentally wrong:</strong>
+                <p>Consider re-uploading with more comprehensive source documents.</p>
+              </div>
+            </div>
+          </div>
+          
+          <div class="verify-modal-footer">
+            <button class="verify-action-btn tertiary" @click="goToReupload">
+              ← Re-upload Documents
+            </button>
+            <button class="verify-action-btn secondary" @click="enterReviewMode">
+              🔍 Review Graph
+            </button>
+            <button class="verify-action-btn primary" @click="confirmProceed">
+              Looks Good →
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- Review Mode Bar -->
+    <Transition name="slide-up">
+      <div v-if="reviewMode" class="review-mode-bar">
+        <span class="review-mode-text">🔍 Review Mode — Click entities to inspect and flag issues</span>
+        <div class="review-mode-actions">
+          <span class="review-count">{{ flaggedItems.length }} flagged</span>
+          <button class="review-done-btn" @click="showVerificationModal = true">
+            Done Reviewing
+          </button>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- Flag Issue Modal -->
+    <Transition name="modal">
+      <div v-if="showFlagModal && selectedItem" class="flag-overlay" @click.self="showFlagModal = false">
+        <div class="flag-modal-content">
+          <h4>🚩 Flag Issue with "{{ selectedItem.data.name }}"</h4>
+          <select v-model="flagIssueType" class="flag-select">
+            <option value="wrong_name">Wrong Name</option>
+            <option value="wrong_type">Wrong Type</option>
+            <option value="should_delete">Should Be Deleted (Garbage)</option>
+            <option value="missing_connection">Missing Connection</option>
+            <option value="other">Other Issue</option>
+          </select>
+          <textarea v-model="flagNote" placeholder="Optional note..." class="flag-note-input"></textarea>
+          <div class="flag-actions">
+            <button @click="showFlagModal = false" class="flag-cancel-btn">Cancel</button>
+            <button @click="flagEntity" class="flag-submit-btn">Add Flag</button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- Create Gap Modal -->
+    <Transition name="modal">
+      <div v-if="showGapModal && selectedItem" class="gap-overlay" @click.self="showGapModal = false">
+        <div class="gap-modal-content">
+          <h4>📝 Create Knowledge Gap from "{{ selectedItem.data.name }}"</h4>
+          <textarea 
+            v-model="gapContent" 
+            :placeholder="`What perspective is missing from ${selectedItem.data.name}?`"
+            class="gap-textarea-input"
+          ></textarea>
+          <div class="gap-actions">
+            <button @click="showGapModal = false" class="gap-cancel-btn">Cancel</button>
+            <button @click="createGapFromEntity" class="gap-submit-btn" :disabled="!gapContent.trim()">Create Gap</button>
+          </div>
+        </div>
+      </div>
+    </Transition>
   </div>
 </template>
 
@@ -435,6 +598,16 @@ const ontologyProgress = ref(null) // OntologyGeneration Progress
 const currentPhase = ref(-1) // -1: Uploading, 0: Generating Ontology, 1: Graph Building, 2: Completed
 const selectedItem = ref(null) // Selected node or edge
 const isFullScreen = ref(false)
+
+// Graph Verification State
+const showVerificationModal = ref(false)
+const reviewMode = ref(false)
+const flaggedItems = ref([]) // { id, entityId, entityName, entityType, issueType, note, createdAt }
+const showFlagModal = ref(false)
+const showGapModal = ref(false)
+const flagIssueType = ref('wrong_type')
+const flagNote = ref('')
+const gapContent = ref('')
 
 // DOM refs
 const graphContainer = ref(null)
@@ -481,8 +654,79 @@ const goHome = () => {
 }
 
 const goToNextStep = () => {
-  // TODO: Enter Environment Setup step
-  alert('Environment Setup feature under development...')
+  showVerificationModal.value = true
+}
+
+const confirmProceed = () => {
+  showVerificationModal.value = false
+  reviewMode.value = false
+  // Navigate to Simulation/Environment Setup
+  router.push({
+    name: 'Simulation',
+    params: { projectId: currentProjectId.value }
+  })
+}
+
+const enterReviewMode = () => {
+  showVerificationModal.value = false
+  reviewMode.value = true
+}
+
+const goToReupload = () => {
+  showVerificationModal.value = false
+  router.push({ name: 'Home' })
+}
+
+// Flag issue functions
+const flagEntity = () => {
+  if (!selectedItem.value) return
+  const entity = selectedItem.value.data
+  flaggedItems.value.push({
+    id: crypto.randomUUID(),
+    entityId: entity.uuid,
+    entityName: entity.name,
+    entityType: selectedItem.value.entityType || 'Entity',
+    issueType: flagIssueType.value,
+    note: flagNote.value,
+    createdAt: Date.now()
+  })
+  showFlagModal.value = false
+  flagIssueType.value = 'wrong_type'
+  flagNote.value = ''
+}
+
+const removeFlaggedItem = (id) => {
+  flaggedItems.value = flaggedItems.value.filter(f => f.id !== id)
+}
+
+const formatIssueType = (type) => {
+  const labels = {
+    'wrong_name': 'Wrong Name',
+    'wrong_type': 'Wrong Type',
+    'should_delete': 'Should Delete',
+    'missing_connection': 'Missing Connection',
+    'other': 'Other Issue'
+  }
+  return labels[type] || type
+}
+
+// Create gap from entity
+const createGapFromEntity = () => {
+  if (!selectedItem.value || !gapContent.value.trim()) return
+  const entity = selectedItem.value.data
+  const existingGaps = JSON.parse(sessionStorage.getItem('reviewGaps') || '[]')
+  existingGaps.push({
+    id: crypto.randomUUID(),
+    content: gapContent.value.trim(),
+    agentIdx: null,
+    agentName: null,
+    tag: 'missing_perspective',
+    sourceEntity: entity.name,
+    createdAt: Date.now()
+  })
+  sessionStorage.setItem('reviewGaps', JSON.stringify(existingGaps))
+  showGapModal.value = false
+  gapContent.value = ''
 }
 
 const toggleFullScreen = () => {
@@ -2064,5 +2308,468 @@ onUnmounted(() => {
   .right-panel.hidden {
       display: none;
   }
+}
+
+/* ==================== */
+/* Graph Verification Modal */
+/* ==================== */
+
+.verification-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.verification-modal {
+  background: #FFF;
+  border-radius: 16px;
+  width: 640px;
+  max-width: 95vw;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+}
+
+.verify-modal-header {
+  padding: 20px 24px;
+  border-bottom: 1px solid #E5E7EB;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.verify-modal-header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.verify-close-btn {
+  background: none;
+  border: none;
+  font-size: 24px;
+  color: #9CA3AF;
+  cursor: pointer;
+}
+
+.verify-modal-body {
+  padding: 24px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+/* Purpose Sections */
+.verify-purpose {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.purpose-section {
+  flex: 1;
+  padding: 16px;
+  border-radius: 8px;
+}
+
+.purpose-section.can-do {
+  background: #ECFDF5;
+  border: 1px solid #A7F3D0;
+}
+
+.purpose-section.cannot-do {
+  background: #FEF3C7;
+  border: 1px solid #FDE68A;
+}
+
+.purpose-section h4 {
+  font-size: 11px;
+  font-weight: 700;
+  margin: 0 0 10px 0;
+  letter-spacing: 0.5px;
+}
+
+.purpose-section.can-do h4 { color: #065F46; }
+.purpose-section.cannot-do h4 { color: #92400E; }
+
+.purpose-section ul {
+  margin: 0;
+  padding-left: 16px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.purpose-section.can-do ul { color: #047857; }
+.purpose-section.cannot-do ul { color: #B45309; }
+
+.purpose-hint {
+  font-size: 11px;
+  font-style: italic;
+  margin: 8px 0 0 0;
+  color: #92400E;
+}
+
+/* Quick Checks */
+.verify-checks {
+  margin-bottom: 24px;
+}
+
+.verify-checks h4 {
+  font-size: 11px;
+  font-weight: 700;
+  color: #374151;
+  margin: 0 0 12px 0;
+  letter-spacing: 0.5px;
+}
+
+.check-item {
+  padding: 12px 16px;
+  background: #F9FAFB;
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+
+.check-question {
+  font-size: 13px;
+  font-weight: 500;
+  color: #374151;
+  display: block;
+  margin-bottom: 8px;
+}
+
+.entity-type-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.type-pill {
+  padding: 4px 10px;
+  font-size: 11px;
+  background: #FFF;
+  border: 2px solid;
+  border-radius: 12px;
+  font-weight: 500;
+}
+
+.size-summary {
+  display: flex;
+  gap: 8px;
+  font-size: 13px;
+  color: #6B7280;
+}
+
+.size-hint {
+  font-size: 12px;
+  color: #DC2626;
+  margin: 8px 0 0 0;
+}
+
+.size-hint.high {
+  color: #D97706;
+}
+
+/* Flagged Summary */
+.flagged-summary {
+  margin-bottom: 24px;
+  padding: 16px;
+  background: #FFF7ED;
+  border: 1px solid #FDBA74;
+  border-radius: 8px;
+}
+
+.flagged-summary h4 {
+  font-size: 12px;
+  font-weight: 600;
+  color: #9A3412;
+  margin: 0 0 12px 0;
+}
+
+.flagged-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.flagged-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  padding: 6px 8px;
+  background: #FFF;
+  border-radius: 4px;
+}
+
+.flagged-icon { font-size: 10px; }
+.flagged-name { font-weight: 600; color: #374151; }
+.flagged-issue { color: #DC2626; font-size: 11px; }
+.flagged-note { color: #6B7280; font-style: italic; }
+.flagged-remove { 
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: #9CA3AF;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.flagged-hint {
+  font-size: 11px;
+  color: #9A3412;
+  margin: 12px 0 0 0;
+}
+
+/* Re-upload Guidance */
+.reupload-guidance {
+  display: flex;
+  gap: 12px;
+  padding: 16px;
+  background: #F0F9FF;
+  border: 1px solid #BAE6FD;
+  border-radius: 8px;
+}
+
+.guidance-icon { font-size: 20px; }
+.guidance-content strong { font-size: 13px; color: #0369A1; }
+.guidance-content p { font-size: 12px; color: #0284C7; margin: 4px 0 0 0; }
+
+/* Modal Footer */
+.verify-modal-footer {
+  padding: 16px 24px;
+  border-top: 1px solid #E5E7EB;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.verify-action-btn {
+  padding: 10px 20px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.verify-action-btn.tertiary {
+  background: transparent;
+  border: none;
+  color: #6B7280;
+}
+
+.verify-action-btn.tertiary:hover { color: #374151; }
+
+.verify-action-btn.secondary {
+  background: #FFF;
+  border: 1px solid #E5E7EB;
+  color: #374151;
+}
+
+.verify-action-btn.secondary:hover { background: #F3F4F6; }
+
+.verify-action-btn.primary {
+  background: linear-gradient(135deg, #10B981 0%, #059669 100%);
+  border: none;
+  color: #FFF;
+}
+
+.verify-action-btn.primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+}
+
+/* Review Mode Bar */
+.review-mode-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 12px 24px;
+  background: #1F2937;
+  color: #FFF;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  z-index: 100;
+}
+
+.review-mode-text { font-size: 13px; }
+.review-mode-actions { display: flex; gap: 16px; align-items: center; }
+.review-count { font-size: 12px; color: #9CA3AF; }
+.review-done-btn {
+  padding: 8px 16px;
+  background: #10B981;
+  border: none;
+  border-radius: 6px;
+  color: #FFF;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.review-done-btn:hover {
+  background: #059669;
+}
+
+/* Detail Panel Action Buttons */
+.detail-review-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #E5E7EB;
+}
+
+.detail-action-btn {
+  flex: 1;
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 4px;
+  cursor: pointer;
+  border: none;
+  transition: all 0.2s;
+}
+
+.detail-action-btn.flag-btn {
+  background: #FEE2E2;
+  color: #DC2626;
+}
+
+.detail-action-btn.flag-btn:hover {
+  background: #FECACA;
+}
+
+.detail-action-btn.gap-btn {
+  background: #E0E7FF;
+  color: #4F46E5;
+}
+
+.detail-action-btn.gap-btn:hover {
+  background: #C7D2FE;
+}
+
+/* Flag Modal */
+.flag-overlay, .gap-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1100;
+}
+
+.flag-modal-content, .gap-modal-content {
+  background: #FFF;
+  padding: 20px;
+  border-radius: 12px;
+  width: 360px;
+  max-width: 90vw;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+}
+
+.flag-modal-content h4, .gap-modal-content h4 {
+  margin: 0 0 16px 0;
+  font-size: 14px;
+}
+
+.flag-select {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #E5E7EB;
+  border-radius: 6px;
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+
+.flag-note-input, .gap-textarea-input {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #E5E7EB;
+  border-radius: 6px;
+  font-size: 13px;
+  margin-bottom: 12px;
+  min-height: 80px;
+  resize: vertical;
+  font-family: inherit;
+}
+
+.flag-actions, .gap-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.flag-cancel-btn, .gap-cancel-btn {
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  background: #FFF;
+  border: 1px solid #E5E7EB;
+  color: #374151;
+}
+
+.flag-submit-btn, .gap-submit-btn {
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  background: #6366F1;
+  color: #FFF;
+  border: none;
+}
+
+.flag-submit-btn:hover, .gap-submit-btn:hover {
+  background: #4F46E5;
+}
+
+.gap-submit-btn:disabled {
+  background: #D1D5DB;
+  cursor: not-allowed;
+}
+
+/* Transitions */
+.modal-enter-active,
+.modal-leave-active {
+  transition: opacity 0.2s ease;
+}
+
+.modal-enter-from,
+.modal-leave-to {
+  opacity: 0;
+}
+
+.modal-enter-active .verification-modal,
+.modal-leave-active .verification-modal,
+.modal-enter-active .flag-modal-content,
+.modal-leave-active .flag-modal-content,
+.modal-enter-active .gap-modal-content,
+.modal-leave-active .gap-modal-content {
+  transition: transform 0.2s ease;
+}
+
+.modal-enter-from .verification-modal,
+.modal-leave-to .verification-modal,
+.modal-enter-from .flag-modal-content,
+.modal-leave-to .flag-modal-content,
+.modal-enter-from .gap-modal-content,
+.modal-leave-to .gap-modal-content {
+  transform: scale(0.95);
+}
+
+.slide-up-enter-active,
+.slide-up-leave-active {
+  transition: transform 0.3s ease;
+}
+
+.slide-up-enter-from,
+.slide-up-leave-to {
+  transform: translateY(100%);
 }
 </style>

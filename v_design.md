@@ -520,7 +520,7 @@ Deploy structured surveys to agents — not just open-ended questions, but **for
 
 > *"Verify before you simulate. Fix before you fail."*
 
-The Graph Verification step is an **optional quality gate** between Graph Building (Step 1) and Environment Setup (Step 2). It allows users to review, verify, and correct the knowledge graph before agents are generated from it.
+The Graph Verification step is a **quality gate** between Graph Building (Step 1) and Environment Setup (Step 2). It allows users to review, verify, and flag issues in the knowledge graph before agents are generated from it.
 
 ### Where It Fits
 
@@ -537,57 +537,132 @@ The Graph Verification step is an **optional quality gate** between Graph Buildi
 │                            │                                                 │
 │                     "Looks Good"  OR  "Needs Work"                           │
 │                            ↓              ↓                                  │
-│                     Proceed         Edit / Enrich                            │
+│                     Proceed         Review / Flag / Re-upload                │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### The Decision Point
+---
 
-| If Graph "Looks Good" | If Graph "Needs Work" |
-|-----------------------|------------------------|
-| Proceed to Step 2 | Choose a remedy path |
-| Agents generated from current graph | Graph improved before agent generation |
+### ✅ MVP Implementation (Current)
 
-### "Needs Work" Options
+The MVP provides a **verification modal** with guided review and actionable capabilities.
 
-When the graph doesn't look right, the user has multiple paths:
+#### Verification Modal
 
-| Option | What It Does | When To Use |
-|--------|--------------|-------------|
-| **Edit Entity** | Modify entity name, type, or attributes | Wrong name, wrong classification |
-| **Delete Entity** | Remove irrelevant or incorrect entities | Noise in the graph |
-| **Add Entity** | Manually create missing stakeholders | Key player absent |
-| **Edit Relationship** | Modify connection between entities | Wrong relationship type |
-| **Add Relationship** | Create new connections | Missing links |
-| **Inject Knowledge** | Import Knowledge Gaps as graph facts | User-identified gaps |
-| **Add More Sources** | Upload additional documents mid-flow | Need more context |
-| **Regenerate Ontology** | Re-run Step 1 with different parameters | Schema fundamentally wrong |
+When user clicks "Enter Environment Setup", a modal appears:
 
-### Graph Editor Interface
+| Section | Content |
+|---------|---------|
+| **Purpose (Can Do)** | Verify stakeholders, check relationships, catch errors, flag issues, create gaps |
+| **Limitations (Cannot Do Yet)** | Edit entities, add/delete entities, modify relationships |
+| **Quick Checks** | Entity types with counts, graph size with warnings |
+| **Review Notes** | List of flagged items (if any) |
+| **Actions** | Re-upload Documents, Review Graph, Looks Good |
+
+#### Size Warnings
+
+| Condition | Warning |
+|-----------|---------|
+| `< 10` entities | ⚠️ Low entity count — simulation may be shallow |
+| `> 80` entities | ⚠️ High entity count — simulation may be expensive and slow |
+
+#### Review Mode
+
+When user clicks "Review Graph":
+- Modal closes, **review mode bar** appears at bottom of screen
+- User can click entities to inspect details
+- **Action buttons** appear in entity detail panel:
+  - 🚩 **Flag Issue** — Mark entity with issue type + optional note
+  - 📝 **Create Gap** — Create Knowledge Gap from this entity
+
+#### Issue Types for Flagging
+
+| Type | When To Use |
+|------|-------------|
+| `Wrong Name` | Entity name is incorrect or misspelled |
+| `Wrong Type` | Entity is classified incorrectly (e.g., NGO instead of Political_Party) |
+| `Should Delete` | Garbage extraction (e.g., "Page 3", "Introduction") |
+| `Missing Connection` | Entity should be connected to others but isn't |
+| `Other` | Any other issue |
+
+#### What Issues Users Discover
+
+| Issue | Example | How User Notices |
+|-------|---------|------------------|
+| **Missing Stakeholder** | No labor unions in wage policy graph | Entity types missing "Labor_Organization" |
+| **Wrong Entity Type** | "Green Party" classified as NGO | Click node → see wrong type badge |
+| **Garbage Entity** | "Page 3" extracted as entity | Nonsensical node in graph |
+| **Too Few Entities** | 5 nodes for complex topic | Low entity warning |
+| **Too Many Entities** | 100+ nodes with duplicates | High entity warning |
+
+#### MVP Data Flow
+
+```
+User flags issues → Stored in local state (session)
+User creates gaps → Stored in sessionStorage
+User proceeds → Gaps picked up by Knowledge Workbench
+```
+
+---
+
+### 🔮 Future Enhancements (Requires Backend)
+
+These features require new API endpoints to mutate the graph directly.
+
+#### Required Backend Endpoints
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/graph/entity/{uuid}` | `PATCH` | Edit entity name, type, attributes |
+| `/api/graph/entity/{uuid}` | `DELETE` | Remove entity from graph |
+| `/api/graph/entity` | `POST` | Create new entity manually |
+| `/api/graph/edge/{uuid}` | `PATCH` | Edit relationship type |
+| `/api/graph/edge/{uuid}` | `DELETE` | Remove relationship |
+| `/api/graph/edge` | `POST` | Create new relationship |
+| `/api/graph/import-gaps` | `POST` | Convert Knowledge Gaps to entities |
+
+#### Future Capabilities
+
+| Feature | Description | Backend Needed | Difficulty |
+|---------|-------------|----------------|------------|
+| **Edit Entity** | Change name, type, attributes inline | `PATCH /entity` | Medium |
+| **Delete Entity** | Remove incorrect/garbage entities | `DELETE /entity` | Medium |
+| **Add Entity** | Create missing stakeholders manually | `POST /entity` | High |
+| **Edit Relationship** | Change relationship type | `PATCH /edge` | Medium |
+| **Delete Relationship** | Remove incorrect connections | `DELETE /edge` | Medium |
+| **Add Relationship** | Create new connections between nodes | `POST /edge` | High |
+| **Import Gaps to Graph** | Convert Knowledge Gaps to entities | Custom endpoint | High |
+| **Bulk Operations** | Delete multiple entities at once | Batch endpoint | High |
+
+#### Future Graph Editor Interface
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                       GRAPH VERIFICATION                                    │
+│                       GRAPH EDITOR (Future)                                 │
 ├───────────────────────────────────────┬─────────────────────────────────────┤
 │  GRAPH VISUALIZATION                  │  ENTITY INSPECTOR                   │
 │                                       │                                     │
 │       ┌───┐         ┌───┐             │  Entity: "Ministry of Finance"     │
-│       │ A │─────────│ B │             │  Type: Government_Agency            │
-│       └───┘    ↘    └───┘             │  Relationships: 4                   │
+│       │ A │─────────│ B │             │  Type: Government_Agency           │
+│       └───┘    ↘    └───┘             │  Relationships: 4                  │
 │          ↘      ┌───┐                 │                                     │
 │           └─────│ C │                 │  ───────────────────────────────    │
-│                 └───┘                 │  [ ✏️ Edit ] [ 🗑️ Delete ]         │
+│                 └───┘                 │  [ ✏️ Edit ] [ 🗑️ Delete ]        │
 │                                       │                                     │
 │  [ 🔍 Search ] [ 👁️ Filter by Type ] │  [ + Add Entity ]                   │
 │                                       │  [ + Add Relationship ]             │
 ├───────────────────────────────────────┴─────────────────────────────────────┤
-│  [ ❌ Back to Step 1 ]  [ 📥 Import Knowledge Gaps ]  [ ✅ Looks Good ]     │
+│  [ ❌ Cancel ]  [ 📥 Import Knowledge Gaps ]  [ ✅ Save & Proceed ]        │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
+---
+
 ### Integration with Knowledge Gaps
 
-Knowledge Gaps authored in the right panel of the Knowledge Workbench can be converted to graph entities:
+**MVP**: Gaps created during review are stored in sessionStorage and picked up by the Knowledge Workbench after proceeding.
+
+**Future**: Gaps can be converted directly to graph entities:
 
 | Gap Type | Graph Action |
 |----------|--------------|

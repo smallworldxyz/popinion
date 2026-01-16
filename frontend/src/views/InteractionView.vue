@@ -53,9 +53,13 @@
         <KnowledgePad
           v-show="viewMode === 'knowledge'"
           :highlights="knowledgePad"
+          :gaps="knowledgeGaps"
           :agents="agentsForInjection"
           @remove="removeHighlight"
           @remove-multiple="removeMultipleHighlights"
+          @add-gap="addGap"
+          @remove-gap="removeGap"
+          @remove-gaps-multiple="removeGapsMultiple"
           @inject="handleInject"
           @export="exportKnowledgePad"
           @import="handleImportKnowledge"
@@ -110,6 +114,7 @@ const currentStatus = ref('ready') // ready | processing | completed | error
 
 // Knowledge Pad State
 const knowledgePad = ref([])
+const knowledgeGaps = ref([])  // NEW: User-authored knowledge gaps
 const profiles = ref([])
 const simulationTags = ref([]) // Hot topics from simulation
 // Injected knowledge per agent: { 'global': [...], 'agent_0': [...], 'agent_1': [...] }
@@ -192,6 +197,28 @@ const removeHighlight = (idx) => {
 const removeMultipleHighlights = (ids) => {
   knowledgePad.value = knowledgePad.value.filter(h => !ids.includes(h.id))
   addLog(`Deleted ${ids.length} highlight(s)`)
+}
+
+// --- Knowledge Gap Methods ---
+const addGap = (gap) => {
+  knowledgeGaps.value.push({
+    id: crypto.randomUUID(),
+    content: gap.content,
+    agentIdx: gap.agentIdx,
+    agentName: gap.agentName,
+    tag: gap.tag,
+    createdAt: Date.now()
+  })
+  addLog(`Added knowledge gap: "${gap.content.substring(0, 50)}..."`)
+}
+
+const removeGap = (id) => {
+  knowledgeGaps.value = knowledgeGaps.value.filter(g => g.id !== id)
+}
+
+const removeGapsMultiple = (ids) => {
+  knowledgeGaps.value = knowledgeGaps.value.filter(g => !ids.includes(g.id))
+  addLog(`Deleted ${ids.length} gap(s)`)
 }
 
 const handleInject = (data) => {
@@ -287,7 +314,7 @@ const exportKnowledgePad = () => {
 }
 
 const handleImportKnowledge = (data) => {
-  const { highlights, sourceSimulationId, exportedAt } = data
+  const { highlights, gaps, sourceSimulationId, exportedAt } = data
   
   // Merge imported highlights with existing ones
   // Assign new IDs to avoid conflicts
@@ -300,6 +327,18 @@ const handleImportKnowledge = (data) => {
   
   knowledgePad.value.push(...importedHighlights)
   addLog(`Imported ${importedHighlights.length} highlight(s) from ${sourceSimulationId || 'unknown source'}`)
+  
+  // Import gaps if present (new format)
+  if (gaps && Array.isArray(gaps) && gaps.length > 0) {
+    const importedGaps = gaps.map(g => ({
+      ...g,
+      id: crypto.randomUUID(),
+      importedFrom: sourceSimulationId,
+      originalId: g.id
+    }))
+    knowledgeGaps.value.push(...importedGaps)
+    addLog(`Imported ${importedGaps.length} gap(s)`)
+  }
 }
 
 // --- Layout Methods ---
