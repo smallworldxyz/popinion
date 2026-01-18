@@ -1,9 +1,22 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import path from 'path'
+import electron from 'vite-plugin-electron'
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [vue()],
+  base: './', // Required for Electron relative path loading in production
+  plugins: [
+    vue(),
+    electron({
+      entry: 'electron/main.js',
+    }),
+  ],
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src')
+    }
+  },
   server: {
     port: 3000,
     open: true,

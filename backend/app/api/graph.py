@@ -86,6 +86,67 @@ def list_projects():
     })
 
 
+
+@graph_bp.route('/project/<project_id>/ontology', methods=['PUT'])
+def update_project_ontology(project_id: str):
+    """
+    Update project ontology
+    
+    Request (JSON):
+        {
+            "entity_types": [...],
+            "edge_types": [...]
+        }
+    """
+    try:
+        # Get project
+        project = ProjectManager.get_project(project_id)
+        if not project:
+            return jsonify({
+                "success": False,
+                "error": f"Project does not exist: {project_id}"
+            }), 404
+            
+        data = request.get_json()
+        if not data:
+             return jsonify({
+                "success": False,
+                "error": "No data provided"
+            }), 400
+            
+        # Basic validation
+        if 'entity_types' not in data or 'edge_types' not in data:
+             return jsonify({
+                "success": False,
+                "error": "Invalid ontology format: missing entity_types or edge_types"
+            }), 400
+            
+        # Update ontology
+        project.ontology = {
+            "entity_types": data.get("entity_types", []),
+            "edge_types": data.get("edge_types", [])
+        }
+        
+        # Save
+        ProjectManager.save_project(project)
+        
+        return jsonify({
+            "success": True,
+            "message": "Ontology updated successfully",
+            "data": {
+                "project_id": project.project_id,
+                "ontology": project.ontology
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Failed to update ontology: {str(e)}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
 # ============== API 1: Generate Ontology ==============
 
 @graph_bp.route('/ontology/generate', methods=['POST'])

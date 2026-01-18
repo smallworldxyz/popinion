@@ -55,6 +55,11 @@ class Project:
     # Simulation related
     simulation_id: Optional[str] = None
     simulation_config: Optional[Dict] = None
+
+    # Report & Interaction
+    report_id: Optional[str] = None
+    injected_knowledge: Dict[str, Any] = field(default_factory=dict)
+    simulation_tags: List[str] = field(default_factory=list)
     
     # File related
     files: List[Dict] = field(default_factory=list)

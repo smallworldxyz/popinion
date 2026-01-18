@@ -6,7 +6,7 @@
         <div class="modal-header">
           <div class="header-info">
             <h2 class="modal-title">{{ title }}</h2>
-            <span class="modal-subtitle">{{ selectedCount }} of {{ entities.length }} {{ itemLabel }} selected</span>
+            <span class="modal-subtitle">{{ selectedCount }} of {{ filteredEntities.length }} {{ itemLabel }} selected</span>
           </div>
           <button class="close-btn" @click="$emit('close')">×</button>
         </div>
@@ -25,8 +25,21 @@
               class="search-input"
             />
           </div>
+          <div class="filter-container">
+            <button class="action-btn small" @click="showFilter = !showFilter">Filter</button>
+            <div v-if="showFilter" class="filter-dropdown">
+              <label for="relationship-slider">Min Relationships: {{ relationshipCountFilter }}</label>
+              <input
+                type="range"
+                id="relationship-slider"
+                min="0"
+                :max="maxRelationships"
+                v-model="relationshipCountFilter"
+              />
+            </div>
+          </div>
           <div class="bulk-actions">
-            <button class="action-btn small" @click="selectAll">Select All</button>
+            <button class="action-btn small" @click="selectAll">Select All (Filtered)</button>
             <button class="action-btn small secondary" @click="deselectAll">Deselect All</button>
           </div>
         </div>
@@ -56,7 +69,7 @@
             <Transition name="expand">
               <div v-if="expandedGroups[typeName]" class="group-content">
                 <div 
-                  v-for="entity in filteredGroupEntities(group)"
+                  v-for="entity in group"
                   :key="entity.uuid"
                   class="entity-item"
                   :class="{ selected: selectedIds.has(entity.uuid) }"
@@ -150,6 +163,30 @@ const emit = defineEmits(['close', 'confirm'])
 const searchQuery = ref('')
 const selectedIds = ref(new Set())
 const expandedGroups = ref({})
+const showFilter = ref(false)
+const relationshipCountFilter = ref(0)
+
+// Find the max relationship count to set the slider's max value
+const maxRelationships = computed(() => {
+  if (props.entities.length === 0) return 100;
+  return Math.max(...props.entities.map(e => e.relationship_count || 0));
+});
+
+const filteredEntities = computed(() => {
+  return props.entities.filter(entity => {
+    const passesRelationshipFilter = (entity.relationship_count || 0) >= relationshipCountFilter.value;
+    
+    if (!searchQuery.value) {
+      return passesRelationshipFilter;
+    }
+    
+    const query = searchQuery.value.toLowerCase();
+    const passesSearchFilter = entity.name.toLowerCase().includes(query) || (entity.summary && entity.summary.toLowerCase().includes(query));
+    
+    return passesRelationshipFilter && passesSearchFilter;
+  });
+});
+
 
 // Initialize: optionally select all entities and expand first few groups
 watch(() => props.entities, (newEntities) => {
@@ -157,16 +194,16 @@ watch(() => props.entities, (newEntities) => {
     // Select all by default only if prop is true
     if (props.selectAllByDefault) {
       selectedIds.value = new Set(newEntities.map(e => e.uuid))
-    } else {
-      selectedIds.value = new Set()  // Start with none selected
     }
-    
-    // Expand first 3 groups by default
-    const types = Object.keys(props.byType)
-    types.slice(0, 3).forEach(type => {
-      expandedGroups.value[type] = true
-    })
+  } else {
+    selectedIds.value = new Set()  // Start with none selected
   }
+  
+  // Expand first 3 groups by default
+  const types = Object.keys(props.byType)
+  types.slice(0, 3).forEach(type => {
+    expandedGroups.value[type] = true
+  })
 }, { immediate: true })
 
 // Computed
@@ -174,7 +211,7 @@ const selectedCount = computed(() => selectedIds.value.size)
 
 const groupedEntities = computed(() => {
   const groups = {}
-  for (const entity of props.entities) {
+  for (const entity of filteredEntities.value) {
     const type = entity.type || 'Unknown'
     if (!groups[type]) groups[type] = []
     groups[type].push(entity)
@@ -201,7 +238,7 @@ const toggleEntity = (uuid) => {
 }
 
 const selectAll = () => {
-  selectedIds.value = new Set(props.entities.map(e => e.uuid))
+  selectedIds.value = new Set(filteredEntities.value.map(e => e.uuid))
 }
 
 const deselectAll = () => {
@@ -351,6 +388,34 @@ const confirmSelection = () => {
 
 .search-input::placeholder {
   color: rgba(255, 255, 255, 0.3);
+}
+
+.filter-container {
+  position: relative;
+}
+
+.filter-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  background: #2c2c54;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 16px;
+  margin-top: 8px;
+  z-index: 10;
+  color: white;
+  width: 250px;
+}
+
+.filter-dropdown label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+
+.filter-dropdown input[type="range"] {
+  width: 100%;
 }
 
 .bulk-actions {

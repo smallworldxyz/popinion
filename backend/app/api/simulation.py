@@ -13,6 +13,7 @@ from ..services.neo4j_entity_reader import Neo4jEntityReader
 from ..services.oasis_profile_generator import OasisProfileGenerator
 from ..services.simulation_manager import SimulationManager, SimulationStatus
 from ..services.simulation_runner import SimulationRunner, RunnerStatus
+from ..services.simulation_ipc import SimulationIPCClient
 from ..services.panel_chat_service import PanelChatService
 from ..services.survey_service import SurveyService
 from ..services.agora_service import AgoraService, DebateStatus, DEBATE_TEMPLATES
@@ -356,6 +357,68 @@ def _check_simulation_prepared(simulation_id: str) -> tuple:
             
     except Exception as e:
         return False, {"reason": f"Failed to read status file: {str(e)}"}
+
+
+@simulation_bp.route('/<simulation_id>/inject', methods=['POST'])
+def inject_event(simulation_id: str):
+    """
+    Inject a dynamic event into a running simulation (Director Intervention).
+    
+    Request (JSON):
+        {
+            "event_text": "Breaking News: Bitcoin hits $100k",
+            # OR full post object
+            "post_data": {
+                "content": "...",
+                "username": "...",
+                ...
+            }
+        }
+    """
+    try:
+        if not Config.OASIS_SIMULATION_DATA_DIR:
+             return jsonify({"success": False, "error": "SIMULATION_DIR not configured"}), 500
+
+        data = request.get_json() or {}
+        event_text = data.get('event_text')
+        post_data = data.get('post_data')
+        
+        if not event_text and not post_data:
+            return jsonify({"success": False, "error": "event_text or post_data required"}), 400
+            
+        # Construct event description
+        if post_data:
+            username = post_data.get('username', 'System')
+            content = post_data.get('content', '')
+            event_text = f"New Post by {username}: {content}"
+        
+        sim_dir = os.path.join(Config.OASIS_SIMULATION_DATA_DIR, simulation_id)
+        if not os.path.exists(sim_dir):
+            return jsonify({"success": False, "error": "Simulation not found"}), 404
+            
+        logger.info(f"Injecting event into {simulation_id}: {event_text[:50]}...")
+        
+        # Send IPC command
+        client = SimulationIPCClient(sim_dir)
+        
+        # Check if environment is alive
+        if not client.check_env_alive():
+             return jsonify({"success": False, "error": "Simulation is not running"}), 400
+             
+        response = client.send_inject_event(event_text)
+        
+        return jsonify({
+            "success": True,
+            "data": response.to_dict()
+        })
+        
+    except Exception as e:
+        logger.error(f"Injection failed: {str(e)}")
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }), 500
 
 
 @simulation_bp.route('/prepare/preview', methods=['POST'])
@@ -1389,6 +1452,39 @@ def generate_profiles():
 
 # ============== Simulation Running Control Interface ==============
 
+@simulation_bp.route('/scenarios', methods=['GET'])
+def list_scenarios():
+    """List available scenario files."""
+    try:
+        # Assuming scenarios are in backend/scenarios/ relative to project root
+        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        scenarios_dir = os.path.join(base_dir, 'scenarios')
+
+        if not os.path.exists(scenarios_dir):
+            return jsonify({"success": True, "data": []})
+
+        scenarios = []
+        for f in os.listdir(scenarios_dir):
+            if f.endswith('.json'):
+                path = os.path.join(scenarios_dir, f)
+                try:
+                    import json
+                    with open(path, 'r') as file:
+                        meta = json.load(file).get('meta', {})
+                        scenarios.append({
+                            "filename": f,
+                            "name": meta.get('name', f),
+                            "description": meta.get('description', '')
+                        })
+                except Exception:
+                    pass
+        
+        return jsonify({"success": True, "data": scenarios})
+    except Exception as e:
+        logger.error(f"List scenarios failed: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @simulation_bp.route('/start', methods=['POST'])
 def start_simulation():
     """
@@ -1400,7 +1496,8 @@ def start_simulation():
             "platform": "parallel",                // Optional: twitter / reddit / parallel (default)
             "max_rounds": 100,                     // Optional: maximumsimulation轮count，use于截断过长ofsimulation
             "enable_graph_memory_update": false,   // Optional: whether to will Agent活动动态update到Zepgraph记忆
-            "force": false                         // Optional: force重新start（willstoppedrunningofsimulation并清理log）
+            "force": false,                        // Optional: force重新start（willstoppedrunningofsimulation并清理log）
+            "scenario_file": "bitcoin_crash.json"  // [NEW] Optional
         }
 
     about force Args:
@@ -1444,6 +1541,7 @@ def start_simulation():
         max_rounds = data.get('max_rounds')  # Optional：maximumsimulation轮count
         enable_graph_memory_update = data.get('enable_graph_memory_update', False)  # Optional：whether to启usegraph记忆update
         force = data.get('force', False)  # Optional：force重新start
+        scenario_file = data.get('scenario_file') # Optional
 
         # validate max_rounds parameters
         if max_rounds is not None:
@@ -1541,13 +1639,27 @@ def start_simulation():
             
             logger.info(f"Enabling graph memory update: simulation_id={simulation_id}, graph_id={graph_id}")
         
+        # Resolve scenario path if provided
+        scenario_path = None
+        if scenario_file:
+            # Try absolute path first, then relative to scenarios dir
+            if os.path.exists(scenario_file):
+                scenario_path = scenario_file
+            else:
+                 # Try finding in scenarios folder
+                base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+                start_path = os.path.join(base_dir, 'scenarios', scenario_file)
+                if os.path.exists(start_path):
+                    scenario_path = start_path
+
         # startsimulation
         run_state = SimulationRunner.start_simulation(
             simulation_id=simulation_id,
             platform=platform,
             max_rounds=max_rounds,
             enable_graph_memory_update=enable_graph_memory_update,
-            graph_id=graph_id
+            graph_id=graph_id,
+            scenario_file=scenario_path
         )
         
         # updatesimulation status
@@ -1561,6 +1673,8 @@ def start_simulation():
         response_data['force_restarted'] = force_restarted
         if enable_graph_memory_update:
             response_data['graph_id'] = graph_id
+        if scenario_path:
+             response_data['scenario'] = os.path.basename(scenario_path)
         
         return jsonify({
             "success": True,
@@ -3469,6 +3583,61 @@ def stop_agora_debate(debate_id: str):
         
     except Exception as e:
         logger.error(f"Stop agora debate failed: {str(e)}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+
+@simulation_bp.route('/project/<project_id>/agents', methods=['GET'])
+def get_project_agents(project_id):
+    """
+    Get agent personas for a project.
+    
+    Optional Query Params:
+      - simulation_id: If provided, specific simulation.
+      - platform: 'reddit' (default) or 'twitter'.
+      
+    If simulation_id is NOT provided, it finds the latest simulation for this project
+    that has prepared profiles.
+    """
+    try:
+        simulation_id = request.args.get('simulation_id')
+        platform = request.args.get('platform', 'reddit')
+        
+        manager = SimulationManager()
+        
+        # If no simulation_id specific, find the latest relevant one
+        if not simulation_id:
+            simulations = manager.list_simulations(project_id=project_id)
+            # Sort by created_at desc
+            simulations.sort(key=lambda x: x.created_at, reverse=True)
+            
+            # Find first one that has profiles
+            for sim in simulations:
+                if sim.profiles_count > 0:
+                    simulation_id = sim.simulation_id
+                    break
+            
+            if not simulation_id:
+                return jsonify({
+                    "success": True,
+                    "data": [],
+                    "message": "No simulations with generated agents found for this project."
+                })
+
+        # Fetch profiles
+        profiles = manager.get_profiles(simulation_id, platform=platform)
+        
+        return jsonify({
+            "success": True,
+            "data": profiles,
+            "simulation_id": simulation_id
+        })
+
+    except Exception as e:
+        logger.error(f"Get project agents failed: {str(e)}")
         return jsonify({
             "success": False,
             "error": str(e)

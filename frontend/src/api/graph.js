@@ -68,3 +68,54 @@ export function getProject(projectId) {
     method: 'get'
   })
 }
+
+/**
+ * Get list of all projects
+ * @returns {Promise}
+ */
+export function listProjects() {
+  return service({
+    url: '/api/graph/projects',
+    method: 'get'
+  })
+}
+
+/**
+ * Update project ontology
+ * @param {String} projectId - Project ID
+ * @param {Object} ontology - Ontology object { entity_types, edge_types }
+ * @returns {Promise}
+ */
+export function updateOntology(projectId, ontology) {
+  return service({
+    url: `/api/graph/project/${projectId}/ontology`,
+    method: 'put',
+    data: ontology
+  })
+}
+
+/**
+ * Preview graph merge
+ * @param {Object} data - { source_graph_id, target_graph_id }
+ * @returns {Promise}
+ */
+export function previewMerge(data) {
+  return service({
+    url: '/api/graph/merge/preview',
+    method: 'post',
+    data
+  })
+}
+
+/**
+ * Execute graph merge
+ * @param {Object} data - { source_graph_id, target_graph_id, strategy }
+ * @returns {Promise}
+ */
+export function executeMerge(data) {
+  return service({
+    url: '/api/graph/merge/execute',
+    method: 'post',
+    data
+  })
+}

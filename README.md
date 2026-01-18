@@ -14,8 +14,9 @@
 | Feature | Description |
 |---------|-------------|
 | **Smart Scraping** | AI-driven search planning with specialized crawlers (Telegram, News, etc.) |
-| **Ghost Injection** | Inject real-world data as a "World Agent" to seed simulations |
 | **Swarm Simulation** | Thousands of autonomous agents with memory, personality, and social behavior |
+| **Rehearsal Engine** | **Director Console** for manual event injection, live context search, and scenario scripting |
+| **Agent Interrogation** | **The Green Room** for 1-on-1 agent interviews and **Session Replay** for historical critique |
 | **Prediction Reports** | Deep analysis with agent interviews and trend forecasting |
 
 > **Input:** Upload seed materials (news, reports, social data) + describe your prediction scenario  
@@ -34,10 +35,35 @@ From serious predictions to playful simulations, we let every "what if" see its 
 ## 🔄 Workflow
 
 1. **Graph Building**: Seed extraction → AI Search Planning → Smart Scraping (Telegram, News, etc.) → GraphRAG construction
-2. **Environment Setup**: Entity extraction → Persona generation → Agent configuration
+2. **Environment Setup**: Entity extraction → Persona generation → **Scripted Scenarios** setup
 3. **Simulation**: Dual-platform (Twitter + Reddit) parallel evolution with dynamic memory
-4. **Report Generation**: ReportAgent with Deep Insight, Panorama Search, and Agent Interview tools
-5. **Deep Interaction**: Chat with any agent or query the ReportAgent for custom analysis
+4. **Rehearsal & Intervention**: Use **Director Console** to inject events, pause/resume, or enter **The Green Room**
+5. **Replay & Critique**: Review session history, scrub through rounds, and annotate critical moments
+6. **Report Generation**: ReportAgent with Deep Insight, Panorama Search, and Agent Interview tools
+
+## 🎬 Rehearsal Engine: The Director's Suite
+
+Popinion goes beyond passive simulation. You are the Director.
+
+### 1. Scripted Scenarios
+Define precognitive branches before the simulation starts.
+- **Trigger Events**: Schedule "October Surprises" or "Market Crashes" to happen at specific rounds.
+- **Conditional Logic**: "If Trump approval > 50%, inject Scandal B."
+
+### 2. Director Console
+Control the simulation involved in real-time.
+- **Reality Injection**: Insert a breaking news event or social trend instantly to see agent reactions.
+- **Live Context Search**: Is the simulation drifting? Search the real web and inject missing context immediately.
+
+### 3. The Green Room (Interrogation)
+Pull any agent out of the simulation for a private 1-on-1 interview.
+- **Ask "Why?"**: "Why did you like that post?" "What is your true stance on Policy X?"
+- **Assess Drift**: Verify if the agent is staying true to its persona.
+
+### 4. Replay & Critique
+Don't just watch it once. Scrub through history.
+- **Session Replay**: Interactive timeline scrubber.
+- **Annotation**: Add notes and critiques to specific actions (e.g., "Agent 42 broke character here").
 
 ## 🚀 Quick Start
 

@@ -1,37 +1,36 @@
 <template>
   <div class="workbench-panel">
     <div class="scroll-container">
-      <!-- Step 01: Ontology -->
+      <!-- Step 01: Analysis -->
       <div class="step-card" :class="{ 'active': currentPhase === 0, 'completed': currentPhase > 0 }">
         <div class="card-header">
           <div class="step-info">
             <span class="step-num">01</span>
-            <span class="step-title">Ontology Generation</span>
+            <span class="step-title">Topic Analysis</span>
           </div>
           <div class="step-status">
-            <span v-if="currentPhase > 0" class="badge success">Completed</span>
-            <span v-else-if="currentPhase === 0" class="badge processing">Generating</span>
+            <span v-if="currentPhase > 0" class="badge success">Analyzed</span>
+            <span v-else-if="currentPhase === 0" class="badge processing">Analyzing...</span>
             <span v-else class="badge pending">Pending</span>
           </div>
         </div>
         
         <div class="card-content">
-          <p class="api-note">POST /api/graph/ontology/generate</p>
           <p class="description">
-            LLM analyzes document content and simulation requirements, extracts reality seeds, and automatically generates appropriate ontology structure
+            Analyzing uploaded documents to extract key topics, entities, and relationships for the simulation.
           </p>
 
           <!-- Loading / Progress -->
           <div v-if="currentPhase === 0 && ontologyProgress" class="progress-section">
             <div class="spinner-sm"></div>
-            <span>{{ ontologyProgress.message || 'Analyzing documents...' }}</span>
+            <span>{{ ontologyProgress.message || 'Processing documents...' }}</span>
           </div>
 
           <!-- Detail Overlay -->
           <div v-if="selectedOntologyItem" class="ontology-detail-overlay">
             <div class="detail-header">
                <div class="detail-title-group">
-                  <span class="detail-type-badge">{{ selectedOntologyItem.itemType === 'entity' ? 'ENTITY' : 'RELATION' }}</span>
+                  <span class="detail-type-badge">{{ selectedOntologyItem.itemType === 'entity' ? 'TOPIC' : 'CONNECTION' }}</span>
                   <span class="detail-name">{{ selectedOntologyItem.name }}</span>
                </div>
                <button class="close-btn" @click="selectedOntologyItem = null">×</button>
@@ -41,11 +40,10 @@
                
                <!-- Attributes -->
                <div class="detail-section" v-if="selectedOntologyItem.attributes?.length">
-                  <span class="section-label">ATTRIBUTES</span>
+                  <span class="section-label">PROPERTIES</span>
                   <div class="attr-list">
                      <div v-for="attr in selectedOntologyItem.attributes" :key="attr.name" class="attr-item">
                         <span class="attr-name">{{ attr.name }}</span>
-                        <span class="attr-type">({{ attr.type }})</span>
                         <span class="attr-desc">{{ attr.description }}</span>
                      </div>
                   </div>
@@ -73,9 +71,40 @@
             </div>
           </div>
 
+          <div class="card-actions">
+            <button v-if="!isEditingOntology" @click="isEditingOntology = true" class="action-btn secondary sm">Refine Topics</button>
+            <template v-else>
+              <button @click="cancelEditOntology" class="action-btn text sm">Cancel</button>
+              <button @click="saveOntology" class="action-btn primary sm">Save Changes</button>
+            </template>
+          </div>
+
+          <!-- Ontology Editor -->
+          <div v-if="isEditingOntology" class="ontology-editor">
+            <!-- Entity Types -->
+            <div class="editor-section">
+              <span class="tag-label">TOPICS / ENTITIES</span>
+              <div v-for="(entity, index) in ontology.entity_types" :key="index" class="editor-item">
+                <input v-model="entity.name" placeholder="Entity Name" />
+                <button @click="removeEntityType(index)" class="remove-btn icon-only">-</button>
+              </div>
+              <button @click="addEntityType" class="add-btn text">+ Add Topic</button>
+            </div>
+
+            <!-- Relation Types -->
+            <div class="editor-section">
+              <span class="tag-label">RELATIONSHIPS</span>
+              <div v-for="(relation, index) in ontology.edge_types" :key="index" class="editor-item">
+                <input v-model="relation.name" placeholder="Relation Name" />
+                <button @click="removeEdgeType(index)" class="remove-btn icon-only">-</button>
+              </div>
+              <button @click="addEdgeType" class="add-btn text">+ Add Relation</button>
+            </div>
+          </div>
+
           <!-- Generated Entity Tags -->
-          <div v-if="projectData?.ontology?.entity_types" class="tags-container" :class="{ 'dimmed': selectedOntologyItem }">
-            <span class="tag-label">GENERATED ENTITY TYPES</span>
+          <div v-if="projectData?.ontology?.entity_types && !isEditingOntology" class="tags-container" :class="{ 'dimmed': selectedOntologyItem }">
+            <span class="tag-label">IDENTIFIED TOPICS</span>
             <div class="tags-list">
               <span 
                 v-for="entity in projectData.ontology.entity_types" 
@@ -87,21 +116,6 @@
               </span>
             </div>
           </div>
-
-          <!-- Generated Relation Tags -->
-          <div v-if="projectData?.ontology?.edge_types" class="tags-container" :class="{ 'dimmed': selectedOntologyItem }">
-            <span class="tag-label">GENERATED RELATION TYPES</span>
-            <div class="tags-list">
-              <span 
-                v-for="rel in projectData.ontology.edge_types" 
-                :key="rel.name" 
-                class="entity-tag clickable"
-                @click="selectOntologyItem(rel, 'relation')"
-              >
-                {{ rel.name }}
-              </span>
-            </div>
-          </div>
         </div>
       </div>
 
@@ -110,34 +124,33 @@
         <div class="card-header">
           <div class="step-info">
             <span class="step-num">02</span>
-            <span class="step-title">GraphRAG Building</span>
+            <span class="step-title">Knowledge Graph Construction</span>
           </div>
           <div class="step-status">
-            <span v-if="currentPhase > 1" class="badge success">Completed</span>
+            <span v-if="currentPhase > 1" class="badge success">Built</span>
             <span v-else-if="currentPhase === 1" class="badge processing">{{ buildProgress?.progress || 0 }}%</span>
             <span v-else class="badge pending">Pending</span>
           </div>
         </div>
 
         <div class="card-content">
-          <p class="api-note">POST /api/graph/build</p>
           <p class="description">
-            Based on the generated ontology, documents are automatically chunked and Neo4j is used to build knowledge graph, extracting entities and relationships, forming temporal memory and community summaries
+            Building a structured knowledge graph to enable agents to reason about the context.
           </p>
           
           <!-- Stats Cards -->
           <div class="stats-grid">
             <div class="stat-card">
               <span class="stat-value">{{ graphStats.nodes }}</span>
-              <span class="stat-label">Entity Nodes</span>
+              <span class="stat-label">Nodes</span>
             </div>
             <div class="stat-card">
               <span class="stat-value">{{ graphStats.edges }}</span>
-              <span class="stat-label">Relation Edges</span>
+              <span class="stat-label">Connections</span>
             </div>
             <div class="stat-card">
               <span class="stat-value">{{ graphStats.types }}</span>
-              <span class="stat-label">Schema Types</span>
+              <span class="stat-label">Types</span>
             </div>
           </div>
         </div>
@@ -148,23 +161,22 @@
         <div class="card-header">
           <div class="step-info">
             <span class="step-num">03</span>
-            <span class="step-title">Build Complete</span>
+            <span class="step-title">Ready for Simulation</span>
           </div>
           <div class="step-status">
-            <span v-if="currentPhase >= 2" class="badge accent">In Progress</span>
+            <span v-if="currentPhase >= 2" class="badge ready">Ready</span>
           </div>
         </div>
         
         <div class="card-content">
-          <p class="api-note">POST /api/simulation/create</p>
-          <p class="description">Graph Building Completed, please proceed to Next Step for simulation environment setup</p>
+          <p class="description">Knowledge base is ready. Proceed to configure the simulation parameters.</p>
           <button 
-            class="action-btn" 
+            class="action-btn primary large" 
             :disabled="currentPhase < 2 || creatingSimulation"
             @click="handleEnterEnvSetup"
           >
-            <span v-if="creatingSimulation" class="spinner-sm"></span>
-            {{ creatingSimulation ? 'Creating...' : 'Enter Environment Setup ➝' }}
+            <span v-if="creatingSimulation">Creating Instance...</span>
+            <span v-else>Configure Simulation ➝</span>
           </button>
         </div>
       </div>
@@ -173,8 +185,8 @@
     <!-- Bottom Info / Logs -->
     <div class="system-logs">
       <div class="log-header">
-        <span class="log-title">SYSTEM DASHBOARD</span>
-        <span class="log-id">{{ projectData?.project_id || 'NO_PROJECT' }}</span>
+        <span class="log-title">ACTIVITY LOG</span>
+        <span class="log-id">{{ projectData?.project_id || 'IDLE' }}</span>
       </div>
       <div class="log-content" ref="logContent">
         <div class="log-line" v-for="(log, idx) in systemLogs" :key="idx">
@@ -187,9 +199,11 @@
 </template>
 
 <script setup>
-import { computed, ref, watch, nextTick } from 'vue'
+import { computed, ref, watch, nextTick, watchEffect } from 'vue'
 import { useRouter } from 'vue-router'
 import { createSimulation } from '../api/simulation'
+import { updateOntology } from '../api/graph'
+import { eventBus } from '../utils/eventBus'
 
 const router = useRouter()
 
@@ -202,11 +216,23 @@ const props = defineProps({
   systemLogs: { type: Array, default: () => [] }
 })
 
-defineEmits(['next-step'])
+const emit = defineEmits(['next-step'])
 
 const selectedOntologyItem = ref(null)
 const logContent = ref(null)
 const creatingSimulation = ref(false)
+
+// Ontology Editing
+const isEditingOntology = ref(false)
+const ontology = ref({ entity_types: [], edge_types: [] })
+
+const deepClone = (obj) => JSON.parse(JSON.stringify(obj))
+
+watchEffect(() => {
+  if (props.projectData?.ontology) {
+    ontology.value = deepClone(props.projectData.ontology)
+  }
+})
 
 // Enter Environment Setup - Create simulation and navigate
 const handleEnterEnvSetup = async () => {
@@ -226,11 +252,13 @@ const handleEnterEnvSetup = async () => {
     })
     
     if (res.success && res.data?.simulation_id) {
-      // Navigate to simulation page
+      emit('next-step')
       router.push({
-        name: 'Simulation',
-        params: { simulationId: res.data.simulation_id }
+        name: 'Process',
+        params: { projectId: props.projectData.project_id },
+        query: { simId: res.data.simulation_id }
       })
+      emit('next-step')
     } else {
       console.error('Failed to create simulation:', res.error)
       alert('Failed to create simulation: ' + (res.error || 'Unknown error'))
@@ -243,6 +271,51 @@ const handleEnterEnvSetup = async () => {
   }
 }
 
+const addEntityType = () => {
+  ontology.value.entity_types.push({ name: '', attributes: [], examples: [] })
+}
+
+const removeEntityType = (index) => {
+  ontology.value.entity_types.splice(index, 1)
+}
+
+const addEdgeType = () => {
+  ontology.value.edge_types.push({ name: '', source_targets: [] })
+}
+
+const removeEdgeType = (index) => {
+  ontology.value.edge_types.splice(index, 1)
+}
+
+const saveOntology = async () => {
+  if (!props.projectData?.project_id) return
+
+  try {
+    eventBus.showLoading('Saving changes...')
+    const res = await updateOntology(props.projectData.project_id, ontology.value)
+
+    if (res.success) {
+      if (props.projectData) {
+        props.projectData.ontology = deepClone(ontology.value)
+      }
+      isEditingOntology.value = false
+    } else {
+      alert('Failed to save: ' + (res.error || 'Unknown error'))
+    }
+  } catch (err) {
+    alert('Error saving: ' + err.message)
+  } finally {
+    eventBus.hideLoading()
+  }
+}
+
+const cancelEditOntology = () => {
+  if (props.projectData?.ontology) {
+    ontology.value = deepClone(props.projectData.ontology)
+  }
+  isEditingOntology.value = false
+}
+
 const selectOntologyItem = (item, type) => {
   selectedOntologyItem.value = { ...item, itemType: type }
 }
@@ -253,12 +326,6 @@ const graphStats = computed(() => {
   const types = props.projectData?.ontology?.entity_types?.length || 0
   return { nodes, edges, types }
 })
-
-const formatDate = (dateStr) => {
-  if (!dateStr) return '--:--:--'
-  const d = new Date(dateStr)
-  return d.toLocaleTimeString('en-US', { hour12: false }) + '.' + d.getMilliseconds()
-}
 
 // Auto-scroll logs
 watch(() => props.systemLogs.length, () => {
@@ -273,7 +340,7 @@ watch(() => props.systemLogs.length, () => {
 <style scoped>
 .workbench-panel {
   height: 100%;
-  background-color: #FAFAFA;
+  background-color: var(--bg-surface);
   display: flex;
   flex-direction: column;
   position: relative;
@@ -290,18 +357,18 @@ watch(() => props.systemLogs.length, () => {
 }
 
 .step-card {
-  background: #FFF;
-  border-radius: 8px;
-  padding: 20px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-  border: 1px solid #EAEAEA;
+  background: var(--bg-surface);
+  border-radius: var(--radius-md);
+  padding: 24px;
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border-light);
   transition: all 0.3s ease;
-  position: relative; /* For absolute overlay */
+  position: relative;
 }
 
 .step-card.active {
-  border-color: #FF5722;
-  box-shadow: 0 4px 12px rgba(255, 87, 34, 0.08);
+  border-color: var(--primary);
+  box-shadow: var(--shadow-md);
 }
 
 .card-header {
@@ -318,67 +385,120 @@ watch(() => props.systemLogs.length, () => {
 }
 
 .step-num {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 20px;
+  font-family: var(--font-mono);
+  font-size: 14px;
   font-weight: 700;
-  color: #E0E0E0;
+  color: var(--text-faint);
+  background: var(--bg-subtle);
+  padding: 4px 8px;
+  border-radius: 4px;
 }
 
-.step-card.active .step-num,
-.step-card.completed .step-num {
-  color: #000;
+.step-card.active .step-num {
+  color: var(--primary);
+  background: rgba(255, 69, 0, 0.1);
 }
 
 .step-title {
   font-weight: 600;
-  font-size: 14px;
-  letter-spacing: 0.5px;
+  font-size: 16px;
+  color: var(--text-main);
 }
 
 .badge {
-  font-size: 10px;
-  padding: 4px 8px;
-  border-radius: 4px;
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 12px;
   font-weight: 600;
   text-transform: uppercase;
 }
 
 .badge.success { background: #E8F5E9; color: #2E7D32; }
-.badge.processing { background: #FF5722; color: #FFF; }
-.badge.accent { background: #FF5722; color: #FFF; }
-.badge.pending { background: #F5F5F5; color: #999; }
-
-.api-note {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 10px;
-  color: #999;
-  margin-bottom: 8px;
-}
+.badge.processing { background: rgba(255, 69, 0, 0.1); color: var(--primary); }
+.badge.ready { background: #E0F2F1; color: #00897B; }
+.badge.pending { background: var(--bg-subtle); color: var(--text-muted); }
 
 .description {
-  font-size: 12px;
-  color: #666;
+  font-size: 14px;
+  color: var(--text-muted);
   line-height: 1.5;
-  margin-bottom: 16px;
+  margin-bottom: 20px;
 }
 
-/* Step 01 Tags */
+/* Actions */
+.card-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.action-btn {
+  padding: 8px 16px;
+  border-radius: var(--radius-sm);
+  font-weight: 500;
+  font-size: 13px;
+  transition: all 0.2s;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.action-btn.sm { padding: 6px 12px; font-size: 12px; }
+.action-btn.large { padding: 12px 24px; font-size: 14px; width: 100%; }
+
+.action-btn.primary {
+  background: var(--primary);
+  color: white;
+  border: 1px solid var(--primary);
+}
+
+.action-btn.primary:hover {
+  background: var(--primary-hover);
+}
+
+.action-btn.secondary {
+  background: white;
+  color: var(--text-main);
+  border: 1px solid var(--border-light);
+}
+
+.action-btn.secondary:hover {
+  border-color: var(--text-muted);
+}
+
+.action-btn.text {
+  background: transparent;
+  color: var(--text-muted);
+  border: none;
+}
+
+.action-btn.text:hover {
+  color: var(--text-main);
+}
+
+.action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Tags */
 .tags-container {
-  margin-top: 12px;
-  transition: opacity 0.3s;
-}
-
-.tags-container.dimmed {
-    opacity: 0.3;
-    pointer-events: none;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-subtle);
 }
 
 .tag-label {
   display: block;
-  font-size: 10px;
-  color: #AAA;
-  margin-bottom: 8px;
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-bottom: 12px;
   font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .tags-list {
@@ -388,194 +508,29 @@ watch(() => props.systemLogs.length, () => {
 }
 
 .entity-tag {
-  background: #F5F5F5;
-  border: 1px solid #EEE;
-  padding: 4px 10px;
-  border-radius: 4px;
-  font-size: 11px;
-  color: #333;
-  font-family: 'JetBrains Mono', monospace;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-light);
+  padding: 6px 12px;
+  border-radius: var(--radius-full);
+  font-size: 12px;
+  color: var(--text-main);
   transition: all 0.2s;
 }
 
-.entity-tag.clickable {
-    cursor: pointer;
-}
-
 .entity-tag.clickable:hover {
-    background: #E0E0E0;
-    border-color: #CCC;
+  border-color: var(--primary);
+  color: var(--primary);
+  cursor: pointer;
 }
 
-/* Ontology Detail Overlay */
-.ontology-detail-overlay {
-    position: absolute;
-    top: 60px; /* Below header roughly */
-    left: 20px;
-    right: 20px;
-    bottom: 20px;
-    background: rgba(255, 255, 255, 0.98);
-    backdrop-filter: blur(4px);
-    z-index: 10;
-    border: 1px solid #EAEAEA;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.05);
-    border-radius: 6px;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    animation: fadeIn 0.2s ease-out;
-}
-
-@keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
-
-.detail-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 12px 16px;
-    border-bottom: 1px solid #EAEAEA;
-    background: #FAFAFA;
-}
-
-.detail-title-group {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.detail-type-badge {
-    font-size: 9px;
-    font-weight: 700;
-    color: #FFF;
-    background: #000;
-    padding: 2px 6px;
-    border-radius: 2px;
-    text-transform: uppercase;
-}
-
-.detail-name {
-    font-size: 14px;
-    font-weight: 700;
-    font-family: 'JetBrains Mono', monospace;
-}
-
-.close-btn {
-    background: none;
-    border: none;
-    font-size: 18px;
-    color: #999;
-    cursor: pointer;
-    line-height: 1;
-}
-
-.close-btn:hover {
-    color: #333;
-}
-
-.detail-body {
-    flex: 1;
-    overflow-y: auto;
-    padding: 16px;
-}
-
-.detail-desc {
-    font-size: 12px;
-    color: #444;
-    line-height: 1.5;
-    margin-bottom: 16px;
-    padding-bottom: 12px;
-    border-bottom: 1px dashed #EAEAEA;
-}
-
-.detail-section {
-    margin-bottom: 16px;
-}
-
-.section-label {
-    display: block;
-    font-size: 10px;
-    font-weight: 600;
-    color: #AAA;
-    margin-bottom: 8px;
-}
-
-.attr-list, .conn-list {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-}
-
-.attr-item {
-    font-size: 11px;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    align-items: baseline;
-    padding: 4px;
-    background: #F9F9F9;
-    border-radius: 4px;
-}
-
-.attr-name {
-    font-family: 'JetBrains Mono', monospace;
-    font-weight: 600;
-    color: #000;
-}
-
-.attr-type {
-    color: #999;
-    font-size: 10px;
-}
-
-.attr-desc {
-    color: #555;
-    flex: 1;
-    min-width: 150px;
-}
-
-.example-list {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-}
-
-.example-tag {
-    font-size: 11px;
-    background: #FFF;
-    border: 1px solid #E0E0E0;
-    padding: 3px 8px;
-    border-radius: 12px;
-    color: #555;
-}
-
-.conn-item {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 11px;
-    padding: 6px;
-    background: #F5F5F5;
-    border-radius: 4px;
-    font-family: 'JetBrains Mono', monospace;
-}
-
-.conn-node {
-    font-weight: 600;
-    color: #333;
-}
-
-.conn-arrow {
-    color: #BBB;
-}
-
-/* Step 02 Stats */
+/* Stats */
 .stats-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  gap: 12px;
-  background: #F9F9F9;
-  padding: 16px;
-  border-radius: 6px;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  background: var(--bg-subtle);
+  padding: 20px;
+  border-radius: var(--radius-md);
 }
 
 .stat-card {
@@ -584,115 +539,120 @@ watch(() => props.systemLogs.length, () => {
 
 .stat-value {
   display: block;
-  font-size: 20px;
+  font-size: 24px;
   font-weight: 700;
-  color: #000;
-  font-family: 'JetBrains Mono', monospace;
+  color: var(--text-main);
+  font-family: var(--font-mono);
 }
 
 .stat-label {
-  font-size: 9px;
-  color: #999;
+  font-size: 11px;
+  color: var(--text-muted);
   text-transform: uppercase;
   margin-top: 4px;
   display: block;
 }
 
-/* Step 03 Button */
-.action-btn {
-  width: 100%;
-  background: #000;
-  color: #FFF;
-  border: none;
-  padding: 14px;
-  border-radius: 4px;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: opacity 0.2s;
+/* Overlay & Editor Styles */
+.ontology-detail-overlay {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    right: 20px;
+    bottom: 20px;
+    background: rgba(255, 255, 255, 0.98);
+    backdrop-filter: blur(8px);
+    z-index: 10;
+    border: 1px solid var(--border-light);
+    box-shadow: var(--shadow-lg);
+    border-radius: var(--radius-md);
+    display: flex;
+    flex-direction: column;
 }
 
-.action-btn:hover:not(:disabled) {
-  opacity: 0.8;
+.detail-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border-light);
 }
 
-.action-btn:disabled {
-  background: #CCC;
-  cursor: not-allowed;
+.detail-type-badge {
+    background: var(--text-main);
+    color: white;
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    margin-right: 8px;
 }
 
-.progress-section {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 12px;
-  color: #FF5722;
-  margin-bottom: 12px;
+.detail-name {
+    font-weight: 700;
+    font-size: 16px;
 }
 
-.spinner-sm {
-  width: 14px;
-  height: 14px;
-  border: 2px solid #FFCCBC;
-  border-top-color: #FF5722;
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
+.detail-body {
+    padding: 24px;
+    overflow-y: auto;
 }
 
-@keyframes spin { to { transform: rotate(360deg); } }
+.detail-desc {
+    margin-bottom: 24px;
+    color: var(--text-muted);
+    font-size: 14px;
+    line-height: 1.6;
+}
 
 /* System Logs */
 .system-logs {
-  background: #000;
-  color: #DDD;
+  background: var(--bg-subtle);
+  border-top: 1px solid var(--border-light);
   padding: 16px;
-  font-family: 'JetBrains Mono', monospace;
-  border-top: 1px solid #222;
-  flex-shrink: 0;
+  flex-basis: 200px;
+  display: flex;
+  flex-direction: column;
 }
 
 .log-header {
   display: flex;
   justify-content: space-between;
-  border-bottom: 1px solid #333;
-  padding-bottom: 8px;
-  margin-bottom: 8px;
-  font-size: 10px;
-  color: #888;
+  margin-bottom: 12px;
+  font-size: 11px;
+}
+
+.log-title {
+  font-weight: 700;
+  color: var(--text-muted);
 }
 
 .log-content {
+  flex: 1;
+  overflow-y: auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
   display: flex;
   flex-direction: column;
   gap: 4px;
-  height: 80px; /* Approx 4 lines visible */
-  overflow-y: auto;
-  padding-right: 4px;
-}
-
-.log-content::-webkit-scrollbar {
-  width: 4px;
-}
-
-.log-content::-webkit-scrollbar-thumb {
-  background: #333;
-  border-radius: 2px;
-}
-
-.log-line {
-  font-size: 11px;
-  display: flex;
-  gap: 12px;
-  line-height: 1.5;
 }
 
 .log-time {
-  color: #666;
-  min-width: 75px;
+  color: var(--text-faint);
+  margin-right: 8px;
 }
 
-.log-msg {
-  color: #CCC;
-  word-break: break-all;
+.spinner-sm {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--primary-light);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  display: inline-block;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 </style>

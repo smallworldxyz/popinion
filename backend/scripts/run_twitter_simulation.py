@@ -141,6 +141,7 @@ class CommandType:
     INTERVIEW = "interview"
     BATCH_INTERVIEW = "batch_interview"
     CLOSE_ENV = "close_env"
+    INJECT_EVENT = "inject_event"
 
 
 class IPCHandler:
@@ -296,6 +297,56 @@ class IPCHandler:
             print(f"  批量Interview失败: {error_msg}")
             self.send_response(command_id, "failed", error=error_msg)
             return False
+
+    async def handle_inject_event(self, command_id: str, event_text: str) -> bool:
+        """
+        Handle Inject Event command
+        
+        Args:
+            event_text: Event content
+        """
+        try:
+            print(f"  [INJECT] Received event: {event_text[:50]}...")
+            
+            # Strategy: Find a suitable agent to broadcast this event
+            # 1. Try to find the "World News" or "System" agent (ID 99999) if it exists
+            # 2. Otherwise pick a random active agent to "share" the news
+            
+            target_agent = None
+            try:
+                target_agent = self.agent_graph.get_agent(99999)
+            except Exception:
+                pass
+                
+            if not target_agent:
+                # Pick a random agent to break the news
+                 active_agents = list(self.agent_graph.get_agents())
+                 if active_agents:
+                     target_agent = random.choice(active_agents)
+            
+            if not target_agent:
+                 raise ValueError("No agents available to broadcast event")
+                 
+            # Create Post Action
+            action = ManualAction(
+                action_type=ActionType.CREATE_POST,
+                action_args={"content": event_text}
+            )
+            
+            print(f"  [INJECT] Agent {target_agent.agent_id} broadcasting event...")
+            
+            # Execute
+            actions = {target_agent: action}
+            await self.env.step(actions)
+            
+            self.send_response(command_id, "completed", result={"message": "Event injected successfully"})
+            return True
+            
+        except Exception as e:
+            error_msg = str(e)
+            print(f"  [INJECT] Failed: {error_msg}")
+            self.send_response(command_id, "failed", error=error_msg)
+            return False
     
     def _get_interview_result(self, agent_id: int) -> Dict[str, Any]:
         """从数据库获取最新的Interview结果"""
@@ -376,6 +427,13 @@ class IPCHandler:
             print("收到关闭环境命令")
             self.send_response(command_id, "completed", result={"message": "环境即将关闭"})
             return False
+            
+        elif command_type == CommandType.INJECT_EVENT:
+            await self.handle_inject_event(
+                command_id,
+                args.get("event_text", "")
+            )
+            return True
         
         else:
             self.send_response(command_id, "failed", error=f"未知命令类型: {command_type}")

@@ -63,11 +63,16 @@ def create_app(config_class=Config):
         return response
     
     # Register blueprints
-    from .api import graph_bp, simulation_bp, report_bp, crawl_bp
+    from .api import graph_bp, simulation_bp, report_bp, crawl_bp, graph_fusion_bp, tools
     app.register_blueprint(graph_bp, url_prefix='/api/graph')
     app.register_blueprint(simulation_bp, url_prefix='/api/simulation')
     app.register_blueprint(report_bp, url_prefix='/api/report')
     app.register_blueprint(crawl_bp, url_prefix='/api/crawl')
+    app.register_blueprint(graph_fusion_bp, url_prefix='/api/graph/merge')
+    app.register_blueprint(tools.tools_bp, url_prefix='/api/tools')
+    
+    from .api.annotation import annotation_bp
+    app.register_blueprint(annotation_bp, url_prefix='/api/simulation')
     
     # Health check
     @app.route('/health')

@@ -103,6 +103,117 @@
       </div>
     </div>
 
+    <!-- Replay Control Bar (Visible only when Completed/Stopped) -->
+    <div class="replay-bar" v-if="phase === 2">
+        <div class="replay-toggle">
+            <label class="switch">
+                <input type="checkbox" v-model="isReplayMode">
+                <span class="slider round"></span>
+            </label>
+            <span class="replay-label">SESSION REPLAY</span>
+        </div>
+        
+        <div class="replay-controls" v-if="isReplayMode">
+            <button class="control-btn" @click="replayRound = Math.max(1, replayRound - 1)">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M11 19l-7-7 7-7m8 14l-7-7 7-7"></path></svg>
+            </button>
+            
+            <div class="scrubber-container">
+                <input 
+                    type="range" 
+                    min="1" 
+                    :max="maxReplayRound" 
+                    v-model.number="replayRound" 
+                    class="scrubber"
+                >
+                <div class="scrubber-value">Round {{ replayRound }} / {{ maxReplayRound }}</div>
+            </div>
+
+            <button class="control-btn" @click="replayRound = Math.min(maxReplayRound, replayRound + 1)">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M13 5l7 7-7 7M5 5l7 7-7 7"></path></svg>
+            </button>
+        </div>
+    </div>
+
+    <!-- Director Mode Panel (Collapsible) -->
+    <div class="director-panel" :class="{ collapsed: !directorPanelOpen }">
+        <div class="panel-toggle" @click="directorPanelOpen = !directorPanelOpen">
+            <span class="toggle-icon">{{ directorPanelOpen ? '▼' : '▲' }}</span>
+            <span class="panel-title">DIRECTOR CONSOLE</span>
+        </div>
+        
+        <div class="panel-content" v-if="directorPanelOpen">
+            <!-- Tool: Inject Event -->
+            <div class="tool-section">
+                <div class="section-title">Reality Injection</div>
+                <div class="input-group">
+                    <textarea 
+                        v-model="injectionText" 
+                        placeholder="Describe an event to inject (e.g., 'Breaking News: Bitcoin falls 20%')"
+                        rows="3"
+                        class="director-input"
+                    ></textarea>
+                    <button class="director-btn" @click="handleInjectEvent" :disabled="isInjecting">
+                        {{ isInjecting ? 'INJECTING...' : 'INJECT EVENT' }}
+                    </button>
+                </div>
+            </div>
+
+            <!-- Tool: Live Search -->
+            <div class="tool-section">
+                <div class="section-title">Live Context Search</div>
+                <div class="input-group search-group">
+                    <input 
+                        v-model="searchQuery" 
+                        type="text" 
+                        placeholder="Search query..."
+                        class="director-input"
+                        @keyup.enter="handleLiveSearch"
+                    />
+                    <button class="director-btn secondary" @click="handleLiveSearch" :disabled="isSearching">
+                        {{ isSearching ? '...' : 'SEARCH' }}
+                    </button>
+                </div>
+                
+                <!-- Search Results Preview -->
+                <div class="search-results" v-if="searchResults.length > 0">
+                     <div 
+                        v-for="(result, idx) in searchResults" 
+                        :key="idx" 
+                        class="search-result-item"
+                        @click="selectSearchResult(result)"
+                     >
+                        <div class="result-source">{{ result.username || 'Web' }}</div>
+                        <div class="result-snippet">{{ truncateContent(result.content, 80) }}</div>
+                        <button class="inject-btn-small" @click.stop="injectSearchResult(result)">INJECT</button>
+                     </div>
+                </div>
+            </div>
+            <!-- Tool: Green Room (Interrogation) -->
+            <div class="tool-section">
+                <div class="section-title">Interrogation Protocol</div>
+                <div class="input-group">
+                   <select v-model="activeAgentForGreenRoom" class="director-select" :disabled="loadingAgents">
+                       <option :value="null">-- Select Subject --</option>
+                       <option v-for="agent in availableAgents" :key="agent.id" :value="agent">
+                           {{ agent.name }} (ID: {{ agent.id }})
+                       </option>
+                   </select>
+                    <button class="director-btn action" @click="openGreenRoom" :disabled="!activeAgentForGreenRoom">
+                        ENTER GREEN ROOM
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <GreenRoomModal 
+        :is-open="greenRoomOpen" 
+        :simulation-id="props.simulationId"
+        :agent="activeAgentForGreenRoom"
+        @close="greenRoomOpen = false"
+    />
+
     <!-- Main Content: Dual Timeline -->
     <div class="main-content-area" ref="scrollContainer">
       <!-- Timeline Header -->
@@ -254,9 +365,20 @@
                 </div>
               </div>
 
-              <div class="card-footer">
-                <span class="time-tag">R{{ action.round_num }} • {{ formatActionTime(action.timestamp) }}</span>
-                <!-- Platform tag removed as it is in header now -->
+                <div class="card-footer">
+                 <div class="footer-left">
+                    <span class="time-tag">R{{ action.round_num }} • {{ formatActionTime(action.timestamp) }}</span>
+                 </div>
+                 <div class="footer-right">
+                    <!-- Annotation Marker -->
+                    <AnnotationMarker 
+                        v-if="isReplayMode"
+                        :action-id="action._uniqueId"
+                        :simulation-id="props.simulationId"
+                        :initial-content="annotations[action._uniqueId]?.content"
+                        @save="handleSaveAnnotation"
+                    />
+                 </div>
               </div>
             </div>
           </div>
@@ -295,6 +417,16 @@ import {
   getRunStatusDetail
 } from '../api/simulation'
 import { generateReport } from '../api/report'
+import { 
+    injectEvent, 
+    getProjectAgents, 
+    annotateAction, 
+    getAnnotations 
+} from '../api/simulation' // Need to implement this wrapper
+import { searchRealWorld } from '../api/tools' // Need to implement this
+import GreenRoomModal from './GreenRoomModal.vue'
+import AnnotationMarker from './AnnotationMarker.vue'
+
 
 const props = defineProps({
   simulationId: String,
@@ -323,10 +455,40 @@ const allActions = ref([]) // All Actions (Incremental Accumulation)
 const actionIds = ref(new Set()) // Action ID set for deduplication
 const scrollContainer = ref(null)
 
+// Director Mode State
+const directorPanelOpen = ref(true)
+const injectionText = ref('')
+const isInjecting = ref(false)
+const searchQuery = ref('')
+const isSearching = ref(false)
+const searchResults = ref([])
+
+// Green Room State
+const greenRoomOpen = ref(false)
+const activeAgentForGreenRoom = ref(null)
+const availableAgents = ref([])
+const loadingAgents = ref(false)
+
+// Replay & Annotation State
+const isReplayMode = ref(false)
+const replayRound = ref(1)
+const annotations = ref({}) // { action_id: { content, author } }
+
+
 // Computed
 // Display actions in chronological order (Latest at the bottom)
 const chronologicalActions = computed(() => {
+  if (isReplayMode.value) {
+      // Filter actions up to the current replay round
+      // And Sort by timestamp (Oldest First for replay flow? Or keep reversed?)
+      // Use standard order but filter.
+      return allActions.value.filter(a => a.round_num <= replayRound.value)
+  }
   return allActions.value
+})
+
+const maxReplayRound = computed(() => {
+    return runStatus.value.total_rounds || props.maxRounds || 10
 })
 
 // Action count per Platform
@@ -420,6 +582,9 @@ const doStartSimulation = async () => {
       
       startStatusPolling()
       startDetailPolling()
+      
+      // Load agents for Director Console
+      fetchAgents()
     } else {
       startError.value = res.error || 'Start failed'
       addLog(`✗ Start failed: ${res.error || 'Unknown error'}`)
@@ -509,10 +674,9 @@ const fetchRunStatus = async () => {
       }
       
       // Detect if Simulation is Completed (via runner_status or Platform Completed status)
+      // Detect if Simulation is Completed (via runner_status or Platform Completed status)
       const isCompleted = data.runner_status === 'completed' || data.runner_status === 'stopped'
       
-      // Extra check: if backend hasn't updated runner_status yet, but Platform already Report Completed
-      // Check via twitter_completed and reddit_completed status
       const platformsCompleted = checkPlatformsCompleted(data)
       
       if (isCompleted || platformsCompleted) {
@@ -526,9 +690,43 @@ const fetchRunStatus = async () => {
       }
     }
   } catch (err) {
-    console.warn('getRunstatusFailed:', err)
+    console.error("Poll Error", err)
   }
 }
+
+const fetchAgents = async () => {
+    if (!props.simulationId || !props.projectData?.id) return
+    loadingAgents.value = true
+    try {
+        // Use project agents if available, filtering by those in this sim?
+        // Actually getProjectAgents with simulation_id is better if supported, 
+        // fallback to generic project agents if needed.
+        const res = await getProjectAgents(props.projectData.id, props.simulationId)
+        if (res.success && res.data) {
+            // Standardize format
+            availableAgents.value = res.data.map(a => ({
+                id: a.agent_id || a.id,
+                name: a.agent_name || a.name || `Agent ${a.id}`,
+                profession: a.profession || 'Unknown',
+                bio: a.bio || a.background || '',
+                stance: a.stance || 'Neutral', 
+                personality: a.personality || ''
+            }))
+        }
+    } catch (e) {
+        console.error("Failed to fetch agents", e)
+    } finally {
+        loadingAgents.value = false
+    }
+}
+
+const openGreenRoom = () => {
+    if (activeAgentForGreenRoom.value) {
+        greenRoomOpen.value = true
+    }
+}
+
+
 
 // Check if all Enabled Platforms are Completed
 const checkPlatformsCompleted = (data) => {
@@ -587,6 +785,115 @@ const fetchRunStatusDetail = async () => {
     console.warn('getDetailedstatusFailed:', err)
   }
 }
+
+// --- Director Mode Actions ---
+
+const handleInjectEvent = async () => {
+    if (!injectionText.value.trim()) return;
+    if (!props.simulationId) return;
+    
+    isInjecting.value = true;
+    try {
+        addLog(`Director: Injecting event...`);
+        const res = await injectEvent(props.simulationId, injectionText.value);
+        
+        if (res.success) {
+            addLog(`✓ Event Injected: "${truncateContent(injectionText.value, 30)}"`);
+            injectionText.value = ''; // Clear input
+        } else {
+            addLog(`✗ Injection Failed: ${res.error}`);
+        }
+    } catch (e) {
+        addLog(`✗ Injection Error: ${e.message}`);
+    } finally {
+        isInjecting.value = false;
+    }
+};
+
+const handleLiveSearch = async () => {
+    if (!searchQuery.value.trim()) return;
+    
+    isSearching.value = true;
+    searchResults.value = [];
+    try {
+        addLog(`Director: Searching "${searchQuery.value}"...`);
+        const res = await searchRealWorld({
+            query: searchQuery.value,
+            limit: 3
+        });
+        
+        if (res.success && res.data && res.data.results) {
+            searchResults.value = res.data.results;
+            addLog(`✓ Found ${res.data.results.length} results`);
+        } else {
+            addLog(`✗ Search Failed or No key found`);
+        }
+    } catch (e) {
+        addLog(`✗ Search Error: ${e.message}`);
+    } finally {
+        isSearching.value = false;
+    }
+};
+
+const injectSearchResult = async (result) => {
+    if (!props.simulationId) return;
+    
+    // Construct event text from result
+    const eventText = `Breaking News from ${result.source_url || 'Web'}: ${result.content}`;
+    
+    isInjecting.value = true;
+    try {
+        addLog(`Director: Injecting search result...`);
+         const res = await injectEvent(props.simulationId, eventText, result);
+        
+        if (res.success) {
+             addLog(`✓ Result Injected`);
+        } else {
+             addLog(`✗ Injection Failed: ${res.error}`);
+        }
+    } catch (e) {
+         addLog(`✗ Injection Error: ${e.message}`);
+    } finally {
+        isInjecting.value = false;
+    }
+};
+
+// --- Annotation Handling ---
+const handleSaveAnnotation = async ({ actionId, content }) => {
+    if (!props.simulationId) return;
+    
+    // Optimistic update
+    annotations.value[actionId] = { 
+        ...annotations.value[actionId], 
+        content, 
+        author: 'Director',
+        timestamp: new Date().toISOString()
+    };
+    
+    try {
+        await annotateAction(props.simulationId, {
+            action_id: actionId,
+            content: content,
+            author: 'Director'
+        });
+    } catch (e) {
+        console.error("Failed to save annotation", e);
+    }
+}
+
+// Load annotations when entering Replay Mode
+watch(isReplayMode, async (newVal) => {
+    if (newVal && props.simulationId) {
+        try {
+           const res = await getAnnotations(props.simulationId);
+           if (res.success) {
+               annotations.value = res.data;
+           }
+        } catch (e) {
+            console.error("Failed to load annotations", e);
+        }
+    }
+});
 
 // Helpers
 const getActionTypeLabel = (type) => {
@@ -695,6 +1002,8 @@ onUnmounted(() => {
   stopPolling()
 })
 </script>
+
+<style src="../views/director_panel.css" scoped></style>
 
 <style scoped>
 .simulation-panel {
@@ -1179,6 +1488,105 @@ onUnmounted(() => {
   letter-spacing: 0.1em;
 }
 
+/* Replay Bar */
+.replay-bar {
+    background: #111;
+    border-bottom: 1px solid #333;
+    padding: 10px 20px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    color: #fff;
+}
+
+.replay-toggle {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.replay-label {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    color: #f59e0b;
+}
+
+/* Switch Toggle */
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 36px;
+  height: 20px;
+}
+.switch input { opacity: 0; width: 0; height: 0; }
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background-color: #333;
+  transition: .4s;
+  border-radius: 20px;
+}
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 16px;
+  width: 16px;
+  left: 2px;
+  bottom: 2px;
+  background-color: white;
+  transition: .4s;
+  border-radius: 50%;
+}
+input:checked + .slider { background-color: #f59e0b; }
+input:checked + .slider:before { transform: translateX(16px); }
+
+.replay-controls {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.scrubber-container {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.scrubber {
+    flex: 1;
+    cursor: pointer;
+}
+
+.scrubber-value {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: #888;
+    width: 100px;
+    text-align: right;
+}
+
+.control-btn {
+    background: none;
+    border: 1px solid #333;
+    color: #ccc;
+    width: 28px;
+    height: 28px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+.control-btn:hover { background: #222; color: #fff; }
+
+.footer-left { display: flex; align-items: center; }
+.footer-right { display: flex; align-items: center; }
+
+
 .pulse-ring {
   width: 32px;
   height: 32px;
@@ -1261,4 +1669,23 @@ onUnmounted(() => {
   animation: spin 0.8s linear infinite;
   margin-right: 6px;
 }
+.director-select {
+    flex: 1;
+    background: #000;
+    border: 1px solid #333;
+    color: #fff;
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+}
+.director-btn.action {
+    background: #059669;
+    color: #fff;
+    border: none;
+}
+.director-btn.action:hover:not(:disabled) {
+    background: #10B981;
+}
+
 </style>

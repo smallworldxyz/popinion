@@ -41,6 +41,11 @@ const routes = [
     name: 'Interaction',
     component: InteractionView,
     props: true
+  },
+  {
+    path: '/fusion',
+    name: 'GraphFusion',
+    component: () => import('../views/GraphFusionView.vue')
   }
 ]
 

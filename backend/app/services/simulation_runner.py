@@ -21,7 +21,9 @@ from queue import Queue
 from ..config import Config
 from ..utils.logger import get_logger
 from .neo4j_graph_memory_updater import Neo4jGraphMemoryManager
+from .neo4j_graph_memory_updater import Neo4jGraphMemoryManager
 from .simulation_ipc import SimulationIPCClient, CommandType, IPCResponse
+from .scenario_manager import ScenarioManager
 
 logger = get_logger('pubop.simulation_runner')
 
@@ -223,6 +225,9 @@ class SimulationRunner:
     # Graph memory update configuration
     _graph_memory_enabled: Dict[str, bool] = {}  # simulation_id -> enabled
     
+    # Scenario Managers
+    _scenario_managers: Dict[str, ScenarioManager] = {} # simulation_id -> manager
+    
     @classmethod
     def get_run_state(cls, simulation_id: str) -> Optional[SimulationRunState]:
         """Get running state"""
@@ -310,9 +315,10 @@ class SimulationRunner:
         cls,
         simulation_id: str,
         platform: str = "parallel",  # twitter / reddit / parallel
-        max_rounds: int = None,  # Optional maximum simulation rounds (used to truncate long simulations)
+        max_rounds: int = None,  # Optional maximum simulation rounds
         enable_graph_memory_update: bool = False,  # Whether to dynamically update to Neo4j graph
-        graph_id: str = None  # Neo4j Graph ID (required when graph update is enabled)
+        graph_id: str = None,  # Neo4j Graph ID
+        scenario_file: str = None # [NEW] Optional scenario file path
     ) -> SimulationRunState:
         """
         Start simulation
@@ -379,8 +385,20 @@ class SimulationRunner:
                 cls._graph_memory_enabled[simulation_id] = False
         else:
             cls._graph_memory_enabled[simulation_id] = False
-        
+
+        # Initialize Scenario Manager if file provided
+        if scenario_file:
+            try:
+                scenario_manager = ScenarioManager(sim_dir, scenario_file)
+                cls._scenario_managers[simulation_id] = scenario_manager
+                logger.info(f"Initialized Scenario Manager for {simulation_id} with {scenario_file}")
+            except Exception as e:
+                logger.error(f"Failed to initialize Scenario Manager: {e}")
+        else:
+            cls._scenario_managers.pop(simulation_id, None)
+
         # Determine which script to run (scripts located in backend/scripts/ directory)
+
         if platform == "twitter":
             script_name = "run_twitter_simulation.py"
             state.twitter_running = True
@@ -477,6 +495,9 @@ class SimulationRunner:
         
         if not process or not state:
             return
+            
+        # Get Scenario Manager if exists
+        scenario_manager = cls._scenario_managers.get(simulation_id)
         
         twitter_position = 0
         reddit_position = 0
@@ -497,6 +518,17 @@ class SimulationRunner:
                 
                 # Update status
                 cls._save_run_state(state)
+                
+                # Check for Scenario Triggers
+                if scenario_manager:
+                    # Create a state dict for check context
+                    current_context = {
+                        "current_round": state.current_round,
+                        "simulated_hours": state.simulated_hours,
+                        # Can add more context needed for triggers
+                    }
+                    scenario_manager.check_and_execute(current_context)
+                
                 time.sleep(2)
             
             # After process ends, read logs one last time
@@ -544,11 +576,10 @@ class SimulationRunner:
                     logger.info(f"Graph memory update stopped: simulation_id={simulation_id}")
                 except Exception as e:
                     logger.error(f"Failed to stop graph memory updater: {e}")
-                cls._graph_memory_enabled.pop(simulation_id, None)
-            
             # Clean up process resources
             cls._processes.pop(simulation_id, None)
             cls._action_queues.pop(simulation_id, None)
+            cls._scenario_managers.pop(simulation_id, None)
             
             # Close log file handles
             if simulation_id in cls._stdout_files:

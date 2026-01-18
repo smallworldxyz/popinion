@@ -625,6 +625,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { eventBus } from '@/utils/eventBus';
 import { generateOntology, getProject, buildGraph, getTaskStatus, getGraphData } from '../api/graph'
 import { getPendingUpload, clearPendingUpload } from '../store/pendingUpload'
 import * as d3 from 'd3'
@@ -883,6 +884,7 @@ const handleNewProject = async () => {
   }
   
   try {
+    eventBus.showLoading('Creating new project and generating ontology...');
     loading.value = true
     currentPhase.value = 0 // Ontology Generation phase
     ontologyProgress.value = { message: 'Uploading files and analyzing documents...' }
@@ -923,12 +925,14 @@ const handleNewProject = async () => {
     error.value = 'Project initialization failed: ' + (err.message || 'Unknown error')
   } finally {
     loading.value = false
+    eventBus.hideLoading();
   }
 }
 
 // Loading existing items data
 const loadProject = async () => {
   try {
+    eventBus.showLoading('Loading existing project...');
     loading.value = true
     const response = await getProject(currentProjectId.value)
     
@@ -960,6 +964,7 @@ const loadProject = async () => {
     error.value = 'Failed to load project: ' + (err.message || 'Unknown error')
   } finally {
     loading.value = false
+    eventBus.hideLoading();
   }
 }
 
@@ -1032,8 +1037,10 @@ const startGraphPolling = () => {
 // Manually Refresh Graph
 const refreshGraph = async () => {
   graphLoading.value = true
+  eventBus.showLoading('Refreshing graph data...');
   await fetchGraphData()
   graphLoading.value = false
+  eventBus.hideLoading();
 }
 
 // Stop Graph data polling

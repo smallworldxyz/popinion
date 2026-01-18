@@ -175,6 +175,7 @@ class CommandType:
     INTERVIEW = "interview"
     BATCH_INTERVIEW = "batch_interview"
     CLOSE_ENV = "close_env"
+    INJECT_EVENT = "inject_event"
 
 
 class ParallelIPCHandler:
@@ -476,6 +477,64 @@ class ParallelIPCHandler:
         else:
             self.send_response(command_id, "failed", error="没有成功的采访")
             return False
+
+    async def handle_inject_event(self, command_id: str, event_text: str) -> bool:
+        """
+        Handle Inject Event command - Broadcast to ALL active platforms
+        """
+        results = {"platforms": {}}
+        success_count = 0
+        
+        # Inject to Twitter
+        if self.twitter_env and self.twitter_agent_graph:
+            try:
+                # Find agent
+                target_agent = None
+                try: target_agent = self.twitter_agent_graph.get_agent(99999)
+                except: pass
+                if not target_agent:
+                     agents = list(self.twitter_agent_graph.get_agents())
+                     if agents: target_agent = random.choice(agents)
+                
+                if target_agent:
+                    action = ManualAction(
+                        action_type=ActionType.CREATE_POST,
+                        action_args={"content": event_text}
+                    )
+                    await self.twitter_env.step({target_agent: action})
+                    results["platforms"]["twitter"] = "success"
+                    success_count += 1
+            except Exception as e:
+                results["platforms"]["twitter"] = f"error: {str(e)}"
+
+        # Inject to Reddit
+        if self.reddit_env and self.reddit_agent_graph:
+            try:
+                # Find agent
+                target_agent = None
+                try: target_agent = self.reddit_agent_graph.get_agent(99999)
+                except: pass
+                if not target_agent:
+                     agents = list(self.reddit_agent_graph.get_agents())
+                     if agents: target_agent = random.choice(agents)
+                
+                if target_agent:
+                    action = ManualAction(
+                        action_type=ActionType.CREATE_POST,
+                        action_args={"content": event_text}
+                    )
+                    await self.reddit_env.step({target_agent: action})
+                    results["platforms"]["reddit"] = "success"
+                    success_count += 1
+            except Exception as e:
+                results["platforms"]["reddit"] = f"error: {str(e)}"
+        
+        if success_count > 0:
+            self.send_response(command_id, "completed", result=results)
+            return True
+        else:
+             self.send_response(command_id, "failed", error="Failed to inject to any platform")
+             return False
     
     def _get_interview_result(self, agent_id: int, platform: str) -> Dict[str, Any]:
         """从数据库获取最新的Interview结果"""
@@ -558,6 +617,13 @@ class ParallelIPCHandler:
             print("收到关闭环境命令")
             self.send_response(command_id, "completed", result={"message": "环境即将关闭"})
             return False
+            
+        elif command_type == CommandType.INJECT_EVENT:
+            await self.handle_inject_event(
+                command_id,
+                args.get("event_text", "")
+            )
+            return True
         
         else:
             self.send_response(command_id, "failed", error=f"未知命令类型: {command_type}")

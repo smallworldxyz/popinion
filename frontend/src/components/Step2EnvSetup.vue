@@ -6,7 +6,7 @@
         <div class="card-header">
           <div class="step-info">
             <span class="step-num">01</span>
-            <span class="step-title">Simulation Instance Initialization</span>
+            <span class="step-title">Simulation Setup</span>
           </div>
           <div class="step-status">
             <span v-if="phase > 0" class="badge success">Completed</span>
@@ -63,7 +63,7 @@
         <div class="card-header">
           <div class="step-info">
             <span class="step-num">02</span>
-            <span class="step-title">Generate Agent Profiles</span>
+            <span class="step-title">Agent Population</span>
           </div>
           <div class="step-status">
             <span v-if="phase > 1" class="badge success">Completed</span>
@@ -75,7 +75,7 @@
         <div class="card-content">
           <p class="api-note">POST /api/simulation/prepare</p>
           <p class="description">
-            Combine context, automatically invoke tools to extract entities and relationships from knowledge graph, initialize simulation individuals, and give them unique behaviors and memories based on reality seeds
+            Combine context, automatically invoke tools to extract entities and relationships from knowledge graph, initialize simulation individuals, and give them unique behaviors and memories based on context baseline
           </p>
 
           <!-- Profiles Stats -->
@@ -86,11 +86,11 @@
             </div>
             <div class="stat-card">
               <span class="stat-value">{{ expectedTotal || '-' }}</span>
-              <span class="stat-label">Expected Total Agents</span>
+              <span class="stat-label">Expected Population</span>
             </div>
             <div class="stat-card">
               <span class="stat-value">{{ totalTopicsCount }}</span>
-              <span class="stat-label">Current Reality Seed Topics</span>
+              <span class="stat-label">Identified Topics</span>
             </div>
           </div>
 
@@ -98,6 +98,9 @@
           <div v-if="profiles.length > 0" class="profiles-preview">
             <div class="preview-header">
               <span class="preview-title">Generated Agent Profiles</span>
+              <button class="action-btn sm" @click="showExplorer = true">
+                🔍 Explore Agent Population
+              </button>
             </div>
             <div class="profiles-list">
               <div 
@@ -187,7 +190,7 @@
         <div class="card-header">
           <div class="step-info">
             <span class="step-num">03</span>
-            <span class="step-title">Generate Dual-Platform Simulation configuration</span>
+            <span class="step-title">World Configuration</span>
           </div>
           <div class="step-status">
             <span v-if="phase > 2" class="badge success">Completed</span>
@@ -199,7 +202,7 @@
         <div class="card-content">
           <p class="api-note">POST /api/simulation/prepare</p>
           <p class="description">
-            LLM intelligently configures world time flow, recommendation algorithms, individual active hours, post frequency, event triggers and other parameters based on simulation requirements and reality seeds
+            LLM intelligently configures world time flow, recommendation algorithms, individual active hours, post frequency, event triggers and other parameters based on simulation requirements and knowledge baseline
           </p>
           
           <!-- Config Preview -->
@@ -420,7 +423,7 @@
         <div class="card-header">
           <div class="step-info">
             <span class="step-num">04</span>
-            <span class="step-title">Initial Activation Orchestration</span>
+            <span class="step-title">Event Orchestration</span>
           </div>
           <div class="step-status">
             <span v-if="phase > 3" class="badge success">Completed</span>
@@ -492,7 +495,7 @@
         <div class="card-header">
           <div class="step-info">
             <span class="step-num">05</span>
-            <span class="step-title">Preparation Complete</span>
+            <span class="step-title">Ready to Launch</span>
           </div>
           <div class="step-status">
             <span v-if="phase >= 4" class="badge processing">In Progress</span>
@@ -578,6 +581,25 @@
             </Transition>
           </div>
 
+          <!-- Scenario Selection (NEW) -->
+          <div class="rounds-config-section">
+              <div class="rounds-header">
+                  <div class="header-left">
+                     <span class="section-title">Rehearsal Scenario (Optional)</span>
+                     <span class="section-desc">Select a scripted scenario to inject automated events during simulation.</span>
+                  </div>
+              </div>
+              <div class="scenario-wrapper">
+                   <select v-model="selectedScenario" class="scenario-select" :disabled="loadingScenarios">
+                       <option value="">-- No Scenario (Free Run) --</option>
+                       <option v-for="s in scenarios" :key="s.filename" :value="s.filename">
+                           {{ s.name }} ({{ s.description.substring(0, 50) }}...)
+                       </option>
+                   </select>
+                   <span v-if="loadingScenarios" class="loading-hint">Loading...</span>
+              </div>
+          </div>
+
           <div class="action-group dual">
             <button 
               class="action-btn secondary"
@@ -641,7 +663,7 @@
 
           <!-- Focus on Topic -->
           <div class="modal-section" v-if="selectedProfile.interested_topics?.length">
-            <span class="section-label">Reality Seed Associated Topics</span>
+            <span class="section-label">Associated Key Topics</span>
             <div class="topics-grid">
               <span 
                 v-for="topic in selectedProfile.interested_topics" 
@@ -766,6 +788,22 @@
         </div>
       </div>
     </Teleport>
+
+
+    <!-- Agent Explorer Modal -->
+    <Teleport to="body">
+      <div v-if="showExplorer" class="explorer-modal-overlay" @click.self="showExplorer = false">
+        <div class="explorer-modal-container">
+          <div class="explorer-modal-header">
+            <h3>Agent Persona Explorer</h3>
+            <button class="close-btn" @click="showExplorer = false">×</button>
+          </div>
+          <div class="explorer-modal-body">
+            <AgentExplorer :project-id="projectData?.project_id" :simulation-id="simulationId" />
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -777,9 +815,11 @@ import {
   getPrepareStatus, 
   getSimulationProfilesRealtime,
   getSimulationConfig,
-  getSimulationConfigRealtime 
+  getSimulationConfigRealtime,
+  getScenarios
 } from '../api/simulation'
 import EntitySelectionModal from './EntitySelectionModal.vue'
+import AgentExplorer from './AgentExplorer.vue'
 
 const props = defineProps({
   simulationId: String,  // passed from parent component
@@ -797,11 +837,17 @@ const prepareProgress = ref(0)
 const currentStage = ref('')
 const progressMessage = ref('')
 const profiles = ref([])
+const showExplorer = ref(false)
 const entityTypes = ref([])
 const expectedTotal = ref(null)
 const simulationConfig = ref(null)
 const selectedProfile = ref(null)
 const showProfilesDetail = ref(true)
+
+// Scenario State
+const scenarios = ref([])
+const selectedScenario = ref('') // Store filename
+const loadingScenarios = ref(false)
 
 // Entity Selection State (NEW)
 const showEntityModal = ref(false)
@@ -1037,6 +1083,11 @@ const handleStartSimulation = () => {
   } else {
     // User chooses to keep Automatic Generating rounds count, do not pass max_rounds parameters
     addLog(`Start Simulation, Use automatic configuration rounds count: ${autoGeneratedRounds.value} rounds`)
+  }
+  
+  if (selectedScenario.value) {
+    params.scenario_file = selectedScenario.value
+    addLog(`Using Scenario: ${selectedScenario.value}`)
   }
   
   emit('next-step', params)
@@ -1336,6 +1387,9 @@ const fetchConfigRealtime = async () => {
         phase.value = 4
         addLog('✓ Environment setup complete, can start simulation')
         emit('update-status', 'completed')
+        
+        // Load scenarios when complete
+        fetchScenarios()
       }
     }
   } catch (err) {
@@ -1369,6 +1423,9 @@ const loadPreparedData = async () => {
         addLog('✓ Environment setup complete, can start simulation')
         phase.value = 4
         emit('update-status', 'completed')
+        
+        // Load scenarios when complete
+        fetchScenarios()
       } else {
         // configuration not generated, Start polling
         addLog('configuration Generating, Start polling Wait...')
@@ -1390,6 +1447,20 @@ watch(() => props.systemLogs?.length, () => {
     }
   })
 })
+
+const fetchScenarios = async () => {
+    loadingScenarios.value = true
+    try {
+        const res = await getScenarios()
+        if (res.success && res.data) {
+            scenarios.value = res.data
+        }
+    } catch (e) {
+        console.warn("Failed to load scenarios", e)
+    } finally {
+        loadingScenarios.value = false
+    }
+}
 
 onMounted(async () => {
   // Check if already prepared first, if not, wait for user to select agents
@@ -1434,8 +1505,7 @@ onUnmounted(() => {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: #FAFAFA;
-  font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
+  background: var(--bg-app);
 }
 
 .scroll-container {
@@ -1449,11 +1519,11 @@ onUnmounted(() => {
 
 /* Step Card */
 .step-card {
-  background: #FFF;
-  border-radius: 8px;
-  padding: 20px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-  border: 1px solid #EAEAEA;
+  background: var(--bg-surface);
+  border-radius: var(--radius-md);
+  padding: 24px;
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border-light);
   transition: all 0.3s ease;
   position: relative;
 }
@@ -1568,6 +1638,20 @@ onUnmounted(() => {
 .optional-card {
   border: 1px dashed #D1D5DB;
   background: #FAFAFA;
+}
+
+/* Scenario Selector */
+.scenario-wrapper {
+    margin-top: 15px;
+    margin-bottom: 20px;
+}
+.scenario-select {
+    width: 100%;
+    padding: 10px;
+    border-radius: 6px;
+    border: 1px solid #ddd;
+    background: #fff;
+    font-size: 14px;
 }
 
 .optional-card.has-content {
@@ -3216,3 +3300,53 @@ onUnmounted(() => {
   transform: scale(0.95) translateY(10px);
 }
 </style>
+
+/* Explorer Modal Styles */
+.explorer-modal-overlay {
+  position: fixed;
+  top: 0; 
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  backdrop-filter: blur(2px);
+}
+
+.explorer-modal-container {
+  background: white;
+  width: 90vw;
+  height: 85vh;
+  border-radius: 12px;
+  box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.explorer-modal-header {
+  padding: 16px 24px;
+  border-bottom: 1px solid #eee;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.explorer-modal-header h3 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.explorer-modal-body {
+  flex: 1;
+  overflow: hidden;
+}
+
+.action-btn.sm {
+  padding: 4px 12px;
+  font-size: 12px;
+  margin-left: auto;
+}

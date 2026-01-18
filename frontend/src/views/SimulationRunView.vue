@@ -26,6 +26,9 @@
           <span class="step-name">Start Simulation</span>
         </div>
         <div class="step-divider"></div>
+        <button v-if="isSimulating" class="action-btn" @click="openInjectModal">
+          ⚡ Inject Event
+        </button>
         <span class="status-indicator" :class="statusClass">
           <span class="dot"></span>
           {{ statusText }}
@@ -63,6 +66,26 @@
         />
       </div>
     </main>
+
+    <!-- Injection Modal -->
+    <div v-if="showInjectModal" class="modal-overlay">
+      <div class="modal-card">
+        <h3>Inject Live Event</h3>
+        <p class="modal-desc">Describe an event to inject into the running simulation. Agents will react to this event in real-time.</p>
+        <textarea 
+          v-model="injectText" 
+          placeholder="e.g. A major scandal reveals that the CEO was involved in..."
+          rows="4"
+          class="event-input"
+        ></textarea>
+        <div class="modal-actions">
+          <button class="cancel-btn" @click="closeInjectModal" :disabled="injectLoading">Cancel</button>
+          <button class="confirm-btn" @click="handleInjectEvent" :disabled="injectLoading || !injectText.trim()">
+            {{ injectLoading ? 'Injecting...' : 'Inject Event' }}
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -72,7 +95,7 @@ import { useRoute, useRouter } from 'vue-router'
 import GraphPanel from '../components/GraphPanel.vue'
 import Step3Simulation from '../components/Step3Simulation.vue'
 import { getProject, getGraphData } from '../api/graph'
-import { getSimulation, getSimulationConfig, stopSimulation, closeSimulationEnv, getEnvStatus } from '../api/simulation'
+import { getSimulation, getSimulationConfig, stopSimulation, closeSimulationEnv, getEnvStatus, injectEvent } from '../api/simulation'
 
 const route = useRoute()
 const router = useRouter()
@@ -95,6 +118,11 @@ const graphData = ref(null)
 const graphLoading = ref(false)
 const systemLogs = ref([])
 const currentStatus = ref('processing') // processing | completed | error
+
+// Injection State
+const showInjectModal = ref(false)
+const injectText = ref('')
+const injectLoading = ref(false)
 
 // --- Computed Layout Styles ---
 const leftPanelStyle = computed(() => {
@@ -197,6 +225,35 @@ const handleNextStep = () => {
   // Step3Simulation component will handle Report Generating and routing directly
   // This parent method is for backup only
   addLog('Entering Step 4: Report generation')
+}
+
+// --- Injection Methods ---
+const openInjectModal = () => {
+  injectText.value = ''
+  showInjectModal.value = true
+}
+
+const closeInjectModal = () => {
+  showInjectModal.value = false
+}
+
+const handleInjectEvent = async () => {
+  if (!injectText.value.trim()) return
+  
+  injectLoading.value = true
+  try {
+    const res = await injectEvent(projectData.value.project_id, currentSimulationId.value, injectText.value)
+    if (res.success) {
+      addLog(`⚡ Event injected: ${injectText.value.substring(0, 30)}...`)
+      closeInjectModal()
+    } else {
+      alert('Failed to inject event: ' + (res.error || 'Unknown error'))
+    }
+  } catch (err) {
+    alert('Failed to inject event: ' + err.message)
+  } finally {
+    injectLoading.value = false
+  }
 }
 
 // --- Data Logic ---
@@ -443,6 +500,106 @@ onUnmounted(() => {
 
 .panel-wrapper.left {
   border-right: 1px solid #EAEAEA;
+}
+
+.action-btn {
+  background: #FFF;
+  border: 1px solid #E0E0E0;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s;
+}
+
+.action-btn:hover {
+  border-color: #000;
+  background: #FAFAFA;
+}
+
+/* Modal */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(2px);
+}
+
+.modal-card {
+  background: #FFF;
+  width: 500px;
+  padding: 24px;
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+}
+
+.modal-card h3 {
+  margin: 0 0 8px 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.modal-desc {
+  font-size: 14px;
+  color: #666;
+  margin-bottom: 16px;
+}
+
+.event-input {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #E0E0E0;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 14px;
+  resize: vertical;
+  margin-bottom: 20px;
+}
+
+.event-input:focus {
+  outline: none;
+  border-color: #000;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.cancel-btn {
+  padding: 8px 16px;
+  background: transparent;
+  border: 1px solid #E0E0E0;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.confirm-btn {
+  padding: 8px 16px;
+  background: #000;
+  color: #FFF;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.confirm-btn:disabled {
+  background: #CCC;
+  cursor: not-allowed;
 }
 </style>
 

@@ -1,184 +1,132 @@
 <template>
-  <div class="home-container">
-    <!-- Top navigation bar -->
+  <div class="home-layout">
     <nav class="navbar">
-      <div class="nav-brand">POPINION</div>
-      <div class="nav-links">
-        <a href="https://github.com/rithythul/pubop" target="_blank" class="github-link">
-          Visit our GitHub <span class="arrow">↗</span>
+      <div class="nav-brand">
+        <span class="brand-logo">●</span>
+        <span class="brand-text">Popinion</span>
+      </div>
+      <div class="nav-actions">
+        <!-- <router-link to="/library" class="nav-link">Library</router-link> -->
+        <a href="https://github.com/rithythul/pubop" target="_blank" class="nav-link icon-link">
+          GitHub <span>↗</span>
         </a>
       </div>
     </nav>
 
-    <div class="main-content">
-      <!-- Hero section: Interaction console -->
-      <section class="hero-section">
-        <div class="console-box">
-          <!-- Upload area -->
-          <div class="console-section">
-            <div class="console-header">
-              <span class="console-label">01 / Reality Seeds</span>
-              <span class="console-meta">Supported formats: PDF, MD, TXT (Context for AI Planner)</span>
-            </div>
+    <main class="main-container">
+      <div class="hero-section">
+        <h1 class="hero-title">Simulate Public Opinion</h1>
+        <p class="hero-subtitle">
+          Don't guess the future. Rehearse it.
+        </p>
+      </div>
+
+      <div class="creation-card">
+        <div class="card-header">
+          <div class="step-indicator">New Simulation</div>
+        </div>
+
+        <div class="input-group">
+          <label class="input-label">
+            1. Knowledge Baseline
+            <span class="label-hint">Upload documents (PDF, MD, TXT) to ground the simulation in reality.</span>
+          </label>
+          
+          <div 
+            class="upload-area"
+            :class="{ 'is-dragging': isDragOver, 'has-files': files.length > 0 }"
+            @dragover.prevent="handleDragOver"
+            @dragleave.prevent="handleDragLeave"
+            @drop.prevent="handleDrop"
+            @click="triggerFileInput"
+          >
+            <input
+              ref="fileInput"
+              type="file"
+              multiple
+              accept=".pdf,.md,.txt"
+              @change="handleFileSelect"
+              hidden
+              :disabled="loading"
+            />
             
-            <div 
-              class="upload-zone"
-              :class="{ 'drag-over': isDragOver, 'has-files': files.length > 0 }"
-              @dragover.prevent="handleDragOver"
-              @dragleave.prevent="handleDragLeave"
-              @drop.prevent="handleDrop"
-              @click="triggerFileInput"
-            >
-              <input
-                ref="fileInput"
-                type="file"
-                multiple
-                accept=".pdf,.md,.txt"
-                @change="handleFileSelect"
-                style="display: none"
-                :disabled="loading"
-              />
-              
-              <div v-if="files.length === 0" class="upload-placeholder">
-                <div class="upload-icon">↑</div>
-                <div class="upload-title">Drag & Drop Files</div>
-                <div class="upload-hint">or click to browse</div>
+            <div v-if="files.length === 0" class="upload-placeholder">
+              <div class="upload-icon-circle">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" class="icon">
+                  <path d="M12 4V20M20 12H4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                </svg>
               </div>
-              
-              <div v-else class="file-list">
-                <div v-for="(file, index) in files" :key="index" class="file-item">
-                  <span class="file-icon">📄</span>
-                  <span class="file-name">{{ file.name }}</span>
-                  <button @click.stop="removeFile(index)" class="remove-btn">×</button>
-                </div>
+              <span class="upload-text">Drop context files here</span>
+              <span class="upload-subtext">or click to browse</span>
+            </div>
+
+            <div v-else class="file-preview-list">
+              <div v-for="(file, index) in files" :key="index" class="file-chip">
+                <span class="file-icon">doc</span>
+                <span class="file-name">{{ file.name }}</span>
+                <button @click.stop="removeFile(index)" class="remove-file-btn">×</button>
               </div>
-            </div>
-          </div>
-
-          <!-- divider -->
-          <div class="console-divider">
-            <span>Input Parameters</span>
-          </div>
-
-          <!-- input area -->
-          <div class="console-section">
-            <div class="console-header">
-              <span class="console-label">>_ 02 / Simulation Prompt</span>
-            </div>
-            <div class="input-wrapper">
-              <textarea
-                v-model="formData.simulationRequirement"
-                class="code-input"
-                placeholder="// Describe your simulation scenario.
-// Tip: Use keywords like 'news', 'video reactions', 'scandal', or 'public opinion' to trigger targeted smart scraping."
-                rows="6"
-                :disabled="loading"
-              ></textarea>
-              <div class="model-badge">Engine: Popinion-V1.0</div>
-            </div>
-          </div>
-
-          <!-- start button -->
-          <div class="console-section btn-section">
-            <button 
-              class="start-engine-btn"
-              @click="startSimulation"
-              :disabled="!canSubmit || loading"
-            >
-              <span v-if="!loading">Start Engine</span>
-              <span v-else>Initializing...</span>
-              <span class="btn-arrow">→</span>
-            </button>
-          </div>
-        </div>
-      </section>
-
-      <!-- Dashboard section: Single column layout -->
-      <section class="dashboard-section">
-        <div class="info-panel">
-          <div class="panel-header">
-            <span class="status-dot">■</span> System Status
-          </div>
-          
-          <h2 class="section-title">Ready</h2>
-          <p class="section-desc">
-            Prediction engine standing by. Upload multiple unstructured data files to initialize simulation sequence.
-          </p>
-          
-          <!-- Metric cards -->
-          <div class="metrics-row">
-            <div class="metric-card">
-              <div class="metric-value">Smart Scraping</div>
-              <div class="metric-label">Auto-Source Discovery</div>
-            </div>
-            <div class="metric-card">
-              <div class="metric-value">AI Detection</div>
-              <div class="metric-label">Fake Content Analysis</div>
-            </div>
-          </div>
-
-          <!-- Capabilities Check -->
-          <div class="capabilities-list">
-             <div class="cap-item">
-               <span class="cap-icon">✓</span>
-               <span class="cap-text">AI Search Planner (Context-Aware Scraping)</span>
-             </div>
-             <div class="cap-item">
-               <span class="cap-icon">✓</span>
-               <span class="cap-text">Direct Simulation Injection (World Agent)</span>
-             </div>
-             <div class="cap-item">
-               <span class="cap-icon">✓</span>
-               <span class="cap-text">Multimodal & Deepfake Detection</span>
-             </div>
-          </div>
-
-          <!-- Simulation Steps (new section) -->
-          <div class="steps-container">
-            <div class="steps-header">
-               <span class="diamond-icon">◇</span> Workflow Sequence
-            </div>
-            <div class="workflow-list">
-              <div class="workflow-item">
-                <span class="step-num">01</span>
-                <div class="step-info">
-                  <div class="step-title">Reality Injection</div>
-                  <div class="step-desc">AI-planned scraping & "World News" context injection & GraphRAG construction</div>
-                </div>
-              </div>
-              <div class="workflow-item">
-                <span class="step-num">02</span>
-                <div class="step-info">
-                  <div class="step-title">Environment Setup</div>
-                  <div class="step-desc">Entity relationship extraction & Profile generation & Agent configuration with simulation parameters</div>
-                </div>
-              </div>
-              <div class="workflow-item">
-                <span class="step-num">03</span>
-                <div class="step-info">
-                  <div class="step-title">Start Simulation</div>
-                  <div class="step-desc">Dual-platform parallel simulation & Auto-parse prediction requirements & Dynamic temporal memory updates</div>
-                </div>
-              </div>
-              <div class="workflow-item">
-                <span class="step-num">04</span>
-                <div class="step-info">
-                  <div class="step-title">Report Generation</div>
-                  <div class="step-desc">ReportAgent with rich toolset for deep interaction with post-simulation environment</div>
-                </div>
-              </div>
-              <div class="workflow-item">
-                <span class="step-num">05</span>
-                <div class="step-info">
-                  <div class="step-title">Deep Interaction</div>
-                  <div class="step-desc">Chat with any agent in the simulation & Interact with ReportAgent</div>
-                </div>
+              <div class="add-more-trigger">
+                <span>+ Add more</span>
               </div>
             </div>
           </div>
         </div>
-      </section>
-    </div>
+
+        <div class="input-group">
+          <label class="input-label">
+            2. Scenario Prompt
+            <span class="label-hint">What situation should the agents react to?</span>
+          </label>
+          <div class="textarea-wrapper">
+            <textarea
+              v-model="formData.simulationRequirement"
+              class="scenario-input"
+              placeholder="e.g., A major tech company releases a new AI product that accidentally insults a user. The stock price drops 5%..."
+              rows="4"
+              :disabled="loading"
+            ></textarea>
+          </div>
+        </div>
+
+        <div class="action-footer">
+          <button 
+            class="primary-btn"
+            @click="startProject"
+            :disabled="!canSubmit || loading"
+          >
+            <span v-if="loading">Initializing...</span>
+            <span v-else>Start Simulation Engine</span>
+            <span v-if="!loading" class="btn-icon">→</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Feature Capabilities Grid -->
+      <div class="features-grid">
+        <div class="feature-item">
+          <div class="feature-icon">🔍</div>
+          <div class="feature-content">
+            <h3>Graph-Powered Context</h3>
+            <p>Converts flat documents into a Knowledge Graph for deep agent reasoning.</p>
+          </div>
+        </div>
+        <div class="feature-item">
+          <div class="feature-icon">🌍</div>
+          <div class="feature-content">
+            <h3>Multi-Platform Simulation</h3>
+             <p>Simulates discourse across Twitter, Reddit, and News platforms simultaneously.</p>
+          </div>
+        </div>
+        <div class="feature-item">
+          <div class="feature-icon">🤖</div>
+          <div class="feature-content">
+            <h3>Cognitive Agents</h3>
+            <p>Agents with memory, bias, and dynamic opinion evolution.</p>
+          </div>
+        </div>
+      </div>
+    </main>
   </div>
 </template>
 
@@ -188,535 +136,347 @@ import { useRouter } from 'vue-router'
 
 const router = useRouter()
 
-// formdata
-const formData = ref({
-  simulationRequirement: ''
-})
-
-// File list
+// Data
+const formData = ref({ simulationRequirement: '' })
 const files = ref([])
-
-// Status
 const loading = ref(false)
-const error = ref('')
 const isDragOver = ref(false)
-
-// File input reference
 const fileInput = ref(null)
 
-// Computed attributes: canSubmit
+// Computed
 const canSubmit = computed(() => {
   return formData.value.simulationRequirement.trim() !== '' && files.value.length > 0
 })
 
-// Trigger file selection
+// Actions
 const triggerFileInput = () => {
-  if (!loading.value) {
-    fileInput.value?.click()
-  }
+  if (!loading.value) fileInput.value?.click()
 }
 
-// Process file selection
 const handleFileSelect = (event) => {
-  const selectedFiles = Array.from(event.target.files)
-  addFiles(selectedFiles)
+  addFiles(Array.from(event.target.files))
 }
 
-// Process drag related
-const handleDragOver = (e) => {
-  if (!loading.value) {
-    isDragOver.value = true
-  }
-}
-
-const handleDragLeave = (e) => {
-  isDragOver.value = false
-}
-
+const handleDragOver = () => { isDragOver.value = true }
+const handleDragLeave = () => { isDragOver.value = false }
 const handleDrop = (e) => {
   isDragOver.value = false
-  if (loading.value) return
-  
-  const droppedFiles = Array.from(e.dataTransfer.files)
-  addFiles(droppedFiles)
+  if (!loading.value) addFiles(Array.from(e.dataTransfer.files))
 }
 
-// Add files
 const addFiles = (newFiles) => {
-  const validFiles = newFiles.filter(file => {
-    const ext = file.name.split('.').pop().toLowerCase()
-    return ['pdf', 'md', 'txt'].includes(ext)
-  })
-  files.value.push(...validFiles)
+  const valid = newFiles.filter(f => ['pdf', 'md', 'txt'].includes(f.name.split('.').pop().toLowerCase()))
+  files.value.push(...valid)
 }
 
-// Remove file
 const removeFile = (index) => {
   files.value.splice(index, 1)
 }
 
-// Scroll to bottom
-const scrollToBottom = () => {
-  window.scrollTo({
-    top: document.body.scrollHeight,
-    behavior: 'smooth'
-  })
-}
-
-// Start Simulation - Jump immediately, API call in Process page
-const startSimulation = () => {
+const startProject = () => {
   if (!canSubmit.value || loading.value) return
   
-  // Store pending upload data
   import('../store/pendingUpload.js').then(({ setPendingUpload }) => {
     setPendingUpload(files.value, formData.value.simulationRequirement)
-    
-    // Jump immediately to Process page (use special flag for new items)
-    router.push({
-      name: 'Process',
-      params: { projectId: 'new' }
-    })
+    router.push({ name: 'Process', params: { projectId: 'new' } })
   })
 }
 </script>
 
 <style scoped>
-/* Global variables and Reset */
-:root {
-  --black: #000000;
-  --white: #FFFFFF;
-  --orange: #FF4500;
-  --gray-light: #F5F5F5;
-  --gray-text: #666666;
-  --border: #E5E5E5;
-  /* 
-    Use Space Grotesk as main title font, JetBrains Mono as code/label font
-    Ensure these Google Fonts are imported in index.html 
-  */
-  --font-mono: 'JetBrains Mono', monospace;
-  --font-sans: 'Space Grotesk', -apple-system, sans-serif;
-}
-
-.home-container {
+.home-layout {
   min-height: 100vh;
-  background: var(--white);
-  font-family: var(--font-sans);
-  color: var(--black);
+  display: flex;
+  flex-direction: column;
+  background: radial-gradient(circle at 50% 0%, #FFF 0%, #FAFAFA 100%);
 }
 
-/* Top navigation */
 .navbar {
-  height: 60px;
-  background: var(--black);
-  color: var(--white);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+  height: var(--header-height);
   padding: 0 40px;
-}
-
-.nav-brand {
-  font-family: var(--font-mono);
-  font-weight: 800;
-  letter-spacing: 1px;
-  font-size: 1.2rem;
-}
-
-.nav-links {
   display: flex;
   align-items: center;
+  justify-content: space-between;
 }
 
-.github-link {
-  color: var(--white);
+.brand-logo {
+  color: var(--primary);
+  font-size: 20px;
+  margin-right: 8px;
+}
+
+.brand-text {
+  font-weight: 700;
+  font-size: 18px;
+  letter-spacing: -0.5px;
+  color: var(--text-main);
+}
+
+.nav-link {
+  color: var(--text-muted);
   text-decoration: none;
-  font-family: var(--font-mono);
-  font-size: 0.9rem;
   font-weight: 500;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  transition: opacity 0.2s;
+  font-size: 14px;
+  transition: color 0.2s;
 }
 
-.github-link:hover {
-  opacity: 0.8;
+.nav-link:hover {
+  color: var(--text-main);
 }
 
-.arrow {
-  font-family: sans-serif;
-}
-
-/* Main content area */
-.main-content {
-  max-width: 1400px;
+.main-container {
+  flex: 1;
+  max-width: 800px;
   margin: 0 auto;
-  padding: 60px 40px;
+  padding: 60px 20px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
-/* Hero section: Console box */
 .hero-section {
+  text-align: center;
+  margin-bottom: 48px;
+}
+
+.hero-title {
+  font-size: 48px;
+  font-weight: 800;
+  letter-spacing: -1.5px;
+  line-height: 1.1;
+  margin-bottom: 16px;
+  background: linear-gradient(180deg, var(--text-main) 0%, #444 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.hero-subtitle {
+  font-size: 18px;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+/* Card Styling */
+.creation-card {
+  width: 100%;
+  background: var(--bg-surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  border: 1px solid var(--border-light);
+  overflow: hidden;
+  padding: 32px;
   margin-bottom: 60px;
 }
 
-.hero-section .console-box {
-  max-width: 1000px;
-  margin: 0 auto;
+.card-header {
+  margin-bottom: 24px;
+  border-bottom: 1px solid var(--border-subtle);
+  padding-bottom: 16px;
 }
 
-/* Dashboard Section: Single column */
-.dashboard-section {
-  border-top: 1px solid var(--border);
-  padding-top: 60px;
+.step-indicator {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--primary);
 }
 
-.info-panel {
-  max-width: 1000px;
-  margin: 0 auto;
+.input-group {
+  margin-bottom: 24px;
 }
 
-.panel-header {
-  font-family: var(--font-mono);
-  font-size: 0.8rem;
-  color: #999;
+.input-label {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-main);
+  margin-bottom: 8px;
+}
+
+.label-hint {
+  font-weight: 400;
+  color: var(--text-muted);
+  margin-left: 8px;
+  font-size: 13px;
+}
+
+/* Upload Area */
+.upload-area {
+  border: 2px dashed var(--border-light);
+  border-radius: var(--radius-md);
+  padding: 32px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: var(--bg-subtle);
+}
+
+.upload-area:hover, .upload-area.is-dragging {
+  border-color: var(--primary);
+  background: rgba(255, 69, 0, 0.02);
+}
+
+.upload-icon-circle {
+  width: 48px;
+  height: 48px;
+  background: var(--bg-surface);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 12px;
+  color: var(--primary);
+  box-shadow: var(--shadow-sm);
+}
+
+.upload-text {
+  display: block;
+  font-weight: 500;
+  color: var(--text-main);
+}
+
+.upload-subtext {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.file-preview-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+}
+
+.file-chip {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-light);
+  padding: 6px 12px;
+  border-radius: var(--radius-full);
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 20px;
+  font-size: 13px;
+  box-shadow: var(--shadow-sm);
 }
 
-.status-dot {
-  color: var(--orange);
-  font-size: 0.8rem;
-}
-
-.section-title {
-  font-size: 2rem;
+.file-icon {
+  font-size: 10px;
   font-weight: 700;
-  margin: 0 0 15px 0;
+  text-transform: uppercase;
+  color: var(--text-faint);
 }
 
-.section-desc {
-  color: var(--gray-text);
-  margin-bottom: 25px;
-  line-height: 1.6;
-}
-
-.metrics-row {
-  display: flex;
-  gap: 20px;
-  margin-bottom: 15px;
-}
-
-.metric-card {
-  border: 1px solid var(--border);
-  padding: 20px 30px;
-  min-width: 150px;
-}
-
-.metric-value {
-  font-family: var(--font-mono);
-  font-size: 1.8rem;
-  font-weight: 700;
-  margin-bottom: 5px;
-}
-
-.metric-label {
-  font-size: 0.85rem;
-  color: #999;
-}
-
-/* Simulation Steps */
-.steps-container {
-  border: 1px solid var(--border);
-  padding: 30px;
-  position: relative;
-}
-
-.steps-header {
-  font-family: var(--font-mono);
-  font-size: 0.8rem;
-  color: #999;
-  margin-bottom: 25px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.diamond-icon {
-  font-size: 1.2rem;
+.remove-file-btn {
+  color: var(--text-muted);
+  font-size: 16px;
   line-height: 1;
 }
 
-.workflow-list {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
+.remove-file-btn:hover {
+  color: var(--status-error);
 }
 
-.workflow-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 20px;
+/* Textarea */
+.textarea-wrapper {
+  position: relative;
 }
 
-.step-num {
-  font-family: var(--font-mono);
-  font-weight: 700;
-  color: var(--black);
-  opacity: 0.3;
+.scenario-input {
+  width: 100%;
+  padding: 16px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  color: var(--text-main);
+  resize: vertical;
+  transition: border-color 0.2s;
+  font-size: 14px;
+  line-height: 1.6;
 }
 
-.step-info {
-  flex: 1;
+.scenario-input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(255, 69, 0, 0.1);
 }
 
-.step-title {
-  font-weight: 700;
-  font-size: 1rem;
-  margin-bottom: 4px;
+/* Actions */
+.action-footer {
+  margin-top: 32px;
 }
 
-.step-desc {
-  font-size: 0.85rem;
-  color: var(--gray-text);
-}
-
-
-.console-box {
-  border: 1px solid #CCC; /* Outer solid line */
-  padding: 8px; /* Inner padding creates double border effect */
-}
-
-.console-section {
-  padding: 20px;
-}
-
-.console-section.btn-section {
-  padding-top: 0;
-}
-
-.console-header {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 15px;
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  color: #666;
-}
-
-.upload-zone {
-  border: 1px dashed #CCC;
-  height: 200px;
+.primary-btn {
+  width: 100%;
+  background: var(--primary);
+  color: white;
+  padding: 16px;
+  border-radius: var(--radius-md);
+  font-weight: 600;
+  font-size: 16px;
   display: flex;
   align-items: center;
   justify-content: center;
-  cursor: pointer;
-  transition: all 0.3s;
-  background: #FAFAFA;
+  gap: 8px;
+  transition: all 0.2s;
 }
 
-.upload-zone:hover {
-  background: #F0F0F0;
-  border-color: #999;
+.primary-btn:hover:not(:disabled) {
+  background: var(--primary-hover);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
 }
 
-.upload-placeholder {
+.primary-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Features Grid */
+.features-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+  width: 100%;
+}
+
+.feature-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   text-align: center;
 }
 
-.upload-icon {
-  width: 40px;
-  height: 40px;
-  border: 1px solid #DDD;
+.feature-icon {
+  font-size: 24px;
+  margin-bottom: 12px;
+  background: var(--bg-surface);
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
-  margin: 0 auto 15px;
-  color: #999;
+  border: 1px solid var(--border-subtle);
 }
 
-.upload-title {
-  font-weight: 700;
-  font-size: 0.9rem;
-  margin-bottom: 5px;
+.feature-content h3 {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: var(--text-main);
 }
 
-.upload-hint {
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  color: #999;
+.feature-content p {
+  font-size: 13px;
+  color: var(--text-muted);
+  max-width: 200px;
 }
 
-.file-list {
-  width: 100%;
-  padding: 15px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.file-item {
-  display: flex;
-  align-items: center;
-  background: var(--white);
-  padding: 8px 12px;
-  border: 1px solid #EEE;
-  font-family: var(--font-mono);
-  font-size: 0.85rem;
-}
-
-.file-name {
-  flex: 1;
-  margin: 0 10px;
-}
-
-.remove-btn {
-  background: none;
-  border: none;
-  cursor: pointer;
-  font-size: 1.2rem;
-  color: #999;
-}
-
-.console-divider {
-  display: flex;
-  align-items: center;
-  margin: 10px 0;
-}
-
-.console-divider::before,
-.console-divider::after {
-  content: '';
-  flex: 1;
-  height: 1px;
-  background: #EEE;
-}
-
-.console-divider span {
-  padding: 0 15px;
-  font-family: var(--font-mono);
-  font-size: 0.7rem;
-  color: #BBB;
-  letter-spacing: 1px;
-}
-
-.input-wrapper {
-  position: relative;
-  border: 1px solid #DDD;
-  background: #FAFAFA;
-}
-
-.code-input {
-  width: 100%;
-  border: none;
-  background: transparent;
-  padding: 20px;
-  font-family: var(--font-mono);
-  font-size: 0.9rem;
-  line-height: 1.6;
-  resize: vertical;
-  outline: none;
-  min-height: 150px;
-}
-
-.model-badge {
-  position: absolute;
-  bottom: 10px;
-  right: 15px;
-  font-family: var(--font-mono);
-  font-size: 0.7rem;
-  color: #AAA;
-}
-
-.start-engine-btn {
-  width: 100%;
-  background: var(--black);
-  color: var(--white);
-  border: none;
-  padding: 20px;
-  font-family: var(--font-mono);
-  font-weight: 700;
-  font-size: 1.1rem;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  letter-spacing: 1px;
-  position: relative;
-  overflow: hidden;
-}
-
-/* Clickable status (not disabled) */
-.start-engine-btn:not(:disabled) {
-  background: var(--black);
-  border: 1px solid var(--black);
-  animation: pulse-border 2s infinite;
-}
-
-.start-engine-btn:hover:not(:disabled) {
-  background: var(--orange);
-  border-color: var(--orange);
-  transform: translateY(-2px);
-}
-
-.start-engine-btn:active:not(:disabled) {
-  transform: translateY(0);
-}
-
-.start-engine-btn:disabled {
-  background: #E5E5E5;
-  color: #999;
-  cursor: not-allowed;
-  transform: none;
-  border: 1px solid #E5E5E5;
-}
-
-/* Guide animation: Subtle border pulse */
-@keyframes pulse-border {
-  0% { box-shadow: 0 0 0 0 rgba(0, 0, 0, 0.2); }
-  70% { box-shadow: 0 0 0 6px rgba(0, 0, 0, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(0, 0, 0, 0); }
-}
-
-/* Capabilities List (New) */
-.capabilities-list {
-  margin: 20px 0;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  background: #f8f9fa;
-  padding: 15px;
-  border-left: 3px solid var(--orange);
-}
-
-.cap-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-family: var(--font-mono);
-  font-size: 0.85rem;
-  color: #555;
-}
-
-.cap-icon {
-  color: var(--orange);
-  font-weight: bold;
-}
-
-/* Responsive */
-@media (max-width: 1024px) {
-  .main-content {
-    padding: 40px 20px;
-  }
-  
-  .hero-section .console-box {
-    max-width: 100%;
-  }
-  
-  .info-panel {
-    max-width: 100%;
+@media (max-width: 768px) {
+  .features-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>

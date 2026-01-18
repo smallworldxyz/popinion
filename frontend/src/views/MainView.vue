@@ -3,33 +3,34 @@
     <!-- Header -->
     <header class="app-header">
       <div class="header-left">
-        <div class="brand" @click="router.push('/')">POPINION</div>
+        <div class="brand" @click="router.push('/')">
+          <span class="brand-logo">●</span> Popinion
+        </div>
       </div>
       
       <div class="header-center">
         <div class="view-switcher">
           <button 
-            v-for="mode in ['graph', 'split', 'workbench', 'knowledge']" 
+            v-for="mode in ['graph', 'split', 'workbench']" 
             :key="mode"
             class="switch-btn"
             :class="{ active: viewMode === mode }"
             @click="viewMode = mode"
+            title="Change Layout"
           >
-            {{ { graph: 'Graph', split: 'Split View', workbench: 'Workbench', knowledge: '📋 Knowledge Pad' }[mode] }}
+            {{ { graph: 'Graph Only', split: 'Split View', workbench: 'Workspace Only' }[mode] }}
           </button>
         </div>
       </div>
 
       <div class="header-right">
-        <div class="workflow-step">
-          <span class="step-num">Step {{ currentStep }}/5</span>
-          <span class="step-name">{{ stepNames[currentStep - 1] }}</span>
+        <div class="workflow-status">
+          <span class="step-label">Current Phase</span>
+          <span class="step-value">{{ stepNames[currentStep - 1] }}</span>
         </div>
-        <div class="step-divider"></div>
-        <span class="status-indicator" :class="statusClass">
-          <span class="dot"></span>
+        <div class="status-badge" :class="statusClass">
           {{ statusText }}
-        </span>
+        </div>
       </div>
     </header>
 
@@ -48,7 +49,7 @@
 
       <!-- Right Panel: Step Components -->
       <div class="panel-wrapper right" :style="rightPanelStyle">
-        <!-- Step 1: GraphBuilding -->
+        <!-- Step 1: Knowledge Mapping (formerly GraphBuild) -->
         <Step1GraphBuild 
           v-if="currentStep === 1"
           :currentPhase="currentPhase"
@@ -59,7 +60,7 @@
           :systemLogs="systemLogs"
           @next-step="handleNextStep"
         />
-        <!-- Step 2: Environment Setup -->
+        <!-- Step 2: Simulation Setup (formerly EnvSetup) -->
         <Step2EnvSetup
           v-else-if="currentStep === 2"
           :projectData="projectData"
@@ -69,17 +70,54 @@
           @next-step="handleNextStep"
           @add-log="addLog"
         />
+        <!-- Step 3: Simulation (Director Mode) -->
+        <Step3Simulation
+          v-else-if="currentStep === 3"
+          :simulationId="projectData?.simulation_id"
+          :maxRounds="projectData?.simulation_config?.max_rounds"
+          :projectData="projectData"
+          :graphData="graphData"
+          :systemLogs="systemLogs"
+          @go-back="handleGoBack"
+          @next-step="handleNextStep"
+          @add-log="addLog"
+          @update-status="handleSimulationStatusUpdate"
+        />
+        <!-- Step 4: Report Generation -->
+        <Step4Report
+          v-else-if="currentStep === 4"
+          :simulationId="projectData?.simulation_id"
+          :graphData="graphData"
+          :projectData="projectData"
+          :systemLogs="systemLogs"
+          @go-back="handleGoBack"
+          @next-step="handleNextStep"
+          @add-log="addLog"
+        />
+        <!-- Step 5: Deep Interaction -->
+        <Step5Interaction
+          v-else-if="currentStep === 5"
+          :simulationId="projectData?.simulation_id"
+          :reportId="projectData?.report_id"
+          :injectedKnowledge="projectData?.injected_knowledge"
+          :simulationTags="projectData?.simulation_tags"
+          :systemLogs="systemLogs"
+          @add-log="addLog"
+        />
       </div>
     </main>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import GraphPanel from '../components/GraphPanel.vue'
 import Step1GraphBuild from '../components/Step1GraphBuild.vue'
 import Step2EnvSetup from '../components/Step2EnvSetup.vue'
+import Step3Simulation from '../components/Step3Simulation.vue'
+import Step4Report from '../components/Step4Report.vue'
+import Step5Interaction from '../components/Step5Interaction.vue'
 import { generateOntology, getProject, buildGraph, getTaskStatus, getGraphData } from '../api/graph'
 import { getPendingUpload, clearPendingUpload } from '../store/pendingUpload'
 
@@ -90,8 +128,9 @@ const router = useRouter()
 const viewMode = ref('split') // graph | split | workbench
 
 // Step State
-const currentStep = ref(1) // 1: Graph Building, 2: Environment Setup, 3: Start Simulation, 4: Report Generating, 5: Deep Interactive
-const stepNames = ['Graph Building', 'Environment Setup', 'Start Simulation', 'Report Generating', 'Deep Interactive']
+// Updated terminology
+const currentStep = ref(1) 
+const stepNames = ['Knowledge Mapping', 'Simulation Setup', 'Running Simulation', 'Report Generation', 'Deep Interaction']
 
 // Data State
 const currentProjectId = ref(route.params.projectId)
@@ -125,60 +164,54 @@ const rightPanelStyle = computed(() => {
 // --- Status Computed ---
 const statusClass = computed(() => {
   if (error.value) return 'error'
-  if (currentPhase.value >= 2) return 'completed'
+  if (currentPhase.value >= 2) return 'ready'
   return 'processing'
 })
 
 const statusText = computed(() => {
-  if (error.value) return 'Error'
-  if (currentPhase.value >= 2) return 'Ready'
-  if (currentPhase.value === 1) return 'Building Graph'
-  if (currentPhase.value === 0) return 'Generating Ontology'
-  return 'Initializing'
+  if (error.value) return 'System Error'
+  if (currentPhase.value >= 2) return 'Ready to Simulate'
+  if (currentPhase.value === 1) return 'Building Knowledge Graph...'
+  if (currentPhase.value === 0) return 'Analyzing Topic...'
+  return 'Initializing...'
 })
 
 // --- Helpers ---
 const addLog = (msg) => {
-  const time = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }) + '.' + new Date().getMilliseconds().toString().padStart(3, '0')
+  const time = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
   systemLogs.value.push({ time, msg })
-  // Keep last 100 logs
-  if (systemLogs.value.length > 100) {
-    systemLogs.value.shift()
+  if (systemLogs.value.length > 100) systemLogs.value.shift()
+}
+
+const handleSimulationStatusUpdate = (status) => {
+  // Update UI status based on simulation state
+  if (status === 'processing') {
+    // maybe update global status
   }
 }
 
 // --- Layout Methods ---
 const toggleMaximize = (target) => {
-  if (viewMode.value === target) {
-    viewMode.value = 'split'
-  } else {
-    viewMode.value = target
-  }
+  viewMode.value = viewMode.value === target ? 'split' : target
 }
 
 const handleNextStep = (params = {}) => {
   if (currentStep.value < 5) {
     currentStep.value++
-    addLog(`Entering Step ${currentStep.value}: ${stepNames[currentStep.value - 1]}`)
-    
-    // If entering Step 3 from Step 2, record simulation rounds count configuration
-    if (currentStep.value === 3 && params.maxRounds) {
-      addLog(`Custom simulation rounds: ${params.maxRounds} rounds`)
-    }
+    addLog(`Transitioning to: ${stepNames[currentStep.value - 1]}`)
   }
 }
 
 const handleGoBack = () => {
   if (currentStep.value > 1) {
     currentStep.value--
-    addLog(`Going back to Step ${currentStep.value}: ${stepNames[currentStep.value - 1]}`)
+    addLog(`Returned to: ${stepNames[currentStep.value - 1]}`)
   }
 }
 
-// --- Data Logic ---
+// --- Data Logic (Kept mostly purely functional, just updated logs) ---
 
 const initProject = async () => {
-  addLog('Project view initialized.')
   if (currentProjectId.value === 'new') {
     await handleNewProject()
   } else {
@@ -189,16 +222,17 @@ const initProject = async () => {
 const handleNewProject = async () => {
   const pending = getPendingUpload()
   if (!pending.isPending || pending.files.length === 0) {
-    error.value = 'No pending files found.'
-    addLog('Error: No pending files found for new project.')
+    error.value = 'No context files found.'
+    alert('Session expired. Please start over.')
+    router.replace('/')
     return
   }
   
   try {
     loading.value = true
     currentPhase.value = 0
-    ontologyProgress.value = { message: 'Uploading and analyzing docs...' }
-    addLog('Starting ontology generation: Uploading files...')
+    ontologyProgress.value = { message: 'Analyzing documents...' }
+    addLog('Project initialized. Starting document analysis...')
     
     const formData = new FormData()
     pending.files.forEach(f => formData.append('files', f))
@@ -212,15 +246,15 @@ const handleNewProject = async () => {
       
       router.replace({ name: 'Process', params: { projectId: res.data.project_id } })
       ontologyProgress.value = null
-      addLog(`Ontology generated successfully for project ${res.data.project_id}`)
+      addLog(`Topic analysis complete. Project ID: ${res.data.project_id}`)
       await startBuildGraph()
     } else {
-      error.value = res.error || 'Ontology generation failed'
-      addLog(`Error generating ontology: ${error.value}`)
+      error.value = res.error || 'Analysis failed'
+      addLog(`Error: ${error.value}`)
     }
   } catch (err) {
     error.value = err.message
-    addLog(`Exception in handleNewProject: ${err.message}`)
+    addLog(`System Error: ${err.message}`)
   } finally {
     loading.value = false
   }
@@ -229,7 +263,6 @@ const handleNewProject = async () => {
 const loadProject = async () => {
   try {
     loading.value = true
-    addLog(`Loading project ${currentProjectId.value}...`)
     const res = await getProject(currentProjectId.value)
     if (res.success) {
       projectData.value = res.data
@@ -248,11 +281,9 @@ const loadProject = async () => {
       }
     } else {
       error.value = res.error
-      addLog(`Error loading project: ${res.error}`)
     }
   } catch (err) {
     error.value = err.message
-    addLog(`Exception in loadProject: ${err.message}`)
   } finally {
     loading.value = false
   }
@@ -271,45 +302,40 @@ const updatePhaseByStatus = (status) => {
 const startBuildGraph = async () => {
   try {
     currentPhase.value = 1
-    buildProgress.value = { progress: 0, message: 'Starting build...' }
-    addLog('Initiating graph build...')
+    buildProgress.value = { progress: 0, message: 'Starting knowledge extraction...' }
+    addLog('Building Knowledge Graph...')
     
     const res = await buildGraph({ project_id: currentProjectId.value })
     if (res.success) {
-      addLog(`Graph build task started. Task ID: ${res.data.task_id}`)
       startGraphPolling()
       startPollingTask(res.data.task_id)
     } else {
       error.value = res.error
-      addLog(`Error starting build: ${res.error}`)
+      addLog(`Build Error: ${res.error}`)
     }
   } catch (err) {
     error.value = err.message
-    addLog(`Exception in startBuildGraph: ${err.message}`)
   }
 }
 
 const startGraphPolling = () => {
-  addLog('Started polling for graph data...')
   fetchGraphData()
   graphPollTimer = setInterval(fetchGraphData, 10000)
 }
 
 const fetchGraphData = async () => {
   try {
-    // Refresh project info to check for graph_id
     const projRes = await getProject(currentProjectId.value)
     if (projRes.success && projRes.data.graph_id) {
       const gRes = await getGraphData(projRes.data.graph_id)
       if (gRes.success) {
         graphData.value = gRes.data
         const nodeCount = gRes.data.node_count || gRes.data.nodes?.length || 0
-        const edgeCount = gRes.data.edge_count || gRes.data.edges?.length || 0
-        addLog(`Graph data refreshed. Nodes: ${nodeCount}, Edges: ${edgeCount}`)
+        addLog(`Knowledge Graph updated: ${nodeCount} nodes`)
       }
     }
   } catch (err) {
-    console.warn('Graph fetch error:', err)
+    // Silent fail for polling
   }
 }
 
@@ -323,21 +349,16 @@ const pollTaskStatus = async (taskId) => {
     const res = await getTaskStatus(taskId)
     if (res.success) {
       const task = res.data
-      
-      // Log progress message if it changed
       if (task.message && task.message !== buildProgress.value?.message) {
         addLog(task.message)
       }
-      
       buildProgress.value = { progress: task.progress || 0, message: task.message }
       
       if (task.status === 'completed') {
-        addLog('Graph build task completed.')
+        addLog('Knowledge Graph construction complete.')
         stopPolling()
-        stopGraphPolling() // Stop polling, do final load
+        stopGraphPolling()
         currentPhase.value = 2
-        
-        // Final load
         const projRes = await getProject(currentProjectId.value)
         if (projRes.success && projRes.data.graph_id) {
             projectData.value = projRes.data
@@ -346,7 +367,7 @@ const pollTaskStatus = async (taskId) => {
       } else if (task.status === 'failed') {
         stopPolling()
         error.value = task.error
-        addLog(`Graph build task failed: ${task.error}`)
+        addLog(`Build Failed: ${task.error}`)
       }
     }
   } catch (e) {
@@ -356,17 +377,13 @@ const pollTaskStatus = async (taskId) => {
 
 const loadGraph = async (graphId) => {
   graphLoading.value = true
-  addLog(`Loading full graph data: ${graphId}`)
   try {
     const res = await getGraphData(graphId)
     if (res.success) {
       graphData.value = res.data
-      addLog('Graph data loaded successfully.')
-    } else {
-      addLog(`Failed to load graph data: ${res.error}`)
     }
   } catch (e) {
-    addLog(`Exception loading graph: ${e.message}`)
+    addLog(`Error loading graph: ${e.message}`)
   } finally {
     graphLoading.value = false
   }
@@ -374,7 +391,6 @@ const loadGraph = async (graphId) => {
 
 const refreshGraph = () => {
   if (projectData.value?.graph_id) {
-    addLog('Manual graph refresh triggered.')
     loadGraph(projectData.value.graph_id)
   }
 }
@@ -390,7 +406,6 @@ const stopGraphPolling = () => {
   if (graphPollTimer) {
     clearInterval(graphPollTimer)
     graphPollTimer = null
-    addLog('Graph polling stopped.')
   }
 }
 
@@ -409,22 +424,38 @@ onUnmounted(() => {
   height: 100vh;
   display: flex;
   flex-direction: column;
-  background: #FFF;
+  background: var(--bg-app);
   overflow: hidden;
-  font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
 /* Header */
 .app-header {
-  height: 60px;
-  border-bottom: 1px solid #EAEAEA;
+  height: var(--header-height);
+  border-bottom: 1px solid var(--border-light);
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 24px;
-  background: #FFF;
+  background: var(--bg-surface);
   z-index: 100;
-  position: relative;
+  box-shadow: var(--shadow-sm);
+}
+
+.brand {
+  font-family: var(--font-sans);
+  font-weight: 700;
+  font-size: 16px;
+  letter-spacing: -0.5px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-main);
+}
+
+.brand-logo {
+  color: var(--primary);
+  font-size: 14px;
 }
 
 .header-center {
@@ -433,91 +464,86 @@ onUnmounted(() => {
   transform: translateX(-50%);
 }
 
-.brand {
-  font-family: 'JetBrains Mono', monospace;
-  font-weight: 800;
-  font-size: 18px;
-  letter-spacing: 1px;
-  cursor: pointer;
-}
-
 .view-switcher {
   display: flex;
-  background: #F5F5F5;
+  background: var(--bg-subtle);
   padding: 4px;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   gap: 4px;
 }
 
 .switch-btn {
-  border: none;
-  background: transparent;
-  padding: 6px 16px;
-  font-size: 12px;
-  font-weight: 600;
-  color: #666;
-  border-radius: 4px;
-  cursor: pointer;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+  border-radius: var(--radius-sm);
   transition: all 0.2s;
 }
 
-.switch-btn.active {
-  background: #FFF;
-  color: #000;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+.switch-btn:hover {
+  color: var(--text-main);
 }
 
-.status-indicator {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  color: #666;
-  font-weight: 500;
+.switch-btn.active {
+  background: var(--bg-surface);
+  color: var(--text-main);
+  box-shadow: var(--shadow-sm);
+  font-weight: 600;
 }
 
 .header-right {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 24px;
 }
 
-.workflow-step {
+.workflow-status {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 14px;
+  font-size: 13px;
 }
 
-.step-num {
-  font-family: 'JetBrains Mono', monospace;
-  font-weight: 700;
-  color: #999;
+.step-label {
+  color: var(--text-faint);
+  font-weight: 500;
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.5px;
 }
 
-.step-name {
-  font-weight: 700;
-  color: #000;
+.step-value {
+  color: var(--text-main);
+  font-weight: 600;
 }
 
-.step-divider {
-  width: 1px;
-  height: 14px;
-  background-color: #E0E0E0;
+.status-badge {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  background: var(--bg-subtle);
+  color: var(--text-muted);
 }
 
-.dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #CCC;
+.status-badge.processing {
+  background: rgba(255, 69, 0, 0.1);
+  color: var(--primary);
+  animation: pulse 2s infinite;
 }
 
-.status-indicator.processing .dot { background: #FF5722; animation: pulse 1s infinite; }
-.status-indicator.completed .dot { background: #4CAF50; }
-.status-indicator.error .dot { background: #F44336; }
+.status-badge.ready {
+  background: #ECFDF5;
+  color: var(--status-success);
+}
 
-@keyframes pulse { 50% { opacity: 0.5; } }
+.status-badge.error {
+  background: #FEF2F2;
+  color: var(--status-error);
+}
+
+@keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.6; } 100% { opacity: 1; } }
 
 /* Content */
 .content-area {
@@ -535,6 +561,11 @@ onUnmounted(() => {
 }
 
 .panel-wrapper.left {
-  border-right: 1px solid #EAEAEA;
+  border-right: 1px solid var(--border-light);
+  background: var(--bg-subtle);
+}
+
+.panel-wrapper.right {
+  background: var(--bg-surface);
 }
 </style>

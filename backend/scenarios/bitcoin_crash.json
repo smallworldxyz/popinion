@@ -1,0 +1,50 @@
+{
+    "meta": {
+        "id": "bitcoin_crash_2026",
+        "name": "Bitcoin Crash 2026",
+        "description": "Simulates a sudden market panic where Bitcoin drops 20%, triggering regulatory news.",
+        "author": "System",
+        "version": "1.0"
+    },
+    "timeline": [
+        {
+            "trigger": {
+                "type": "round",
+                "value": 2
+            },
+            "action": {
+                "type": "inject_event",
+                "payload": {
+                    "content": "BREAKING: Major crypto exchange halted withdrawals indefinitely due to 'liquidity issues'. Bitcoin drops 5% in minutes.",
+                    "source": "CryptoNews"
+                }
+            }
+        },
+        {
+            "trigger": {
+                "type": "round",
+                "value": 5
+            },
+            "action": {
+                "type": "inject_event",
+                "payload": {
+                    "content": "PANIC: Bitcoin hits $45k, down 20% intraday. Traders fearing 2022-style collapse.",
+                    "source": "Financial Times"
+                }
+            }
+        },
+        {
+            "trigger": {
+                "type": "round",
+                "value": 8
+            },
+            "action": {
+                "type": "inject_event",
+                "payload": {
+                    "content": "SEC Commissioner announces emergency press conference regarding 'systemic crypto risks' scheduled for tomorrow.",
+                    "source": "Reuters"
+                }
+            }
+        }
+    ]
+}

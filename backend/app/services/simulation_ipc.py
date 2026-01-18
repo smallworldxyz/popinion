@@ -27,6 +27,7 @@ class CommandType(str, Enum):
     INTERVIEW = "interview"           # Single agent interview
     BATCH_INTERVIEW = "batch_interview"  # Batch interview
     CLOSE_ENV = "close_env"           # Close environment
+    INJECT_EVENT = "inject_event"     # Inject global event
 
 
 class CommandStatus(str, Enum):
@@ -264,6 +265,27 @@ class SimulationIPCClient:
         return self.send_command(
             command_type=CommandType.CLOSE_ENV,
             args={},
+            timeout=timeout
+        )
+
+    def send_inject_event(
+        self,
+        event_text: str,
+        timeout: float = 30.0
+    ) -> IPCResponse:
+        """
+        Send inject event command
+        
+        Args:
+            event_text: Event description text
+            timeout: Timeout in seconds
+            
+        Returns:
+            IPCResponse
+        """
+        return self.send_command(
+            command_type=CommandType.INJECT_EVENT,
+            args={"event_text": event_text},
             timeout=timeout
         )
     

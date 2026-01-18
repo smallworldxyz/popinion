@@ -102,11 +102,58 @@ export const stopSimulation = (data) => {
 }
 
 /**
+ * Inject real-time event into simulation
+ * @param {string} simulationId
+ * @param {string} eventText
+ * @param {Object} postData - Optional structured post data
+ */
+export const injectEvent = (simulationId, eventText, postData = null) => {
+  return service.post(`/api/simulation/${simulationId}/inject`, { event_text: eventText, post_data: postData })
+}
+
+/**
+ * Add annotation to an action
+ * @param {string} simulationId
+ * @param {Object} data - { action_id, content, author }
+ */
+export const annotateAction = (simulationId, data) => {
+  return service.post(`/api/simulation/${simulationId}/annotate`, data)
+}
+
+/**
+ * Get all annotations for a simulation
+ * @param {string} simulationId
+ */
+export const getAnnotations = (simulationId) => {
+  return service.get(`/api/simulation/${simulationId}/annotations`)
+}
+
+/**
+ * Delete annotation
+ * @param {string} simulationId
+ * @param {string} actionId
+ */
+export const deleteAnnotation = (simulationId, actionId) => {
+  return service.delete(`/api/simulation/${simulationId}/annotate/${actionId}`)
+}
+
+/**
  * Get simulation realtime run status
  * @param {string} simulationId
  */
 export const getRunStatus = (simulationId) => {
   return service.get(`/api/simulation/${simulationId}/run-status`)
+}
+
+/**
+ * Get project agents (personas)
+ * @param {string} projectId
+ * @param {string} simulationId - Optional
+ */
+export const getProjectAgents = (projectId, simulationId = null) => {
+  const params = {}
+  if (simulationId) params.simulation_id = simulationId
+  return service.get(`/api/simulation/project/${projectId}/agents`, { params })
 }
 
 /**
@@ -178,6 +225,14 @@ export const getEnvStatus = (data) => {
 }
 
 /**
+ * Interview a single agent
+ * @param {Object} data - { simulation_id, agent_id, prompt, platform?, timeout? }
+ */
+export const interviewAgent = (data) => {
+  return service.post('/api/simulation/interview', data)
+}
+
+/**
  * Batch interview Agents
  * @param {Object} data - { simulation_id, interviews: [{ agent_id, prompt }] }
  */
@@ -222,6 +277,13 @@ export const listSurveys = () => {
  */
 export const getSurvey = (surveyId) => {
   return service.get(`/api/simulation/survey/${surveyId}`)
+}
+
+/**
+ * List available scenario scripts
+ */
+export const getScenarios = () => {
+  return service.get('/api/simulation/scenarios')
 }
 
 
