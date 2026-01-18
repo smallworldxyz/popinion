@@ -276,14 +276,14 @@ A unified interface for capturing insights and identifying knowledge gaps.
 ┌─────────────────────────────────────────────────────────────────────────────────────────┐
 │                            KNOWLEDGE WORKBENCH                                          │
 ├───────────────────────────────────┬─────────────────────────────────────────────────────┤
-│  📋 CAPTURED INSIGHTS (Left)     │  ❓ KNOWLEDGE GAPS (Right)                          │
+│  📋 CAPTURED INSIGHTS (Left)      │  ❓ KNOWLEDGE GAPS (Right)                          │
 │                                   │                                                     │
-│  Highlights from agent responses  │  User-authored notes on missing perspectives       │
-│  - Tagged by source agent         │  - Tagged by gap type                              │
-│  - Searchable and filterable      │  - Target specific agent or global                 │
+│  Highlights from agent responses  │  User-authored notes on missing perspectives        │
+│  - Tagged by source agent         │  - Tagged by gap type                               │
+│  - Searchable and filterable      │  - Target specific agent or global                  │
 │                                   │                                                     │
 ├───────────────────────────────────┴─────────────────────────────────────────────────────┤
-│  [ 🗑️ Delete Selected ]  [ 💉 Inject Selected ]  [ 📤 Export ]  [ 📥 Import ]         │
+│  [ 🗑️ Delete Selected ]  [ 💉 Inject Selected ]  [ 📤 Export ]  [ � Import ]           │
 └─────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 

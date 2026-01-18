@@ -28,6 +28,8 @@ class CommandType(str, Enum):
     BATCH_INTERVIEW = "batch_interview"  # Batch interview
     CLOSE_ENV = "close_env"           # Close environment
     INJECT_EVENT = "inject_event"     # Inject global event
+    PAUSE = "pause"                   # Pause simulation
+    RESUME = "resume"                 # Resume simulation
 
 
 class CommandStatus(str, Enum):

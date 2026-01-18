@@ -19,6 +19,7 @@ from ..services.survey_service import SurveyService
 from ..services.agora_service import AgoraService, DebateStatus, DEBATE_TEMPLATES
 from ..utils.logger import get_logger
 from ..models.project import ProjectManager
+from ..auth import login_required, get_current_user
 
 logger = get_logger('pubop.api.simulation')
 
@@ -166,6 +167,7 @@ def get_entities_by_type(graph_id: str, entity_type: str):
 # ============== Simulation Management Interface ==============
 
 @simulation_bp.route('/create', methods=['POST'])
+@login_required
 def create_simulation():
     """
     Create a new simulation
@@ -360,6 +362,7 @@ def _check_simulation_prepared(simulation_id: str) -> tuple:
 
 
 @simulation_bp.route('/<simulation_id>/inject', methods=['POST'])
+@login_required
 def inject_event(simulation_id: str):
     """
     Inject a dynamic event into a running simulation (Director Intervention).
@@ -419,6 +422,134 @@ def inject_event(simulation_id: str):
             "error": str(e),
             "traceback": traceback.format_exc()
         }), 500
+
+
+
+@simulation_bp.route('/<simulation_id>/pause', methods=['POST'])
+@login_required
+def pause_simulation(simulation_id: str):
+    """
+    Pause a running simulation.
+    """
+    try:
+        # Check if running
+        runner = SimulationRunner()
+        state = runner.get_run_state(simulation_id)
+        
+        if not state:
+            return jsonify({"success": False, "error": "Simulation not found"}), 404
+            
+        if state.runner_status != RunnerStatus.RUNNING:
+             return jsonify({"success": False, "error": f"Simulation not running (status={state.runner_status})"}), 400
+             
+        # Execute Pause
+        success = runner.pause_simulation(simulation_id)
+        
+        if success:
+            return jsonify({
+                "success": True,
+                "message": "Simulation paused",
+                "status": "paused"
+            })
+        else:
+            return jsonify({"success": False, "error": "Failed to pause simulation"}), 500
+
+    except Exception as e:
+        logger.error(f"Pause failed: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@simulation_bp.route('/<simulation_id>/resume', methods=['POST'])
+@login_required
+def resume_simulation(simulation_id: str):
+    """
+    Resume a paused simulation.
+    """
+    try:
+        # Check if paused
+        runner = SimulationRunner()
+        state = runner.get_run_state(simulation_id)
+        
+        if not state:
+            return jsonify({"success": False, "error": "Simulation not found"}), 404
+            
+        if state.runner_status != RunnerStatus.PAUSED:
+             return jsonify({"success": False, "error": f"Simulation not paused (status={state.runner_status})"}), 400
+             
+        # Execute Resume
+        success = runner.resume_simulation(simulation_id)
+        
+        if success:
+            return jsonify({
+                "success": True,
+                "message": "Simulation resumed",
+                "status": "running"
+            })
+        else:
+            return jsonify({"success": False, "error": "Failed to resume simulation"}), 500
+
+    except Exception as e:
+        logger.error(f"Resume failed: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@simulation_bp.route('/<simulation_id>/fork', methods=['POST'])
+@login_required
+def fork_simulation(simulation_id: str):
+    """
+    Fork a simulation from a specific round.
+    
+    Request:
+        { "round": 5 }
+        
+    Returns:
+        { "success": true, "new_simulation_id": "..." }
+    """
+    try:
+        data = request.get_json() or {}
+        round_num = data.get('round')
+        
+        if round_num is None:
+             return jsonify({"success": False, "error": "Round number required"}), 400
+             
+        runner = SimulationRunner()
+        new_id = runner.fork_simulation(simulation_id, round_num)
+        
+        return jsonify({
+            "success": True,
+            "data": {
+                "original_simulation_id": simulation_id,
+                "new_simulation_id": new_id,
+                "fork_round": round_num
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"Fork failed: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+    except Exception as e:
+        logger.error(f"Fork failed: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@simulation_bp.route('/<simulation_id>/tree', methods=['GET'])
+def get_simulation_tree(simulation_id: str):
+    """
+    Get the simulation lineage tree.
+    """
+    try:
+        runner = SimulationRunner()
+        lineage = runner.get_simulation_lineage(simulation_id)
+        
+        return jsonify({
+            "success": True,
+            "data": lineage
+        })
+
+    except Exception as e:
+        logger.error(f"Get tree failed: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 @simulation_bp.route('/prepare/preview', methods=['POST'])

@@ -176,6 +176,8 @@ class CommandType:
     BATCH_INTERVIEW = "batch_interview"
     CLOSE_ENV = "close_env"
     INJECT_EVENT = "inject_event"
+    PAUSE = "pause"
+    RESUME = "resume"
 
 
 class ParallelIPCHandler:
@@ -624,6 +626,16 @@ class ParallelIPCHandler:
                 args.get("event_text", "")
             )
             return True
+            
+        elif command_type == CommandType.PAUSE:
+            print("收到暂停命令")
+            self.send_response(command_id, "completed", result={"message": "环境已暂停"})
+            return "PAUSE"
+            
+        elif command_type == CommandType.RESUME:
+            print("收到恢复命令")
+            self.send_response(command_id, "completed", result={"message": "环境已恢复"})
+            return "RESUME"
         
         else:
             self.send_response(command_id, "failed", error=f"未知命令类型: {command_type}")

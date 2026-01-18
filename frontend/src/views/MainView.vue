@@ -28,6 +28,9 @@
           <span class="step-label">Current Phase</span>
           <span class="step-value">{{ stepNames[currentStep - 1] }}</span>
         </div>
+        <div class="settings-trigger" @click="showSettings = true" title="System Settings">
+            <span class="icon">⚙️</span>
+        </div>
         <div class="status-badge" :class="statusClass">
           {{ statusText }}
         </div>
@@ -81,7 +84,9 @@
           @go-back="handleGoBack"
           @next-step="handleNextStep"
           @add-log="addLog"
+
           @update-status="handleSimulationStatusUpdate"
+          @switch-simulation="handleSwitchSimulation"
         />
         <!-- Step 4: Report Generation -->
         <Step4Report
@@ -106,6 +111,7 @@
         />
       </div>
     </main>
+    <SettingsModal :isOpen="showSettings" @close="showSettings = false" />
   </div>
 </template>
 
@@ -113,6 +119,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import GraphPanel from '../components/GraphPanel.vue'
+import SettingsModal from '../components/SettingsModal.vue'
 import Step1GraphBuild from '../components/Step1GraphBuild.vue'
 import Step2EnvSetup from '../components/Step2EnvSetup.vue'
 import Step3Simulation from '../components/Step3Simulation.vue'
@@ -126,6 +133,7 @@ const router = useRouter()
 
 // Layout State
 const viewMode = ref('split') // graph | split | workbench
+const showSettings = ref(false)
 
 // Step State
 // Updated terminology
@@ -187,6 +195,13 @@ const handleSimulationStatusUpdate = (status) => {
   // Update UI status based on simulation state
   if (status === 'processing') {
     // maybe update global status
+  }
+}
+
+const handleSwitchSimulation = (newSimulationId) => {
+  addLog(`Switching to simulation branch: ${newSimulationId}`)
+  if (projectData.value) {
+    projectData.value.simulation_id = newSimulationId
   }
 }
 
@@ -496,6 +511,16 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 24px;
+}
+
+.settings-trigger {
+    cursor: pointer;
+    opacity: 0.6;
+    transition: opacity 0.2s;
+    font-size: 18px;
+}
+.settings-trigger:hover {
+    opacity: 1;
 }
 
 .workflow-status {

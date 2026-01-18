@@ -97,8 +97,45 @@ export const startSimulation = (data) => {
  * Stop simulation
  * @param {Object} data - { simulation_id }
  */
+/**
+ * Stop simulation
+ * @param {Object} data - { simulation_id }
+ */
 export const stopSimulation = (data) => {
   return service.post('/api/simulation/stop', data)
+}
+
+/**
+ * Pause simulation
+ * @param {string} simulationId
+ */
+export const pauseSimulation = (simulationId) => {
+  return service.post(`/api/simulation/${simulationId}/pause`)
+}
+
+/**
+ * Resume simulation
+ * @param {string} simulationId
+ */
+export const resumeSimulation = (simulationId) => {
+  return service.post(`/api/simulation/${simulationId}/resume`)
+}
+
+/**
+ * Fork simulation
+ * @param {string} simulationId
+ * @param {number} round
+ */
+export const forkSimulation = (simulationId, round) => {
+  return service.post(`/api/simulation/${simulationId}/fork`, { round })
+}
+
+/**
+ * Get simulation lineage tree
+ * @param {string} simulationId
+ */
+export const getSimulationTree = (simulationId) => {
+  return service.get(`/api/simulation/${simulationId}/tree`)
 }
 
 /**

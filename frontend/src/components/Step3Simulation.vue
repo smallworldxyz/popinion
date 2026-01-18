@@ -92,8 +92,21 @@
 
       <div class="action-controls">
         <button 
+          class="action-btn"
+          :class="{'warning': runStatus.runner_status === 'running', 'success': runStatus.runner_status === 'paused'}"
+          v-if="phase === 1" 
+          @click="togglePauseResume"
+          :disabled="isToggling"
+        >
+          <span v-if="isToggling" class="loading-spinner-small"></span>
+          <span v-if="runStatus.runner_status === 'running'">PAUSE</span>
+          <span v-else-if="runStatus.runner_status === 'paused'">RESUME</span>
+          <span v-else>PAUSE</span>
+        </button>
+
+        <button 
           class="action-btn primary"
-          :disabled="phase !== 2 || isGeneratingReport"
+          :disabled="(phase !== 2 && runStatus.runner_status !== 'stopped' && runStatus.runner_status !== 'completed') || isGeneratingReport"
           @click="handleNextStep"
         >
           <span v-if="isGeneratingReport" class="loading-spinner-small"></span>
@@ -101,7 +114,15 @@
           <span v-if="!isGeneratingReport" class="arrow-icon">→</span>
         </button>
       </div>
+
     </div>
+
+    <!-- MultiVerse Map (Tree) -->
+    <SimulationTree 
+        :simulation-id="props.simulationId" 
+        :height="150"
+        @switch-simulation="handleSwitchSimulation"
+    />
 
     <!-- Replay Control Bar (Visible only when Completed/Stopped) -->
     <div class="replay-bar" v-if="phase === 2">
@@ -135,73 +156,134 @@
         </div>
     </div>
 
-    <!-- Director Mode Panel (Collapsible) -->
-    <div class="director-panel" :class="{ collapsed: !directorPanelOpen }">
-        <div class="panel-toggle" @click="directorPanelOpen = !directorPanelOpen">
-            <span class="toggle-icon">{{ directorPanelOpen ? '▼' : '▲' }}</span>
-            <span class="panel-title">DIRECTOR CONSOLE</span>
-        </div>
-        
-        <div class="panel-content" v-if="directorPanelOpen">
-            <!-- Tool: Inject Event -->
-            <div class="tool-section">
-                <div class="section-title">Reality Injection</div>
-                <div class="input-group">
-                    <textarea 
-                        v-model="injectionText" 
-                        placeholder="Describe an event to inject (e.g., 'Breaking News: Bitcoin falls 20%')"
-                        rows="3"
-                        class="director-input"
-                    ></textarea>
-                    <button class="director-btn" @click="handleInjectEvent" :disabled="isInjecting">
-                        {{ isInjecting ? 'INJECTING...' : 'INJECT EVENT' }}
-                    </button>
+    <!-- Omega Dashboard Content Grid -->
+    <div class="omega-grid">
+        <!-- LEFT COLUMN: CONTEXT (Live Feed) -->
+        <div class="grid-col left-col">
+            <div class="col-header">
+                <span class="col-title">LIVE FEED</span>
+                <div class="feed-tools">
+                    <input 
+                        v-model="feedSearchQuery" 
+                        type="text" 
+                        class="feed-search-input" 
+                        placeholder="Filter feed..."
+                    >
                 </div>
             </div>
-
-            <!-- Tool: Live Search -->
-            <div class="tool-section">
-                <div class="section-title">Live Context Search</div>
-                <div class="input-group search-group">
-                    <input 
-                        v-model="searchQuery" 
-                        type="text" 
-                        placeholder="Search query..."
-                        class="director-input"
-                        @keyup.enter="handleLiveSearch"
-                    />
-                    <button class="director-btn secondary" @click="handleLiveSearch" :disabled="isSearching">
-                        {{ isSearching ? '...' : 'SEARCH' }}
-                    </button>
+            
+            <div class="feed-container" ref="scrollContainer">
+                 <!-- Waiting State -->
+                <div v-if="allActions.length === 0" class="waiting-state">
+                  <div class="pulse-ring"></div>
+                  <span>Waiting for signal...</span>
                 </div>
                 
-                <!-- Search Results Preview -->
-                <div class="search-results" v-if="searchResults.length > 0">
-                     <div 
-                        v-for="(result, idx) in searchResults" 
-                        :key="idx" 
-                        class="search-result-item"
-                        @click="selectSearchResult(result)"
-                     >
-                        <div class="result-source">{{ result.username || 'Web' }}</div>
-                        <div class="result-snippet">{{ truncateContent(result.content, 80) }}</div>
-                        <button class="inject-btn-small" @click.stop="injectSearchResult(result)">INJECT</button>
+                <TransitionGroup name="timeline-item">
+                  <div 
+                    v-for="action in sortedActions" 
+                    :key="action._uniqueId" 
+                    class="timeline-item"
+                    :class="action.platform"
+                  >
+                        <div class="card-header compact">
+                            <span class="agent-name">{{ action.agent_name }}</span>
+                            <span class="action-badge-mini" :class="action.action_type">{{ action.action_type }}</span>
+                        </div>
+                        <div class="card-body compact">
+                             {{ truncateContent(action.action_args?.content || action.action_args?.quote_content || '', 140) }}
+                        </div>
+                        <div class="card-footer compact">
+                            <span class="time-tag">R{{ action.round_num }}</span>
+                        </div>
+                  </div>
+                </TransitionGroup>
+            </div>
+        </div>
+        
+        <!-- CENTER COLUMN: CONTROL (Director Console) -->
+        <div class="grid-col center-col">
+            <!-- Sentiment Pulse -->
+            <div class="pulse-widget">
+               <SentimentPulse :simulation-id="props.simulationId" :rounds="runStatus.rounds_history || []" :height="80" />
+            </div>
+            
+            <!-- Director Tools -->
+             <div class="director-tools-container">
+                <div class="tool-group">
+                    <div class="tool-label">INJECTION</div>
+                     <textarea 
+                        v-model="injectionText" 
+                        placeholder="Inject Event..." 
+                        rows="2" 
+                        class="director-input"
+                    ></textarea>
+                    <button class="director-btn small" @click="handleInjectEvent" :disabled="isInjecting">INJECT</button>
+                </div>
+                
+                <div class="tool-group">
+                    <div class="tool-label">TIME MACHINE</div>
+                     <div class="fork-row">
+                        <input type="number" v-model.number="forkRoundInput" placeholder="Round #" class="director-input small">
+                        <button class="director-btn small warning" @click="handleForkRound" :disabled="isForking">FORK</button>
                      </div>
                 </div>
+                
+                 <div class="tool-group">
+                    <div class="tool-label">LIVE SEARCH</div>
+                    <div class="search-row">
+                        <input type="text" v-model="searchQuery" placeholder="Search Google..." class="director-input small" @keyup.enter="handleLiveSearch">
+                        <button class="director-btn small secondary" @click="handleLiveSearch" :disabled="isSearching">GO</button>
+                    </div>
+                </div>
             </div>
-            <!-- Tool: Green Room (Interrogation) -->
-            <div class="tool-section">
-                <div class="section-title">Interrogation Protocol</div>
-                <div class="input-group">
-                   <select v-model="activeAgentForGreenRoom" class="director-select" :disabled="loadingAgents">
-                       <option :value="null">-- Select Subject --</option>
-                       <option v-for="agent in availableAgents" :key="agent.id" :value="agent">
-                           {{ agent.name }} (ID: {{ agent.id }})
-                       </option>
-                   </select>
-                    <button class="director-btn action" @click="openGreenRoom" :disabled="!activeAgentForGreenRoom">
-                        ENTER GREEN ROOM
-                    </button>
+            
+            <!-- Global Controls -->
+            <div class="global-controls">
+                 <button 
+                  class="action-btn"
+                  :class="{'warning': runStatus.runner_status === 'running', 'success': runStatus.runner_status === 'paused'}"
+                  v-if="phase === 1" 
+                  @click="togglePauseResume"
+                  :disabled="isToggling"
+                >
+                  {{ runStatus.runner_status === 'running' ? 'PAUSE SIMULATION' : 'RESUME SIMULATION' }}
+                </button>
+                 <button 
+                  class="action-btn primary"
+                  :disabled="(phase !== 2 && runStatus.runner_status !== 'stopped' && runStatus.runner_status !== 'completed') || isGeneratingReport"
+                  @click="handleNextStep"
+                >
+                  <span v-if="isGeneratingReport" class="loading-spinner-small"></span>
+                  {{ isGeneratingReport ? 'Generating...' : 'GENERATE REPORT' }} 
+                </button>
+            </div>
+
+        </div>
+        
+        <!-- RIGHT COLUMN: ACTORS (Agent Census) -->
+        <div class="grid-col right-col">
+            <div class="col-header">
+                <span class="col-title">AGENTS</span>
+                <span class="agent-count">{{ availableAgents.length }} Active</span>
+            </div>
+            
+             <div class="agent-list">
+                <div 
+                    v-for="agent in availableAgents" 
+                    :key="agent.id" 
+                    class="agent-card-mini"
+                    :class="{ active: activeAgentForGreenRoom?.id === agent.id }"
+                    @click="activeAgentForGreenRoom = agent"
+                >
+                    <div class="agent-avatar-mini">{{ agent.name[0] }}</div>
+                    <div class="agent-details">
+                        <div class="agent-name">{{ agent.name }}</div>
+                        <div class="agent-role">{{ agent.profession }}</div>
+                    </div>
+                     <button class="interrogate-btn" @click.stop="openInterrogation(agent)">
+                        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                     </button>
                 </div>
             </div>
         </div>
@@ -214,188 +296,10 @@
         @close="greenRoomOpen = false"
     />
 
-    <!-- Main Content: Dual Timeline -->
-    <div class="main-content-area" ref="scrollContainer">
-      <!-- Timeline Header -->
-      <div class="timeline-header" v-if="allActions.length > 0">
-        <div class="timeline-stats">
-          <span class="total-count">TOTAL EVENTS: <span class="mono">{{ allActions.length }}</span></span>
-          <span class="platform-breakdown">
-            <span class="breakdown-item twitter">
-              <svg class="mini-icon" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
-              <span class="mono">{{ twitterActionsCount }}</span>
-            </span>
-            <span class="breakdown-divider">/</span>
-            <span class="breakdown-item reddit">
-              <svg class="mini-icon" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
-              <span class="mono">{{ redditActionsCount }}</span>
-            </span>
-          </span>
-        </div>
-      </div>
-      
-      <!-- Timeline Feed -->
-      <div class="timeline-feed">
-        <div class="timeline-axis"></div>
-        
-        <TransitionGroup name="timeline-item">
-          <div 
-            v-for="action in chronologicalActions" 
-            :key="action._uniqueId || action.id || `${action.timestamp}-${action.agent_id}`" 
-            class="timeline-item"
-            :class="action.platform"
-          >
-            <div class="timeline-marker">
-              <div class="marker-dot"></div>
-            </div>
-            
-            <div class="timeline-card">
-              <div class="card-header">
-                <div class="agent-info">
-                  <div class="avatar-placeholder">{{ (action.agent_name || 'A')[0] }}</div>
-                  <span class="agent-name">{{ action.agent_name }}</span>
-                </div>
-                
-                <div class="header-meta">
-                  <div class="platform-indicator">
-                    <svg v-if="action.platform === 'twitter'" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
-                    <svg v-else viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
-                  </div>
-                  <div class="action-badge" :class="getActionTypeClass(action.action_type)">
-                    {{ getActionTypeLabel(action.action_type) }}
-                  </div>
-                </div>
-              </div>
-              
-              <div class="card-body">
-                <!-- CREATE_POST: Publish Post -->
-                <div v-if="action.action_type === 'CREATE_POST' && action.action_args?.content" class="content-text main-text">
-                  {{ action.action_args.content }}
-                </div>
-
-                <!-- QUOTE_POST: Quote Post -->
-                <template v-if="action.action_type === 'QUOTE_POST'">
-                  <div v-if="action.action_args?.quote_content" class="content-text">
-                    {{ action.action_args.quote_content }}
-                  </div>
-                  <div v-if="action.action_args?.original_content" class="quoted-block">
-                    <div class="quote-header">
-                      <svg class="icon-small" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
-                      <span class="quote-label">@{{ action.action_args.original_author_name || 'User' }}</span>
-                    </div>
-                    <div class="quote-text">
-                      {{ truncateContent(action.action_args.original_content, 150) }}
-                    </div>
-                  </div>
-                </template>
-
-                <!-- REPOST: Repost -->
-                <template v-if="action.action_type === 'REPOST'">
-                  <div class="repost-info">
-                    <svg class="icon-small" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg>
-                    <span class="repost-label">Reposted from @{{ action.action_args?.original_author_name || 'User' }}</span>
-                  </div>
-                  <div v-if="action.action_args?.original_content" class="repost-content">
-                    {{ truncateContent(action.action_args.original_content, 200) }}
-                  </div>
-                </template>
-
-                <!-- LIKE_POST: Like Post -->
-                <template v-if="action.action_type === 'LIKE_POST'">
-                  <div class="like-info">
-                    <svg class="icon-small filled" viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
-                    <span class="like-label">Liked @{{ action.action_args?.post_author_name || 'User' }}'s post</span>
-                  </div>
-                  <div v-if="action.action_args?.post_content" class="liked-content">
-                    "{{ truncateContent(action.action_args.post_content, 120) }}"
-                  </div>
-                </template>
-
-                <!-- CREATE_COMMENT: Create Comment -->
-                <template v-if="action.action_type === 'CREATE_COMMENT'">
-                  <div v-if="action.action_args?.content" class="content-text">
-                    {{ action.action_args.content }}
-                  </div>
-                  <div v-if="action.action_args?.post_id" class="comment-context">
-                    <svg class="icon-small" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
-                    <span>Reply to post #{{ action.action_args.post_id }}</span>
-                  </div>
-                </template>
-
-                <!-- SEARCH_POSTS: Search Posts -->
-                <template v-if="action.action_type === 'SEARCH_POSTS'">
-                  <div class="search-info">
-                    <svg class="icon-small" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-                    <span class="search-label">Search Query:</span>
-                    <span class="search-query">"{{ action.action_args?.query || '' }}"</span>
-                  </div>
-                </template>
-
-                <!-- FOLLOW: Follow User -->
-                <template v-if="action.action_type === 'FOLLOW'">
-                  <div class="follow-info">
-                    <svg class="icon-small" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="8.5" cy="7" r="4"></circle><line x1="20" y1="8" x2="20" y2="14"></line><line x1="23" y1="11" x2="17" y2="11"></line></svg>
-                    <span class="follow-label">Followed @{{ action.action_args?.target_user || action.action_args?.user_id || 'User' }}</span>
-                  </div>
-                </template>
-
-                <!-- UPVOTE / DOWNVOTE -->
-                <template v-if="action.action_type === 'UPVOTE_POST' || action.action_type === 'DOWNVOTE_POST'">
-                  <div class="vote-info">
-                    <svg v-if="action.action_type === 'UPVOTE_POST'" class="icon-small" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"></polyline></svg>
-                    <svg v-else class="icon-small" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
-                    <span class="vote-label">{{ action.action_type === 'UPVOTE_POST' ? 'Upvoted' : 'Downvoted' }} Post</span>
-                  </div>
-                  <div v-if="action.action_args?.post_content" class="voted-content">
-                    "{{ truncateContent(action.action_args.post_content, 120) }}"
-                  </div>
-                </template>
-
-                <!-- DO_NOTHING: No Action (Idle) -->
-                <template v-if="action.action_type === 'DO_NOTHING'">
-                  <div class="idle-info">
-                    <svg class="icon-small" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-                    <span class="idle-label">Action Skipped</span>
-                  </div>
-                </template>
-
-                <!-- Fallback: Unknown Type or Has Content but not Processed -->
-                <div v-if="!['CREATE_POST', 'QUOTE_POST', 'REPOST', 'LIKE_POST', 'CREATE_COMMENT', 'SEARCH_POSTS', 'FOLLOW', 'UPVOTE_POST', 'DOWNVOTE_POST', 'DO_NOTHING'].includes(action.action_type) && action.action_args?.content" class="content-text">
-                  {{ action.action_args.content }}
-                </div>
-              </div>
-
-                <div class="card-footer">
-                 <div class="footer-left">
-                    <span class="time-tag">R{{ action.round_num }} • {{ formatActionTime(action.timestamp) }}</span>
-                 </div>
-                 <div class="footer-right">
-                    <!-- Annotation Marker -->
-                    <AnnotationMarker 
-                        v-if="isReplayMode"
-                        :action-id="action._uniqueId"
-                        :simulation-id="props.simulationId"
-                        :initial-content="annotations[action._uniqueId]?.content"
-                        @save="handleSaveAnnotation"
-                    />
-                 </div>
-              </div>
-            </div>
-          </div>
-        </TransitionGroup>
-
-        <div v-if="allActions.length === 0" class="waiting-state">
-          <div class="pulse-ring"></div>
-          <span>Waiting for agent actions...</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- Bottom Info / Logs -->
+    <!-- System Logs Footer -->
     <div class="system-logs">
       <div class="log-header">
-        <span class="log-title">SIMULATION MONITOR</span>
-        <span class="log-id">{{ simulationId || 'NO_SIMULATION' }}</span>
+        <span class="log-title">SYSTEM LOGS</span>
       </div>
       <div class="log-content" ref="logContent">
         <div class="log-line" v-for="(log, idx) in systemLogs" :key="idx">
@@ -413,6 +317,9 @@ import { useRouter } from 'vue-router'
 import { 
   startSimulation, 
   stopSimulation,
+  pauseSimulation,
+  resumeSimulation,
+  forkSimulation,
   getRunStatus, 
   getRunStatusDetail
 } from '../api/simulation'
@@ -422,10 +329,12 @@ import {
     getProjectAgents, 
     annotateAction, 
     getAnnotations 
-} from '../api/simulation' // Need to implement this wrapper
-import { searchRealWorld } from '../api/tools' // Need to implement this
+} from '../api/simulation' 
+import { searchRealWorld } from '../api/tools' 
 import GreenRoomModal from './GreenRoomModal.vue'
 import AnnotationMarker from './AnnotationMarker.vue'
+import SimulationTree from './SimulationTree.vue'
+import SentimentPulse from './SentimentPulse.vue'
 
 
 const props = defineProps({
@@ -440,7 +349,7 @@ const props = defineProps({
   systemLogs: Array
 })
 
-const emit = defineEmits(['go-back', 'next-step', 'add-log', 'update-status'])
+const emit = defineEmits(['go-back', 'next-step', 'add-log', 'update-status', 'switch-simulation'])
 
 const router = useRouter()
 
@@ -449,19 +358,22 @@ const isGeneratingReport = ref(false)
 const phase = ref(0) // 0: Not Started, 1: Running, 2: Completed
 const isStarting = ref(false)
 const isStopping = ref(false)
+const isToggling = ref(false) // For Pause/Resume
 const startError = ref(null)
 const runStatus = ref({})
 const allActions = ref([]) // All Actions (Incremental Accumulation)
 const actionIds = ref(new Set()) // Action ID set for deduplication
 const scrollContainer = ref(null)
 
-// Director Mode State
-const directorPanelOpen = ref(true)
-const injectionText = ref('')
 const isInjecting = ref(false)
+const injectionText = ref('')
 const searchQuery = ref('')
 const isSearching = ref(false)
 const searchResults = ref([])
+// Feed Search
+const feedSearchQuery = ref('')
+const forkRoundInput = ref(null)
+const isForking = ref(false)
 
 // Green Room State
 const greenRoomOpen = ref(false)
@@ -474,219 +386,96 @@ const isReplayMode = ref(false)
 const replayRound = ref(1)
 const annotations = ref({}) // { action_id: { content, author } }
 
+// --- Computed ---
 
-// Computed
-// Display actions in chronological order (Latest at the bottom)
-const chronologicalActions = computed(() => {
-  if (isReplayMode.value) {
-      // Filter actions up to the current replay round
-      // And Sort by timestamp (Oldest First for replay flow? Or keep reversed?)
-      // Use standard order but filter.
-      return allActions.value.filter(a => a.round_num <= replayRound.value)
-  }
-  return allActions.value
+const sortedActions = computed(() => {
+    let actions = [...allActions.value]
+    // Filter by Feed Search
+    if (feedSearchQuery.value.trim()) {
+        const q = feedSearchQuery.value.toLowerCase()
+        actions = actions.filter(a => 
+            (a.content && a.content.toLowerCase().includes(q)) ||
+            (a.agent_name && a.agent_name.toLowerCase().includes(q))
+        )
+    }
+    // Sort chronological for display (usually latest at bottom of scroll, or reverse?)
+    // Popinion usually appends.
+    return actions.sort((a, b) => a.timestamp - b.timestamp)
 })
 
 const maxReplayRound = computed(() => {
     return runStatus.value.total_rounds || props.maxRounds || 10
 })
 
-// Action count per Platform
-const twitterActionsCount = computed(() => {
-  return allActions.value.filter(a => a.platform === 'twitter').length
-})
-
-const redditActionsCount = computed(() => {
-  return allActions.value.filter(a => a.platform === 'reddit').length
-})
-
-// Format simulation elapsed time (calculated based on round count and minutes per round)
-const formatElapsedTime = (currentRound) => {
-  if (!currentRound || currentRound <= 0) return '0h 0m'
-  const totalMinutes = currentRound * props.minutesPerRound
-  const hours = Math.floor(totalMinutes / 60)
-  const minutes = totalMinutes % 60
-  return `${hours}h ${minutes}m`
-}
-
-// Twitter Platform Simulation elapsed time
 const twitterElapsedTime = computed(() => {
-  return formatElapsedTime(runStatus.value.twitter_current_round || 0)
+    const hours = runStatus.value.twitter_simulated_hours || 0
+    return `${hours.toFixed(1)}h`
 })
 
-// Reddit Platform Simulation elapsed time
 const redditElapsedTime = computed(() => {
-  return formatElapsedTime(runStatus.value.reddit_current_round || 0)
+    const hours = runStatus.value.reddit_simulated_hours || 0
+    return `${hours.toFixed(1)}h`
 })
 
-// Methods
-const addLog = (msg) => {
-  emit('add-log', msg)
+// --- Helpers ---
+
+const addLog = (msg) => emit('add-log', msg)
+
+const handleSwitchSimulation = (id) => {
+    emit('switch-simulation', id)
 }
 
-// Reset all states (for restarting Simulation)
-const resetAllState = () => {
-  phase.value = 0
-  runStatus.value = {}
-  allActions.value = []
-  actionIds.value = new Set()
-  prevTwitterRound.value = 0
-  prevRedditRound.value = 0
-  startError.value = null
-  isStarting.value = false
-  isStopping.value = false
-  stopPolling()  // Stop any existing polling
+const formatTime = (ts) => {
+    if (!ts) return ''
+    return new Date(ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
 
-// Start Simulation
-const doStartSimulation = async () => {
-  if (!props.simulationId) {
-    addLog('Error: Missing simulationId')
-    return
-  }
-  
-  // Reset all states first to ensure no impact from previous simulation
-  resetAllState()
-  
-  isStarting.value = true
-  startError.value = null
-  addLog('Starting dual-platform parallel simulation...')
-  emit('update-status', 'processing')
-  
-  try {
-    const params = {
-      simulation_id: props.simulationId,
-      platform: 'parallel',
-      force: true,  // Force Restart
-      enable_graph_memory_update: true  // Enable Dynamic Graph Update
-    }
-    
-    if (props.maxRounds) {
-      params.max_rounds = props.maxRounds
-      addLog(`Settings maximum Simulation rounds count: ${props.maxRounds}`)
-    }
-    
-    addLog('Dynamic graph update mode enabled')
-    
-    const res = await startSimulation(params)
-    
-    if (res.success && res.data) {
-      if (res.data.force_restarted) {
-        addLog('✓ Cleared old simulation logs, restarting simulation')
-      }
-      addLog('✓ Simulation engine started successfully')
-      addLog(`  ├─ PID: ${res.data.process_pid || '-'}`)
-      
-      phase.value = 1
-      runStatus.value = res.data
-      
-      startStatusPolling()
-      startDetailPolling()
-      
-      // Load agents for Director Console
-      fetchAgents()
-    } else {
-      startError.value = res.error || 'Start failed'
-      addLog(`✗ Start failed: ${res.error || 'Unknown error'}`)
-      emit('update-status', 'error')
-    }
-  } catch (err) {
-    startError.value = err.message
-    addLog(`✗ Start exception: ${err.message}`)
-    emit('update-status', 'error')
-  } finally {
-    isStarting.value = false
-  }
+const truncateContent = (text, len = 50) => {
+    if (!text) return ''
+    return text.length > len ? text.substring(0, len) + '...' : text
 }
 
-// Stop Simulation
-const handleStopSimulation = async () => {
-  if (!props.simulationId) return
-  
-  isStopping.value = true
-  addLog('Stopping Simulation...')
-  
-  try {
-    const res = await stopSimulation({ simulation_id: props.simulationId })
-    
-    if (res.success) {
-      addLog('✓ Simulation stopped')
-      phase.value = 2
-      stopPolling()
-      emit('update-status', 'completed')
-    } else {
-      addLog(`Stop failed: ${res.error || 'Unknown error'}`)
-    }
-  } catch (err) {
-    addLog(`Stop exception: ${err.message}`)
-  } finally {
-    isStopping.value = false
-  }
-}
+// --- Polling ---
 
-// Polling status
 let statusTimer = null
 let detailTimer = null
 
-const startStatusPolling = () => {
-  statusTimer = setInterval(fetchRunStatus, 2000)
-}
-
-const startDetailPolling = () => {
-  detailTimer = setInterval(fetchRunStatusDetail, 3000)
-}
-
 const stopPolling = () => {
-  if (statusTimer) {
-    clearInterval(statusTimer)
-    statusTimer = null
-  }
-  if (detailTimer) {
-    clearInterval(detailTimer)
-    detailTimer = null
-  }
+    if (statusTimer) { clearInterval(statusTimer); statusTimer = null; }
+    if (detailTimer) { clearInterval(detailTimer); detailTimer = null; }
 }
 
-// Track last round for each platform to detect changes and log
-const prevTwitterRound = ref(0)
-const prevRedditRound = ref(0)
+const checkPlatformsCompleted = (data) => {
+  if (!data) return false
+  const twitterFinished = (data.twitter_completed === true) || (data.twitter_current_round > 0 && data.twitter_current_round >= data.total_rounds)
+  const redditFinished = (data.reddit_completed === true) || (data.reddit_current_round > 0 && data.reddit_current_round >= data.total_rounds)
+  return twitterFinished && redditFinished
+}
 
 const fetchRunStatus = async () => {
   if (!props.simulationId) return
   
   try {
     const res = await getRunStatus(props.simulationId)
-    
     if (res.success && res.data) {
       const data = res.data
-      
       runStatus.value = data
       
-      // Detect round changes for each platform and log
-      if (data.twitter_current_round > prevTwitterRound.value) {
-        addLog(`[Plaza] R${data.twitter_current_round}/${data.total_rounds} | T:${data.twitter_simulated_hours || 0}h | A:${data.twitter_actions_count}`)
-        prevTwitterRound.value = data.twitter_current_round
-      }
-      
-      if (data.reddit_current_round > prevRedditRound.value) {
-        addLog(`[Community] R${data.reddit_current_round}/${data.total_rounds} | T:${data.reddit_simulated_hours || 0}h | A:${data.reddit_actions_count}`)
-        prevRedditRound.value = data.reddit_current_round
-      }
-      
-      // Detect if Simulation is Completed (via runner_status or Platform Completed status)
-      // Detect if Simulation is Completed (via runner_status or Platform Completed status)
       const isCompleted = data.runner_status === 'completed' || data.runner_status === 'stopped'
-      
       const platformsCompleted = checkPlatformsCompleted(data)
       
       if (isCompleted || platformsCompleted) {
-        if (platformsCompleted && !isCompleted) {
-          addLog('✓ Detected all platforms simulation completed')
-        }
-        addLog('✓ Simulation Completed')
-        phase.value = 2
-        stopPolling()
-        emit('update-status', 'completed')
+         if (platformsCompleted && !isCompleted && phase.value !== 2) {
+             addLog('✓ Platforms finished')
+         }
+         if (phase.value !== 2) {
+             addLog('✓ Simulation Completed')
+             phase.value = 2
+             stopPolling()
+             emit('update-status', 'completed')
+         }
+      } else {
+          phase.value = 1
       }
     }
   } catch (err) {
@@ -694,17 +483,43 @@ const fetchRunStatus = async () => {
   }
 }
 
+const fetchRunStatusDetail = async () => {
+  if (!props.simulationId) return
+  try {
+    const res = await getRunStatusDetail(props.simulationId)
+    if (res.success && res.data) {
+      const serverActions = res.data.all_actions || []
+      serverActions.forEach(action => {
+        // Safe ID generation
+        const actionId = action.id || action._uniqueId || `${action.timestamp}-${action.platform}-${action.agent_id}-${action.action_type}`
+        if (!actionIds.value.has(actionId)) {
+          actionIds.value.add(actionId)
+          allActions.value.push({ ...action, _uniqueId: actionId })
+        }
+      })
+    }
+  } catch (err) {
+    console.warn('Detail poll failed', err)
+  }
+}
+
+const startPolling = () => {
+    stopPolling()
+    fetchRunStatus()
+    fetchRunStatusDetail()
+    statusTimer = setInterval(fetchRunStatus, 2000)
+    detailTimer = setInterval(fetchRunStatusDetail, 3000)
+}
+
+// --- Agent & Green Room ---
+
 const fetchAgents = async () => {
     if (!props.simulationId || !props.projectData?.id) return
     loadingAgents.value = true
     try {
-        // Use project agents if available, filtering by those in this sim?
-        // Actually getProjectAgents with simulation_id is better if supported, 
-        // fallback to generic project agents if needed.
         const res = await getProjectAgents(props.projectData.id, props.simulationId)
         if (res.success && res.data) {
-            // Standardize format
-            availableAgents.value = res.data.map(a => ({
+             availableAgents.value = res.data.map(a => ({
                 id: a.agent_id || a.id,
                 name: a.agent_name || a.name || `Agent ${a.id}`,
                 profession: a.profession || 'Unknown',
@@ -714,295 +529,104 @@ const fetchAgents = async () => {
             }))
         }
     } catch (e) {
-        console.error("Failed to fetch agents", e)
+        console.error("Fetch Agents Failed", e)
     } finally {
         loadingAgents.value = false
     }
 }
 
 const openGreenRoom = () => {
-    if (activeAgentForGreenRoom.value) {
-        greenRoomOpen.value = true
-    }
+    if (activeAgentForGreenRoom.value) greenRoomOpen.value = true
 }
 
-
-
-// Check if all Enabled Platforms are Completed
-const checkPlatformsCompleted = (data) => {
-  // If no Platform data, Return false
-  if (!data) return false
-  
-  // Check Completed status for each Platform
-  const twitterCompleted = data.twitter_completed === true
-  const redditCompleted = data.reddit_completed === true
-  
-  // IMPORTANT: Both platforms must be completed (or have reached their total rounds)
-  // A platform is considered completed if:
-  // 1. Its _completed flag is true, OR
-  // 2. Its current_round equals total_rounds (reached the end)
-  
-  const twitterFinished = twitterCompleted || 
-    (data.twitter_current_round > 0 && data.twitter_current_round >= data.total_rounds)
-  const redditFinished = redditCompleted || 
-    (data.reddit_current_round > 0 && data.reddit_current_round >= data.total_rounds)
-  
-  // BOTH platforms must be finished for simulation to be complete
-  // This prevents enabling report generation when only one platform has run
-  return twitterFinished && redditFinished
+const openInterrogation = (agent) => {
+    activeAgentForGreenRoom.value = agent
+    openGreenRoom()
 }
 
-const fetchRunStatusDetail = async () => {
-  if (!props.simulationId) return
-  
-  try {
-    const res = await getRunStatusDetail(props.simulationId)
-    
-    if (res.success && res.data) {
-      // Use all_actions to get complete action list
-      const serverActions = res.data.all_actions || []
-      
-      // Incrementally Add New Actions (Deduplication)
-      let newActionsAdded = 0
-      serverActions.forEach(action => {
-        // Generate Unique ID
-        const actionId = action.id || `${action.timestamp}-${action.platform}-${action.agent_id}-${action.action_type}`
-        
-        if (!actionIds.value.has(actionId)) {
-          actionIds.value.add(actionId)
-          allActions.value.push({
-            ...action,
-            _uniqueId: actionId
-          })
-          newActionsAdded++
+// --- Actions ---
+
+const handleStart = async () => {
+    isStarting.value = true
+    try {
+        const res = await startSimulation(props.simulationId)
+        if (res.success) {
+            addLog('Simulation Started')
+            phase.value = 1
+            startPolling()
+        } else {
+            startError.value = res.error
         }
-      })
-      
-      // No Auto Scroll, Let user freely View timeline
-      // New actions will be appended at bottom
+    } catch (e) {
+        startError.value = e.message
+    } finally {
+        isStarting.value = false
     }
-  } catch (err) {
-    console.warn('getDetailedstatusFailed:', err)
-  }
 }
 
-// --- Director Mode Actions ---
+const togglePauseResume = async () => {
+    isToggling.value = true
+    try {
+        if (runStatus.value.runner_status === 'running') {
+            await pauseSimulation(props.simulationId)
+            addLog('Paused')
+        } else {
+            await resumeSimulation(props.simulationId)
+            addLog('Resumed')
+        }
+        await fetchRunStatus() // Refresh immediately
+    } catch (e) {
+        console.error(e)
+    } finally {
+        isToggling.value = false
+    }
+}
 
 const handleInjectEvent = async () => {
-    if (!injectionText.value.trim()) return;
-    if (!props.simulationId) return;
-    
-    isInjecting.value = true;
-    try {
-        addLog(`Director: Injecting event...`);
-        const res = await injectEvent(props.simulationId, injectionText.value);
-        
-        if (res.success) {
-            addLog(`✓ Event Injected: "${truncateContent(injectionText.value, 30)}"`);
-            injectionText.value = ''; // Clear input
-        } else {
-            addLog(`✗ Injection Failed: ${res.error}`);
-        }
-    } catch (e) {
-        addLog(`✗ Injection Error: ${e.message}`);
-    } finally {
-        isInjecting.value = false;
-    }
-};
+     if (!injectionText.value.trim()) return
+     isInjecting.value = true
+     try {
+         await injectEvent(props.simulationId, injectionText.value)
+         addLog(`Injected: ${injectionText.value}`)
+         injectionText.value = ''
+     } catch (e) { console.error(e) }
+     finally { isInjecting.value = false }
+}
 
-const handleLiveSearch = async () => {
-    if (!searchQuery.value.trim()) return;
-    
-    isSearching.value = true;
-    searchResults.value = [];
-    try {
-        addLog(`Director: Searching "${searchQuery.value}"...`);
-        const res = await searchRealWorld({
-            query: searchQuery.value,
-            limit: 3
-        });
-        
-        if (res.success && res.data && res.data.results) {
-            searchResults.value = res.data.results;
-            addLog(`✓ Found ${res.data.results.length} results`);
-        } else {
-            addLog(`✗ Search Failed or No key found`);
-        }
-    } catch (e) {
-        addLog(`✗ Search Error: ${e.message}`);
-    } finally {
-        isSearching.value = false;
-    }
-};
+const handleLiveSearch = () => {
+    // Placeholder
+    console.log("Live search not implemented yet")
+}
 
-const injectSearchResult = async (result) => {
-    if (!props.simulationId) return;
-    
-    // Construct event text from result
-    const eventText = `Breaking News from ${result.source_url || 'Web'}: ${result.content}`;
-    
-    isInjecting.value = true;
-    try {
-        addLog(`Director: Injecting search result...`);
-         const res = await injectEvent(props.simulationId, eventText, result);
-        
-        if (res.success) {
-             addLog(`✓ Result Injected`);
-        } else {
-             addLog(`✗ Injection Failed: ${res.error}`);
-        }
-    } catch (e) {
-         addLog(`✗ Injection Error: ${e.message}`);
-    } finally {
-        isInjecting.value = false;
-    }
-};
-
-// --- Annotation Handling ---
-const handleSaveAnnotation = async ({ actionId, content }) => {
-    if (!props.simulationId) return;
-    
-    // Optimistic update
-    annotations.value[actionId] = { 
-        ...annotations.value[actionId], 
-        content, 
-        author: 'Director',
-        timestamp: new Date().toISOString()
-    };
-    
-    try {
-        await annotateAction(props.simulationId, {
-            action_id: actionId,
-            content: content,
-            author: 'Director'
-        });
-    } catch (e) {
-        console.error("Failed to save annotation", e);
+const handleForkRound = async () => {
+    // Placeholder
+    console.log("Forking not implemented yet")
+    if (forkRoundInput.value) {
+        addLog(`Mock Fork from Round ${forkRoundInput.value}`)
     }
 }
 
-// Load annotations when entering Replay Mode
-watch(isReplayMode, async (newVal) => {
-    if (newVal && props.simulationId) {
-        try {
-           const res = await getAnnotations(props.simulationId);
-           if (res.success) {
-               annotations.value = res.data;
-           }
-        } catch (e) {
-            console.error("Failed to load annotations", e);
-        }
-    }
-});
-
-// Helpers
-const getActionTypeLabel = (type) => {
-  const labels = {
-    'CREATE_POST': 'POST',
-    'REPOST': 'REPOST',
-    'LIKE_POST': 'LIKE',
-    'CREATE_COMMENT': 'COMMENT',
-    'LIKE_COMMENT': 'LIKE',
-    'DO_NOTHING': 'IDLE',
-    'FOLLOW': 'FOLLOW',
-    'SEARCH_POSTS': 'SEARCH',
-    'QUOTE_POST': 'QUOTE',
-    'UPVOTE_POST': 'UPVOTE',
-    'DOWNVOTE_POST': 'DOWNVOTE'
-  }
-  return labels[type] || type || 'UNKNOWN'
+const handleNextStep = () => {
+    emit('next-step')
 }
 
-const getActionTypeClass = (type) => {
-  const classes = {
-    'CREATE_POST': 'badge-post',
-    'REPOST': 'badge-action',
-    'LIKE_POST': 'badge-action',
-    'CREATE_COMMENT': 'badge-comment',
-    'LIKE_COMMENT': 'badge-action',
-    'QUOTE_POST': 'badge-post',
-    'FOLLOW': 'badge-meta',
-    'SEARCH_POSTS': 'badge-meta',
-    'UPVOTE_POST': 'badge-action',
-    'DOWNVOTE_POST': 'badge-action',
-    'DO_NOTHING': 'badge-idle'
-  }
-  return classes[type] || 'badge-default'
+const handleSaveAnnotation = ({ actionId, content }) => {
+    // Placeholder
+    console.log("Saving annotation", actionId, content)
 }
 
-const truncateContent = (content, maxLength = 100) => {
-  if (!content) return ''
-  if (content.length > maxLength) return content.substring(0, maxLength) + '...'
-  return content
-}
-
-const formatActionTime = (timestamp) => {
-  if (!timestamp) return ''
-  try {
-    return new Date(timestamp).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
-  } catch {
-    return ''
-  }
-}
-
-const handleNextStep = async () => {
-  if (!props.simulationId) {
-    addLog('Error: Missing simulationId')
-    return
-  }
-  
-  if (isGeneratingReport.value) {
-    addLog('Report Generation request Sent, Please Wait...')
-    return
-  }
-  
-  isGeneratingReport.value = true
-  addLog('Starting Report Generation...')
-  
-  try {
-    const res = await generateReport({
-      simulation_id: props.simulationId,
-      force_regenerate: true
-    })
-    
-    if (res.success && res.data) {
-      const reportId = res.data.report_id
-      addLog(`✓ Report Generation Task Started: ${reportId}`)
-      
-      // Redirect to Report page
-      router.push({ name: 'Report', params: { reportId } })
-    } else {
-      addLog(`✗ Start Report Generation Failed: ${res.error || 'Unknown Error'}`)
-      isGeneratingReport.value = false
-    }
-  } catch (err) {
-    addLog(`✗ Start Report Generation Exception: ${err.message}`)
-    isGeneratingReport.value = false
-  }
-}
-
-// Scroll log to bottom
-const logContent = ref(null)
-watch(() => props.systemLogs?.length, () => {
-  nextTick(() => {
-    if (logContent.value) {
-      logContent.value.scrollTop = logContent.value.scrollHeight
-    }
-  })
-})
+// --- Lifecycle ---
 
 onMounted(() => {
-  addLog('Step3 Simulation Run Initializing')
-  if (props.simulationId) {
-    doStartSimulation()
-  }
+    addLog('Entering Director Mode')
+    startPolling()
+    fetchAgents()
 })
 
 onUnmounted(() => {
-  stopPolling()
+    stopPolling()
 })
 </script>
-
 <style src="../views/director_panel.css" scoped></style>
 
 <style scoped>
@@ -1686,6 +1310,224 @@ input:checked + .slider:before { transform: translateX(16px); }
 }
 .director-btn.action:hover:not(:disabled) {
     background: #10B981;
+}
+
+
+/* --- Omega Dashboard Styles --- */
+.omega-grid {
+    display: grid;
+    grid-template-columns: 2fr 1.5fr 1fr;
+    grid-template-rows: minmax(0, 1fr); /* Fill available height */
+    gap: 16px;
+    height: calc(100vh - 350px); /* Adjust based on header/tree/logs */
+    min-height: 400px;
+    margin-bottom: 20px;
+}
+
+.grid-col {
+    background: rgba(0,0,0,0.2);
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.col-header {
+    padding: 10px 15px;
+    background: rgba(0,0,0,0.3);
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.col-title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    color: #888;
+}
+
+/* Feed Column */
+.feed-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.feed-tools {
+    flex: 1;
+    margin-left: 20px;
+}
+
+.feed-search-input {
+    width: 100%;
+    background: transparent;
+    border: 1px solid #444;
+    border-radius: 4px;
+    color: #fff;
+    font-size: 12px;
+    padding: 4px 8px;
+}
+
+/* Timeline Item Compact Override for Feed */
+.timeline-item {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 6px;
+    padding: 10px;
+}
+
+.card-header.compact {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 5px;
+}
+
+.action-badge-mini {
+    font-size: 9px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: #333;
+    color: #ccc;
+    text-transform: uppercase;
+}
+
+.card-body.compact {
+    font-size: 13px;
+    line-height: 1.4;
+    color: #ddd;
+    margin-bottom: 5px;
+}
+
+.card-footer.compact {
+    font-size: 10px;
+    color: #666;
+    display: flex;
+    justify-content: space-between;
+}
+
+
+/* Center Column (Control) */
+.center-col {
+    padding: 15px;
+    gap: 20px;
+}
+
+.director-tools-container {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.tool-group {
+    background: rgba(255,255,255,0.03);
+    padding: 10px;
+    border-radius: 6px;
+    border: 1px solid rgba(255,255,255,0.05);
+}
+
+.tool-label {
+    font-size: 10px;
+    color: #888;
+    margin-bottom: 8px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+}
+
+.director-btn.small {
+    font-size: 11px;
+    padding: 6px 12px;
+}
+
+.fork-row, .search-row {
+    display: flex;
+    gap: 8px;
+}
+
+.global-controls {
+    margin-top: auto;
+    display: flex;
+    gap: 10px;
+}
+
+/* Right Column (Agents) */
+.agent-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.agent-card-mini {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.agent-card-mini:hover {
+    background: rgba(255,255,255,0.1);
+}
+
+.agent-card-mini.active {
+    border: 1px solid #00ff9d;
+    background: rgba(0, 255, 157, 0.1);
+}
+
+.agent-avatar-mini {
+    width: 24px;
+    height: 24px;
+    background: #444;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    font-weight: bold;
+    color: #fff;
+}
+
+.agent-details {
+    flex: 1;
+    min-width: 0;
+}
+
+.agent-name {
+    font-size: 12px;
+    font-weight: 600;
+    color: #eee;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.agent-role {
+    font-size: 10px;
+    color: #888;
+}
+
+.interrogate-btn {
+    background: transparent;
+    border: none;
+    color: #00ff9d;
+    cursor: pointer;
+    padding: 4px;
+    opacity: 0.5;
+}
+
+.agent-card-mini:hover .interrogate-btn {
+    opacity: 1;
 }
 
 </style>

@@ -9,7 +9,29 @@ export default defineConfig({
   plugins: [
     vue(),
     electron({
-      entry: 'electron/main.js',
+      entry: {
+        main: 'electron/main.js',
+        preload: 'electron/preload.js',
+      },
+
+      vite: {
+        build: {
+          lib: {
+            entry: {
+              main: 'electron/main.js',
+              preload: 'electron/preload.js',
+            },
+            formats: ['cjs'],
+            fileName: (format, entryName) => `${entryName}.${format}`,
+          },
+          rollupOptions: {
+            output: {
+              entryFileNames: '[name].cjs',
+              format: 'cjs',
+            },
+          },
+        },
+      },
     }),
   ],
   resolve: {

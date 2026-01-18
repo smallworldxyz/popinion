@@ -726,10 +726,177 @@ class SimulationRunner:
             return False
         if reddit_enabled and not state.reddit_completed:
             return False
+            # At least one platform enabled and completed
+            return twitter_enabled or reddit_enabled
         
-        # At least one platform enabled and completed
-        return twitter_enabled or reddit_enabled
-    
+    @classmethod
+    def snapshot_state(cls, simulation_id: str, round_num: int) -> bool:
+        """
+        Create a snapshot of the simulation state at the specified round.
+        
+        Args:
+           simulation_id: Simulation ID
+           round_num: Round number to snapshot
+           
+        Returns:
+           True if success
+        """
+        import shutil
+        
+        sim_dir = os.path.join(cls.RUN_STATE_DIR, simulation_id)
+        snapshot_dir = os.path.join(sim_dir, "snapshots", f"round_{round_num}")
+        
+        if os.path.exists(snapshot_dir):
+            logger.info(f"Snapshot already exists for {simulation_id} round {round_num}")
+            return True
+            
+        try:
+            os.makedirs(snapshot_dir, exist_ok=True)
+            
+            # Files to backup
+            files_to_copy = [
+                "run_state.json",
+                "config.json", # If exists
+                "simulation_config.json",
+                "twitter/actions.jsonl",
+                "reddit/actions.jsonl",
+                "state.json"  # Oasis state
+            ]
+            
+            # Also need to handle agent memory if file based? 
+            # Current implementation relies on Neo4j for memory, but for "Time Machine" 
+            # we simply mark the divergence point. The Graph DB will contain all history.
+            # Forking will just start a new simulation ID.
+            
+            for fname in files_to_copy:
+                src = os.path.join(sim_dir, fname)
+                dst = os.path.join(snapshot_dir, fname)
+                
+                # Check subdir
+                if "/" in fname:
+                    os.makedirs(os.path.dirname(dst), exist_ok=True)
+                
+                if os.path.exists(src):
+                    shutil.copy2(src, dst)
+                    
+            logger.info(f"Snapshot created: {snapshot_dir}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Snapshot failed: {e}")
+            return False
+
+    @classmethod
+    def fork_simulation(cls, source_simulation_id: str, round_num: int) -> str:
+        """
+        Fork a simulation from a specific round.
+        
+        Creates a new Simulation ID and copies the state from the snapshot (or live state if round matches)
+        to the new directory.
+        
+        Args:
+            source_simulation_id: Source simulation ID
+            round_num: Round number to fork from
+            
+        Returns:
+            New Simulation ID
+        """
+        import uuid
+        import shutil
+        
+        # 1. Create Snapshot first to ensure consistent state
+        if not cls.snapshot_state(source_simulation_id, round_num):
+             raise ValueError("Failed to create source snapshot")
+             
+        source_dir = os.path.join(cls.RUN_STATE_DIR, source_simulation_id)
+        snapshot_dir = os.path.join(source_dir, "snapshots", f"round_{round_num}")
+        
+        if not os.path.exists(snapshot_dir):
+             raise ValueError(f"Snapshot not found for round {round_num}")
+             
+        # 2. Generate new ID
+        new_simulation_id = f"sim_{uuid.uuid4().hex[:8]}"
+        new_sim_dir = os.path.join(cls.RUN_STATE_DIR, new_simulation_id)
+        
+        try:
+            os.makedirs(new_sim_dir, exist_ok=True)
+            
+            # 3. Copy files from snapshot to new root
+            # We must recursively copy the snapshot contents
+            # But snapshot structure mirrors root structure (e.g. twitter/actions.jsonl)
+            
+            def copy_tree(src, dst):
+                for item in os.listdir(src):
+                    s = os.path.join(src, item)
+                    d = os.path.join(dst, item)
+                    if os.path.isdir(s):
+                        shutil.copytree(s, d, dirs_exist_ok=True)
+                    else:
+                        shutil.copy2(s, d)
+                        
+            copy_tree(snapshot_dir, new_sim_dir)
+            
+            # 4. Update 'run_state.json' for the new simulation
+            # We need to reset the PID, status, etc.
+            new_state_file = os.path.join(new_sim_dir, "run_state.json")
+            if os.path.exists(new_state_file):
+                 with open(new_state_file, 'r') as f:
+                     state_data = json.load(f)
+                     
+                 state_data["simulation_id"] = new_simulation_id
+                 state_data["runner_status"] = "idle"
+                 state_data["process_pid"] = None
+                 state_data["started_at"] = None
+                 state_data["completed_at"] = None
+                 state_data["error"] = None
+                 state_data["prent_simulation_id"] = source_simulation_id # Track parent
+                 state_data["parent_fork_round"] = round_num
+                 
+                 # Also truncate actions list in loaded state if necessary? 
+                 # The detailed log files are already truncated effectively because we copied from snapshot at round N.
+                 # Wait, if snapshot was full copy of file at round N, then it only has history up to N.
+                 # Correct.
+                 
+                 with open(new_state_file, 'w') as f:
+                     json.dump(state_data, f, indent=2)
+            
+            # 5. Also need to copy profiles which are not in snapshot logic above?
+            # Profiles are static mostly, usually in root.
+            # My snapshot logic only included specific files. 
+            # We should probably copy ALL static files from SOURCE ROOT (profiles, etc) 
+            # that were NOT in the snapshot if they are missing.
+            
+            # Better strategy: Copy Source Root -> New Root, THEN Overwrite with Snapshot.
+            # But Source Root might have "future" data (Round N+10).
+            # So: Copy Source Configs/Profiles (Static) -> New Root.
+            # Then Copy Snapshot (Dynamic State at Round N) -> New Root.
+            
+            # Copy static files from source root
+            static_files = ["reddit_profiles.json", "twitter_profiles.csv", "simulation_config.json"]
+            for f in static_files:
+                src_f = os.path.join(source_dir, f)
+                if os.path.exists(src_f):
+                    shutil.copy2(src_f, os.path.join(new_sim_dir, f))
+                    
+            logger.info(f"Forked simulation: {source_simulation_id} (R{round_num}) -> {new_simulation_id}")
+            return new_simulation_id
+            
+        except Exception as e:
+            logger.error(f"Fork failed: {e}")
+            raise e
+
+    @classmethod
+    def run_simulation(cls, *args, **kwargs):
+        # Alias for start_simulation to match some call sites if any
+        return cls.start_simulation(*args, **kwargs)
+
+    @classmethod
+    def pause_simulation(cls, simulation_id: str) -> bool:
+        """Stop simulation"""
+        state = cls.get_run_state(simulation_id)
+        if not state:
+            raise ValueError(f"Simulation does not exist: {simulation_id}")
+        
     @classmethod
     def stop_simulation(cls, simulation_id: str) -> SimulationRunState:
         """Stop simulation"""
@@ -793,6 +960,37 @@ class SimulationRunner:
         logger.info(f"Simulation stopped: {simulation_id}")
         return state
     
+
+            
+        root_id = current_id
+        
+        # 3. BFS to find all descendants of Root
+        # Build adjacency list first
+        children_map = {}
+        for nid, node in all_nodes.items():
+            pid = node.get("parent")
+            if pid:
+                if pid not in children_map:
+                    children_map[pid] = []
+                children_map[pid].append(nid)
+                
+        # BFS
+        lineage_nodes = []
+        queue = [root_id]
+        visited = {root_id}
+        
+        while queue:
+            curr = queue.pop(0)
+            if curr in all_nodes:
+                lineage_nodes.append(all_nodes[curr])
+            
+            for child in children_map.get(curr, []):
+                if child not in visited:
+                    visited.add(child)
+                    queue.append(child)
+                    
+        return {"nodes": lineage_nodes}
+
     @classmethod
     def _read_actions_from_file(
         cls,

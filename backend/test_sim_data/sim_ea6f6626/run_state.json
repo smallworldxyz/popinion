@@ -1,0 +1,11 @@
+{
+  "simulation_id": "sim_ea6f6626",
+  "runner_status": "idle",
+  "current_round": 10,
+  "process_pid": null,
+  "started_at": null,
+  "completed_at": null,
+  "error": null,
+  "prent_simulation_id": "sim_source_1",
+  "parent_fork_round": 5
+}

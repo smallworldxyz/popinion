@@ -12,6 +12,30 @@ const service = axios.create({
 // Request interceptor
 service.interceptors.request.use(
   config => {
+    // Desktop Mode (BYOK): Inject Keys from localStorage
+    const activeProvider = localStorage.getItem('po_active_provider') || 'openai'
+    let apiKey = ''
+    let model = ''
+
+    // Get appropriate key and model
+    if (activeProvider === 'openai') {
+      apiKey = localStorage.getItem('po_openai_key')
+      model = localStorage.getItem('po_openai_model') || 'gpt-4o-mini'
+    } else if (activeProvider === 'google') {
+      apiKey = localStorage.getItem('po_google_key')
+      model = localStorage.getItem('po_google_model') || 'gemini/gemini-1.5-pro'
+    } else if (activeProvider === 'anthropic') {
+      apiKey = localStorage.getItem('po_anthropic_key')
+      model = localStorage.getItem('po_anthropic_model') || 'anthropic/claude-3-5-sonnet-20240620'
+    }
+
+    if (apiKey) {
+      config.headers['X-LLM-Key'] = apiKey
+    }
+    if (model) {
+      config.headers['X-LLM-Model'] = model
+    }
+
     return config
   },
   error => {

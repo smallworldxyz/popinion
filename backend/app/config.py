@@ -26,6 +26,10 @@ class Config:
     
     # JSON configuration - Disable ASCII escaping for direct text display (not \uXXXX format)
     JSON_AS_ASCII = False
+
+    # Platform Mode (Hybrid Architecture)
+    # If True, Auth is relaxed (Auto-Login). If False, Auth is strict (JWT Required).
+    DESKTOP_MODE = os.environ.get('DESKTOP_MODE', 'True').lower() == 'true'
     
     # LLM configuration (using OpenAI-compatible format)
     LLM_API_KEY = os.environ.get('LLM_API_KEY')
