@@ -10,7 +10,52 @@
       </div>
       <div class="header-text">
         <h2>Quick Survey</h2>
-        <span class="subtitle">Poll {{ totalAgents }} agents with structured responses</span>
+        <span class="subtitle">Poll agents with structured responses</span>
+      </div>
+    </div>
+
+    <!-- Agent Selection -->
+    <div class="agent-selection-section">
+      <div class="selection-header">
+        <label class="input-label">Survey Recipients</label>
+        <div class="selection-actions">
+          <button class="action-btn" @click="selectAllAgents" :disabled="isLoading">
+            Select All
+          </button>
+          <button class="action-btn" @click="clearSelection" :disabled="isLoading || selectedAgents.size === 0">
+            Clear
+          </button>
+        </div>
+      </div>
+      <div class="selection-display">
+        <div v-if="selectedAgents.size === 0" class="no-selection">
+          <span class="no-selection-text">No agents selected</span>
+          <button class="select-agents-btn" @click="showSelectionModal = true" :disabled="isLoading">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" y1="8" x2="12" y2="16"></line>
+              <line x1="8" y1="12" x2="16" y2="12"></line>
+            </svg>
+            Select Agents
+          </button>
+        </div>
+        <div v-else class="selected-agents-display">
+          <div class="agent-chips">
+            <span 
+              v-for="idx in Array.from(selectedAgents).slice(0, 6)" 
+              :key="idx" 
+              class="agent-chip"
+            >
+              {{ getAgentName(idx) }}
+            </span>
+            <span v-if="selectedAgents.size > 6" class="agent-chip more-chip">
+              +{{ selectedAgents.size - 6 }} more
+            </span>
+          </div>
+          <button class="modify-btn" @click="showSelectionModal = true" :disabled="isLoading">
+            Modify ({{ selectedAgents.size }}/{{ totalAgents }})
+          </button>
+        </div>
       </div>
     </div>
 
@@ -60,13 +105,27 @@
 
       <button
         class="submit-btn"
-        :disabled="!question.trim() || isLoading"
+        :disabled="!question.trim() || isLoading || selectedAgents.size === 0"
         @click="runSurvey"
       >
         <span v-if="isLoading" class="loading-spinner"></span>
-        <span v-else>🗳️ Run Survey</span>
+        <span v-else-if="selectedAgents.size === 0">⚠️ Select agents first</span>
+        <span v-else>🗳️ Survey {{ selectedAgents.size }} Agent{{ selectedAgents.size > 1 ? 's' : '' }}</span>
       </button>
     </div>
+
+    <!-- Agent Selection Modal -->
+    <EntitySelectionModal
+      :show="showSelectionModal"
+      :entities="profilesAsEntities"
+      :by-type="profilesByType"
+      title="Select Survey Recipients"
+      item-label="agents"
+      :show-estimate="false"
+      :select-all-by-default="false"
+      @close="showSelectionModal = false"
+      @confirm="handleAgentSelection"
+    />
 
     <!-- Results -->
     <div v-if="result" class="results-section">
@@ -131,11 +190,16 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { createSurvey, deploySurvey } from '../api/simulation'
+import EntitySelectionModal from './EntitySelectionModal.vue'
 
 const props = defineProps({
   simulationId: {
     type: String,
     required: true
+  },
+  profiles: {
+    type: Array,
+    default: () => []
   },
   totalAgents: {
     type: Number,
@@ -151,6 +215,57 @@ const responseType = ref('likert')
 const isLoading = ref(false)
 const result = ref(null)
 const error = ref(null)
+
+// Agent Selection State
+const selectedAgents = ref(new Set())
+const showSelectionModal = ref(false)
+
+// Convert profiles to entities format for EntitySelectionModal
+const profilesAsEntities = computed(() => {
+  return props.profiles.map((p, idx) => ({
+    uuid: idx,  // EntitySelectionModal uses 'uuid' for selection tracking
+    id: idx,
+    name: p.username || p.display_name || `Agent ${idx}`,
+    type: p.source_entity_type || p.profession || 'Unknown'
+  }))
+})
+
+// Group profiles by type for EntitySelectionModal
+const profilesByType = computed(() => {
+  const byType = {}
+  props.profiles.forEach((p, idx) => {
+    const type = p.source_entity_type || p.profession || 'Unknown'
+    if (!byType[type]) byType[type] = []
+    byType[type].push({
+      uuid: idx,  // EntitySelectionModal uses 'uuid' for selection tracking
+      id: idx,
+      name: p.username || p.display_name || `Agent ${idx}`,
+      type
+    })
+  })
+  return byType
+})
+
+// Get agent name by index
+const getAgentName = (idx) => {
+  const profile = props.profiles[idx]
+  if (!profile) return `Agent ${idx}`
+  return profile.username || profile.display_name || `Agent ${idx}`
+}
+
+// Selection helpers
+const selectAllAgents = () => {
+  selectedAgents.value = new Set(props.profiles.map((_, idx) => idx))
+}
+
+const clearSelection = () => {
+  selectedAgents.value = new Set()
+}
+
+const handleAgentSelection = (selectedIds) => {
+  selectedAgents.value = new Set(selectedIds)
+  showSelectionModal.value = false
+}
 
 // Options based on response type
 const likertOptions = ['Strongly Agree', 'Agree', 'Neutral', 'Disagree', 'Strongly Disagree']
@@ -179,7 +294,7 @@ const getOptionClass = (option) => {
 
 // Run Survey
 const runSurvey = async () => {
-  if (!question.value.trim() || isLoading.value) return
+  if (!question.value.trim() || isLoading.value || selectedAgents.value.size === 0) return
 
   isLoading.value = true
   error.value = null
@@ -201,24 +316,25 @@ const runSurvey = async () => {
 
     const createResponse = await createSurvey(surveyData)
     
-    if (!createResponse.data?.success) {
-      throw new Error(createResponse.data?.error || 'Failed to create survey')
+    if (!createResponse?.success) {
+      throw new Error(createResponse?.error || 'Failed to create survey')
     }
 
-    const surveyId = createResponse.data.data.survey_id
+    const surveyId = createResponse.data.survey_id
 
-    // Step 2: Deploy survey
+    // Step 2: Deploy survey to selected agents
     const deployResponse = await deploySurvey({
       simulation_id: props.simulationId,
       survey_id: surveyId,
+      agent_ids: Array.from(selectedAgents.value),
       timeout: 300
     })
 
-    if (deployResponse.data?.success && deployResponse.data?.data) {
-      result.value = deployResponse.data.data
-      emit('result', deployResponse.data.data)
+    if (deployResponse?.success && deployResponse?.data) {
+      result.value = deployResponse.data
+      emit('result', deployResponse.data)
     } else {
-      throw new Error(deployResponse.data?.error || 'Survey deployment failed')
+      throw new Error(deployResponse?.error || 'Survey deployment failed')
     }
   } catch (err) {
     error.value = err.message || 'Failed to run survey'
@@ -266,6 +382,143 @@ const runSurvey = async () => {
 .header-text .subtitle {
   font-size: 0.875rem;
   color: var(--text-secondary, #6b7280);
+}
+
+/* Agent Selection Section */
+.agent-selection-section {
+  background: white;
+  border-radius: 10px;
+  padding: 1rem;
+  border: 1px solid var(--border-color, #e5e7eb);
+}
+
+.selection-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.selection-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.action-btn {
+  padding: 0.25rem 0.75rem;
+  background: transparent;
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: 6px;
+  font-size: 0.75rem;
+  color: var(--text-secondary, #6b7280);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.action-btn:hover:not(:disabled) {
+  border-color: #10b981;
+  color: #10b981;
+}
+
+.action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.selection-display {
+  min-height: 40px;
+}
+
+.no-selection {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem;
+  background: #f9fafb;
+  border-radius: 8px;
+  border: 1px dashed var(--border-color, #e5e7eb);
+}
+
+.no-selection-text {
+  font-size: 0.875rem;
+  color: var(--text-secondary, #9ca3af);
+}
+
+.select-agents-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: linear-gradient(135deg, #10b981, #059669);
+  border: none;
+  border-radius: 6px;
+  color: white;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.select-agents-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+}
+
+.select-agents-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.selected-agents-display {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.agent-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  flex: 1;
+}
+
+.agent-chip {
+  padding: 0.25rem 0.75rem;
+  background: #ecfdf5;
+  border: 1px solid #10b981;
+  border-radius: 16px;
+  font-size: 0.75rem;
+  color: #047857;
+  white-space: nowrap;
+}
+
+.agent-chip.more-chip {
+  background: #f3f4f6;
+  border-color: #d1d5db;
+  color: #6b7280;
+}
+
+.modify-btn {
+  padding: 0.5rem 1rem;
+  background: white;
+  border: 1px solid #10b981;
+  border-radius: 6px;
+  color: #047857;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.modify-btn:hover:not(:disabled) {
+  background: #ecfdf5;
+}
+
+.modify-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .setup-section {

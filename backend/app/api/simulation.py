@@ -2922,6 +2922,7 @@ def deploy_survey():
         {
             "simulation_id": "sim_xxxx",
             "survey_id": "survey_abc123",
+            "agent_ids": [0, 1, 2],      // Optional, specific agents to survey
             "platform": "reddit",
             "timeout": 180
         }
@@ -2942,6 +2943,7 @@ def deploy_survey():
         
         simulation_id = data.get('simulation_id')
         survey_id = data.get('survey_id')
+        agent_ids = data.get('agent_ids')  # Optional: list of agent indices
         platform = data.get('platform')
         timeout = data.get('timeout', 180)
         
@@ -2978,13 +2980,25 @@ def deploy_survey():
         survey_prompt = survey_service.build_survey_prompt(template)
         optimized_prompt = optimize_interview_prompt(survey_prompt)
         
-        # Interview all agents with survey
-        raw_result = SimulationRunner.interview_all_agents(
-            simulation_id=simulation_id,
-            prompt=optimized_prompt,
-            platform=platform,
-            timeout=timeout
-        )
+        # Interview agents with survey
+        if agent_ids and isinstance(agent_ids, list) and len(agent_ids) > 0:
+            # Selective interview: only specified agents
+            interviews = [{"agent_id": int(aid), "prompt": optimized_prompt} for aid in agent_ids]
+            raw_result = SimulationRunner.interview_agents(
+                simulation_id=simulation_id,
+                interviews=interviews,
+                platform=platform,
+                timeout=timeout
+            )
+            logger.info(f"Survey deployed to {len(agent_ids)} selected agents")
+        else:
+            # Interview all agents (default behavior)
+            raw_result = SimulationRunner.interview_all_agents(
+                simulation_id=simulation_id,
+                prompt=optimized_prompt,
+                platform=platform,
+                timeout=timeout
+            )
         
         if not raw_result.get("success", False):
             return jsonify({

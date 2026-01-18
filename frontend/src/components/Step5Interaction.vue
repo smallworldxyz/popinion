@@ -602,6 +602,7 @@
         <div v-if="activeTab === 'survey'" class="survey-container">
           <SurveyPanel
             :simulation-id="simulationId"
+            :profiles="profiles"
             :total-agents="profiles.length"
             @result="handleSurveyResult"
             @error="handleSurveyError"

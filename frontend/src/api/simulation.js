@@ -203,7 +203,8 @@ export const createSurvey = (data) => {
 
 /**
  * Deploy survey to agents
- * @param {Object} data - { simulation_id, survey_id, platform?, timeout? }
+ * @param {Object} data - { simulation_id, survey_id, agent_ids?, platform?, timeout? }
+ *   - agent_ids: Optional array of agent indices to survey (surveys all if omitted)
  */
 export const deploySurvey = (data) => {
   return requestWithRetry(() => service.post('/api/simulation/survey/deploy', data), 3, 2000)
