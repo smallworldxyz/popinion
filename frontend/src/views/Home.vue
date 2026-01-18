@@ -7,7 +7,7 @@
       </div>
       <div class="nav-actions">
         <!-- <router-link to="/library" class="nav-link">Library</router-link> -->
-        <a href="https://github.com/rithythul/pubop" target="_blank" class="nav-link icon-link">
+        <a href="https://github.com/smallworldxyz/popinion" target="_blank" class="nav-link icon-link">
           GitHub <span>↗</span>
         </a>
       </div>
