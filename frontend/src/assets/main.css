@@ -1,0 +1,111 @@
+/* Global Design Tokens - Mapped to System Variables */
+:root {
+  /* Surface Colors - Mapped */
+  --bg-app: var(--bg-base);
+  --bg-surface: var(--bg-surface);
+  --bg-card: var(--bg-elevated);
+  --bg-card-hover: var(--bg-hover);
+
+  /* Accents - Mapped */
+  --primary: var(--primary);
+  --primary-hover: var(--primary-hover);
+  --primary-glow: var(--primary-glow);
+
+  --success: var(--success);
+  --success-glow: rgba(76, 175, 80, 0.2);
+
+  --error: var(--error);
+  --active: var(--warning);
+
+  /* Typography - Mapped */
+  --font-main: var(--font-main);
+  --font-mono: var(--font-mono);
+
+  --text-main: var(--text-main);
+  --text-muted: var(--text-muted);
+  --text-inverse: var(--bg-base);
+
+  /* Borders & Effects - Mapped */
+  --border-light: var(--border-light);
+  --border-hover: var(--border-focus);
+
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: 16px;
+
+  --shadow-sm: var(--shadow-sm);
+  --shadow-lg: var(--shadow-lg);
+  --shadow-glow: 0 0 15px -3px var(--primary-glow);
+
+  /* Removed specific backdrop blur for clean light mode */
+  --backdrop-blur: none;
+  --header-height: 64px;
+}
+
+/* Global Reset & Base */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: var(--font-main);
+  background-color: var(--bg-app);
+  color: var(--text-main);
+  line-height: 1.5;
+  font-size: 14px;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Utility Classes */
+.u-container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 0 32px;
+}
+
+.glass-panel {
+  background: var(--bg-surface);
+  /* backdrop-filter removed */
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fade-in {
+  animation: fadeIn 0.4s ease-out forwards;
+}

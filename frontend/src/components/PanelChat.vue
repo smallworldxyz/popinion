@@ -227,7 +227,7 @@ const submitQuestion = async () => {
   justify-content: center;
   width: 48px;
   height: 48px;
-  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  background: linear-gradient(135deg, #6366f1, #ff5722);
   border-radius: 12px;
   color: white;
 }
@@ -273,7 +273,7 @@ const submitQuestion = async () => {
 .submit-btn {
   align-self: flex-start;
   padding: 0.75rem 1.5rem;
-  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  background: linear-gradient(135deg, #6366f1, #ff5722);
   border: none;
   border-radius: 8px;
   color: white;

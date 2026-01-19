@@ -1,0 +1,271 @@
+/* Report View: Debriefing Dossier Theme (System Variables Mapped) */
+
+.report-view {
+    min-height: 100vh;
+    background: var(--bg-app);
+    color: var(--text-main);
+    font-family: var(--font-main);
+    padding-bottom: 60px;
+}
+
+
+
+/* Header */
+.report-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 24px 32px;
+    background: var(--bg-surface);
+    border-bottom: 1px solid var(--glass-border);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+}
+
+.report-title-section {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.report-tag {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    color: var(--primary);
+    text-transform: uppercase;
+}
+
+.report-main-title {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--text-main);
+    margin: 0;
+}
+
+.report-subtitle {
+    font-size: 14px;
+    color: var(--text-secondary);
+    font-family: 'JetBrains Mono', monospace;
+}
+
+.report-actions {
+    display: flex;
+    gap: 12px;
+}
+
+.report-action-btn {
+    padding: 10px 20px;
+    font-size: 14px;
+    font-weight: 600;
+    background: var(--bg-surface);
+    color: var(--text-main);
+    border: 1px solid var(--glass-border);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.report-action-btn:hover {
+    background: var(--primary-dim);
+    border-color: var(--primary);
+    transform: translateY(-1px);
+}
+
+.report-action-btn.primary {
+    background: var(--primary);
+    color: white;
+    border-color: transparent;
+}
+
+.report-action-btn.primary:hover {
+    background: var(--primary-hover);
+    box-shadow: 0 4px 12px rgba(255, 87, 34, 0.3);
+}
+
+/* Main Container */
+.report-container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 32px;
+    display: grid;
+    grid-template-columns: 320px 1fr 300px;
+    /* Left Sidebar (Outline) | Main | Right Sidebar (Agents) */
+    gap: 24px;
+    align-items: start;
+}
+
+/* 2-column fallback for smaller screens */
+@media (max-width: 1280px) {
+    .report-container {
+        grid-template-columns: 280px 1fr;
+    }
+}
+
+@media (max-width: 1024px) {
+    .report-container {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Report Content Column (Center) */
+.report-main-content {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    min-width: 0;
+    /* Prevent flex overflow */
+}
+
+/* Document View */
+.document-view {
+    background: var(--bg-surface);
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    padding: 40px;
+}
+
+.document-section {
+    margin-bottom: 40px;
+}
+
+.document-section h2 {
+    font-size: 24px;
+    color: var(--text-main);
+    border-bottom: 1px solid var(--glass-border);
+    padding-bottom: 12px;
+    margin-bottom: 20px;
+}
+
+.document-content {
+    line-height: 1.6;
+    color: var(--text-secondary);
+}
+
+.document-content h3 {
+    font-size: 18px;
+    color: var(--text-main);
+    margin-top: 24px;
+    margin-bottom: 12px;
+}
+
+.document-content p {
+    margin-bottom: 16px;
+}
+
+.document-content ul {
+    padding-left: 20px;
+    margin-bottom: 16px;
+}
+
+.document-content li {
+    margin-bottom: 8px;
+}
+
+/* Left Sidebar: Outline */
+.report-outline-panel {
+    position: sticky;
+    top: 100px;
+    background: var(--bg-surface);
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.outline-header {
+    padding: 16px;
+    border-bottom: 1px solid var(--glass-border);
+    font-weight: 600;
+    font-size: 14px;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+}
+
+.outline-list {
+    display: flex;
+    flex-direction: column;
+}
+
+.outline-item {
+    padding: 12px 16px;
+    border-left: 2px solid transparent;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-size: 14px;
+    color: var(--text-muted);
+}
+
+.outline-item:hover {
+    background: var(--bg-surface-hover);
+    color: var(--text-main);
+}
+
+.outline-item.active {
+    border-left-color: var(--primary);
+    background: var(--primary-dim);
+    color: var(--primary);
+    font-weight: 500;
+}
+
+.outline-item.completed {
+    color: var(--text-main);
+}
+
+.item-status-icon {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 8px;
+    background: var(--glass-border);
+}
+
+.completed .item-status-icon {
+    background: #4ade80;
+}
+
+.active .item-status-icon {
+    background: var(--primary);
+    box-shadow: 0 0 8px var(--primary);
+}
+
+/* Right Sidebar: Influencers & Tools */
+.report-sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    position: sticky;
+    top: 100px;
+}
+
+/* Glass Cards */
+.glass-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    /* transition: all 0.3s ease; */
+    /* Removed transition to reduce GPU load/flicker */
+}
+
+/* Utility Animations */
+@keyframes pulse {
+    0% {
+        opacity: 0.5;
+    }
+
+    50% {
+        opacity: 1;
+    }
+
+    100% {
+        opacity: 0.5;
+    }
+}
+
+.animate-pulse {
+    animation: pulse 2s infinite;
+}

@@ -62,10 +62,33 @@ def create_app(config_class=Config):
         logger.debug(f"response: {response.status_code}")
         return response
     
+    # Global error handler for PopinionError
+    from .exceptions import PopinionError, NotFoundError, ValidationError
+    
+    @app.errorhandler(PopinionError)
+    def handle_popinion_error(error):
+        logger = get_logger('pubop.error')
+        logger.warning(f"API Error: {error.code} - {error.message}")
+        
+        # Map error codes to HTTP status
+        status_map = {
+            "not_found": 404,
+            "validation_error": 400,
+            "permission_denied": 403,
+            "configuration_error": 500,
+            "internal_error": 500,
+            "external_service_error": 502,
+            "simulation_error": 500
+        }
+        status = status_map.get(error.code, 500)
+        
+        return {"success": False, **error.to_dict()}, status
+    
     # Register blueprints
-    from .api import graph_bp, simulation_bp, report_bp, crawl_bp, graph_fusion_bp, tools
+    from .api import graph_bp, simulation_bp, report_bp, crawl_bp, graph_fusion_bp, tools, project_bp
     from .api.auth import auth_bp
     
+    app.register_blueprint(project_bp, url_prefix='/api/projects')
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
     app.register_blueprint(graph_bp, url_prefix='/api/graph')
     app.register_blueprint(simulation_bp, url_prefix='/api/simulation')
@@ -73,6 +96,9 @@ def create_app(config_class=Config):
     app.register_blueprint(crawl_bp, url_prefix='/api/crawl')
     app.register_blueprint(graph_fusion_bp, url_prefix='/api/graph/merge')
     app.register_blueprint(tools.tools_bp, url_prefix='/api/tools')
+    
+    from .api.ingestion import ingestion_bp
+    app.register_blueprint(ingestion_bp, url_prefix='/api/ingestion')
     
     from .api.annotation import annotation_bp
     app.register_blueprint(annotation_bp, url_prefix='/api/simulation')

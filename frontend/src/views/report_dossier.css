@@ -1,0 +1,166 @@
+/* Report View: Debriefing Dossier Theme (System Variables) */
+
+.report-view {
+    min-height: 100vh;
+    background: var(--bg-app);
+    color: var(--text-main);
+    font-family: var(--font-main);
+}
+
+/* Header */
+.report-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 24px 32px;
+    background: var(--bg-surface);
+    /* backdrop-filter removed */
+    border-bottom: 1px solid var(--glass-border);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+}
+
+.report-title-section {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.report-tag {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    color: var(--primary);
+    text-transform: uppercase;
+}
+
+.report-main-title {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--text-main);
+    margin: 0;
+}
+
+.report-subtitle {
+    font-size: 14px;
+    color: var(--text-secondary);
+    font-family: 'JetBrains Mono', monospace;
+}
+
+.report-actions {
+    display: flex;
+    gap: 12px;
+}
+
+.report-action-btn {
+    padding: 10px 20px;
+    font-size: 14px;
+    font-weight: 600;
+    background: var(--bg-surface);
+    color: var(--text-main);
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.report-action-btn:hover {
+    background: rgba(255, 87, 34, 0.1);
+    border-color: var(--primary);
+    transform: translateY(-1px);
+}
+
+.report-action-btn.primary {
+    background: linear-gradient(135deg, #ff5722, #a78bfa);
+    border-color: transparent;
+}
+
+.report-action-btn.primary:hover {
+    box-shadow: 0 4px 12px rgba(255, 87, 34, 0.4);
+}
+
+/* Main Container */
+.report-container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 40px 32px;
+    display: grid;
+    grid-template-columns: 1fr 350px;
+    gap: 32px;
+}
+
+.report-main-content {
+    display: flex;
+    flex-direction: column;
+    gap: 32px;
+}
+
+.report-sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    position: sticky;
+    top: 120px;
+    height: fit-content;
+}
+
+/* Section Headers */
+.section-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+.section-icon {
+    font-size: 24px;
+}
+
+.section-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text-main);
+    margin: 0;
+}
+
+/* Glass Cards */
+.glass-card {
+    padding: 24px;
+    background: var(--bg-surface);
+    /* backdrop-filter removed */
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    transition: all 0.3s ease;
+}
+
+.glass-card:hover {
+    border-color: rgba(255, 87, 34, 0.3);
+    transform: translateY(-2px);
+}
+
+/* Responsive */
+@media (max-width: 1200px) {
+    .report-container {
+        grid-template-columns: 1fr;
+    }
+
+    .report-sidebar {
+        position: static;
+    }
+}
+
+@media (max-width: 768px) {
+    .report-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 16px;
+    }
+
+    .report-container {
+        padding: 24px 16px;
+    }
+}

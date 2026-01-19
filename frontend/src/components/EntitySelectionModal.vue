@@ -289,7 +289,7 @@ const confirmSelection = () => {
   right: 0;
   bottom: 0;
   background: rgba(0, 0, 0, 0.7);
-  backdrop-filter: blur(4px);
+  /* backdrop-filter removed */
   display: flex;
   align-items: center;
   justify-content: center;

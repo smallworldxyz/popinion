@@ -13,15 +13,23 @@ Uses a step-by-step generation strategy to avoid failure due to generating too l
 import json
 import math
 from typing import Dict, Any, List, Optional, Callable
-from dataclasses import dataclass, field, asdict
-from datetime import datetime
+from dataclasses import dataclass, field
 
 from ..config import Config
 from ..utils.logger import get_logger
 from ..utils.llm_client import LLMClient
 from .neo4j_entity_reader import EntityNode, Neo4jEntityReader
+from .simulation_config_types import (
+    AgentActivityConfig,
+    TimeSimulationConfig,
+    EventConfig,
+    PlatformConfig,
+    SimulationParameters,
+    CHINA_TIMEZONE_CONFIG
+)
 
 logger = get_logger('pubop.simulation_config')
+
 
 # Chinese daily routine time configuration (Beijing Time)
 # Can be adapted for other timezones, but default behavior follows this pattern

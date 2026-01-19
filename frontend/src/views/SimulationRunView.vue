@@ -1,36 +1,29 @@
 <template>
   <div class="main-view">
-    <!-- Header -->
-    <header class="app-header">
-      <div class="header-left">
-        <div class="brand" @click="router.push('/')">POPINION</div>
+    <!-- Premium Command Bar -->
+    <header class="command-bar glass-panel">
+      <div class="left-controls">
+        <button class="icon-btn" @click="router.push('/')">←</button>
+        <span class="mission-title">Mission Control / Operation {{ currentSimulationId ? currentSimulationId.substring(0,8) : 'UNK' }}</span>
       </div>
       
-      <div class="header-center">
-        <div class="view-switcher">
-          <button 
-            v-for="mode in ['graph', 'split', 'workbench', 'knowledge']" 
+      <div class="center-controls">
+        <div class="view-toggles">
+           <button 
+            v-for="mode in ['graph', 'split', 'workbench']" 
             :key="mode"
-            class="switch-btn"
+            class="toggle-chip"
             :class="{ active: viewMode === mode }"
             @click="viewMode = mode"
           >
-            {{ { graph: 'Graph', split: 'Split View', workbench: 'Workbench', knowledge: '📋 Knowledge Pad' }[mode] }}
+            {{ mode.toUpperCase() }}
           </button>
         </div>
       </div>
 
-      <div class="header-right">
-        <div class="workflow-step">
-          <span class="step-num">Step 3/5</span>
-          <span class="step-name">Start Simulation</span>
-        </div>
-        <div class="step-divider"></div>
-        <button v-if="isSimulating" class="action-btn" @click="openInjectModal">
-          ⚡ Inject Event
-        </button>
-        <span class="status-indicator" :class="statusClass">
-          <span class="dot"></span>
+      <div class="right-controls">
+        <span class="status-indicator">
+          <span class="pulse-dot" :class="currentStatus"></span>
           {{ statusText }}
         </span>
       </div>
@@ -50,7 +43,7 @@
         />
       </div>
 
-      <!-- Right Panel: Step3 Start Simulation -->
+      <!-- Right Panel: Command HUD -->
       <div class="panel-wrapper right" :style="rightPanelStyle">
         <Step3Simulation
           :simulationId="currentSimulationId"
@@ -66,26 +59,6 @@
         />
       </div>
     </main>
-
-    <!-- Injection Modal -->
-    <div v-if="showInjectModal" class="modal-overlay">
-      <div class="modal-card">
-        <h3>Inject Live Event</h3>
-        <p class="modal-desc">Describe an event to inject into the running simulation. Agents will react to this event in real-time.</p>
-        <textarea 
-          v-model="injectText" 
-          placeholder="e.g. A major scandal reveals that the CEO was involved in..."
-          rows="4"
-          class="event-input"
-        ></textarea>
-        <div class="modal-actions">
-          <button class="cancel-btn" @click="closeInjectModal" :disabled="injectLoading">Cancel</button>
-          <button class="confirm-btn" @click="handleInjectEvent" :disabled="injectLoading || !injectText.trim()">
-            {{ injectLoading ? 'Injecting...' : 'Inject Event' }}
-          </button>
-        </div>
-      </div>
-    </div>
   </div>
 </template>
 
@@ -110,19 +83,13 @@ const viewMode = ref('split')
 
 // Data State
 const currentSimulationId = ref(route.params.simulationId)
-// Get maxRounds directly from query params on initialization to ensure child components receive it immediately
 const maxRounds = ref(route.query.maxRounds ? parseInt(route.query.maxRounds) : null)
-const minutesPerRound = ref(30) // Default 30 minutes per round
+const minutesPerRound = ref(30)
 const projectData = ref(null)
 const graphData = ref(null)
 const graphLoading = ref(false)
 const systemLogs = ref([])
-const currentStatus = ref('processing') // processing | completed | error
-
-// Injection State
-const showInjectModal = ref(false)
-const injectText = ref('')
-const injectLoading = ref(false)
+const currentStatus = ref('processing')
 
 // --- Computed Layout Styles ---
 const leftPanelStyle = computed(() => {
@@ -138,14 +105,10 @@ const rightPanelStyle = computed(() => {
 })
 
 // --- Status Computed ---
-const statusClass = computed(() => {
-  return currentStatus.value
-})
-
 const statusText = computed(() => {
-  if (currentStatus.value === 'error') return 'Error'
-  if (currentStatus.value === 'completed') return 'Completed'
-  return 'Running'
+  if (currentStatus.value === 'error') return 'SYSTEM FAILURE'
+  if (currentStatus.value === 'completed') return 'MISSION COMPLETE'
+  return 'LIVE CONNECTION'
 })
 
 const isSimulating = computed(() => currentStatus.value === 'processing')
@@ -165,174 +128,73 @@ const updateStatus = (status) => {
 
 // --- Layout Methods ---
 const toggleMaximize = (target) => {
-  if (viewMode.value === target) {
-    viewMode.value = 'split'
-  } else {
-    viewMode.value = target
-  }
+  viewMode.value = viewMode.value === target ? 'split' : target
 }
 
 const handleGoBack = async () => {
-  // Before going back to Step 2, close the running simulation first
-  addLog('Preparing to go back to Step 2, closing simulation...')
-  
-  // Stop polling
+  addLog('Terminating session...')
   stopGraphRefresh()
-  
   try {
-    // Try to gracefully close simulation environment first
-    const envStatusRes = await getEnvStatus({ simulation_id: currentSimulationId.value })
-    
-    if (envStatusRes.success && envStatusRes.data?.env_alive) {
-      addLog('Closing simulation environment...')
-      try {
-        await closeSimulationEnv({ 
-          simulation_id: currentSimulationId.value,
-          timeout: 10
-        })
-        addLog('✓ Simulation environment closed')
-      } catch (closeErr) {
-        addLog(`Failed to close simulation environment, attempting force stop...`)
-        try {
-          await stopSimulation({ simulation_id: currentSimulationId.value })
-          addLog('✓ Simulation force stopped')
-        } catch (stopErr) {
-          addLog(`Force stop failed: ${stopErr.message}`)
-        }
-      }
-    } else {
-      // Environment is not running, check if process needs stopping
-      if (isSimulating.value) {
-        addLog('Stopping simulation process...')
-        try {
-          await stopSimulation({ simulation_id: currentSimulationId.value })
-          addLog('✓ Simulation stopped')
-        } catch (err) {
-          addLog(`Failed to stop simulation: ${err.message}`)
-        }
-      }
-    }
-  } catch (err) {
-    addLog(`Failed to check simulation status: ${err.message}`)
+     await stopSimulation({ simulation_id: currentSimulationId.value })
+  } catch (e) {
+      console.warn(e)
   }
-  
-  
-  // Go back to Step 2 (Environment Setup)
   router.push({ name: 'Simulation', params: { simulationId: currentSimulationId.value } })
 }
 
 const handleNextStep = () => {
-  // Step3Simulation component will handle Report Generating and routing directly
-  // This parent method is for backup only
-  addLog('Entering Step 4: Report generation')
-}
-
-// --- Injection Methods ---
-const openInjectModal = () => {
-  injectText.value = ''
-  showInjectModal.value = true
-}
-
-const closeInjectModal = () => {
-  showInjectModal.value = false
-}
-
-const handleInjectEvent = async () => {
-  if (!injectText.value.trim()) return
-  
-  injectLoading.value = true
-  try {
-    const res = await injectEvent(projectData.value.project_id, currentSimulationId.value, injectText.value)
-    if (res.success) {
-      addLog(`⚡ Event injected: ${injectText.value.substring(0, 30)}...`)
-      closeInjectModal()
-    } else {
-      alert('Failed to inject event: ' + (res.error || 'Unknown error'))
-    }
-  } catch (err) {
-    alert('Failed to inject event: ' + err.message)
-  } finally {
-    injectLoading.value = false
-  }
+    // Handled by child
 }
 
 // --- Data Logic ---
 const loadSimulationData = async () => {
   try {
-    addLog(`Loading simulation data: ${currentSimulationId.value}`)
-    
-      // get simulation info
+    addLog(`Establishing Uplink: ${currentSimulationId.value}`)
     const simRes = await getSimulation(currentSimulationId.value)
     if (simRes.success && simRes.data) {
       const simData = simRes.data
       
-      // Get simulation config to fetch minutes_per_round
       try {
         const configRes = await getSimulationConfig(currentSimulationId.value)
         if (configRes.success && configRes.data?.time_config?.minutes_per_round) {
           minutesPerRound.value = configRes.data.time_config.minutes_per_round
-          addLog(`Time configuration:  ${minutesPerRound.value} minutes per round`)
         }
-      } catch (configErr) {
-        addLog(`Failed to get time configuration, using default: ${minutesPerRound.value} minutes/round`)
-      }
+      } catch (configErr) { }
       
-      // Get project info
       if (simData.project_id) {
         const projRes = await getProject(simData.project_id)
         if (projRes.success && projRes.data) {
           projectData.value = projRes.data
-          addLog(`Project loaded successfully: ${projRes.data.project_id}`)
-          
-          // Get graph data
           if (projRes.data.graph_id) {
             await loadGraph(projRes.data.graph_id)
           }
         }
       }
-    } else {
-      addLog(`Failed to load simulation data: ${simRes.error || 'Unknown error'}`)
     }
   } catch (err) {
-    addLog(`Loading exception: ${err.message}`)
+    addLog(`Uplink Error: ${err.message}`)
   }
 }
 
 const loadGraph = async (graphId) => {
-  // When simulating, automatic refresh does not show full screen loading to avoid flickering
-  // Show loading on manual refresh or initial load
-  if (!isSimulating.value) {
-    graphLoading.value = true
-  }
-  
+  if (!isSimulating.value) graphLoading.value = true
   try {
     const res = await getGraphData(graphId)
-    if (res.success) {
-      graphData.value = res.data
-      if (!isSimulating.value) {
-        addLog('Graph data loaded successfully')
-      }
-    }
-  } catch (err) {
-    addLog(`Graph loading failed: ${err.message}`)
+    if (res.success) graphData.value = res.data
+  } catch (err) { 
+      // Silent 
   } finally {
     graphLoading.value = false
   }
 }
 
 const refreshGraph = () => {
-  if (projectData.value?.graph_id) {
-    loadGraph(projectData.value.graph_id)
-  }
+  if (projectData.value?.graph_id) loadGraph(projectData.value.graph_id)
 }
 
-// --- Auto Refresh Logic ---
 let graphRefreshTimer = null
-
 const startGraphRefresh = () => {
   if (graphRefreshTimer) return
-  addLog('Enable graph real-time refresh (30s)')
-  // Refresh immediately once, then refresh every 30 seconds
   graphRefreshTimer = setInterval(refreshGraph, 30000)
 }
 
@@ -340,26 +202,16 @@ const stopGraphRefresh = () => {
   if (graphRefreshTimer) {
     clearInterval(graphRefreshTimer)
     graphRefreshTimer = null
-    addLog('Stop graph real-time refresh')
   }
 }
 
 watch(isSimulating, (newValue) => {
-  if (newValue) {
-    startGraphRefresh()
-  } else {
-    stopGraphRefresh()
-  }
+  if (newValue) startGraphRefresh()
+  else stopGraphRefresh()
 }, { immediate: true })
 
 onMounted(() => {
-  addLog('SimulationRunView initialized')
-  
-  // Record maxRounds configuration (value already obtained from query params during initialization)
-  if (maxRounds.value) {
-    addLog(`Custom simulation rounds: ${maxRounds.value}`)
-  }
-  
+  addLog('Command Center Initialized')
   loadSimulationData()
 })
 
@@ -373,115 +225,72 @@ onUnmounted(() => {
   height: 100vh;
   display: flex;
   flex-direction: column;
-  background: #FFF;
+  background: var(--bg-app);
   overflow: hidden;
-  font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
+  color: var(--text-main);
 }
 
-/* Header */
-.app-header {
+/* Command Bar */
+.command-bar {
   height: 60px;
-  border-bottom: 1px solid #EAEAEA;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 24px;
-  background: #FFF;
   z-index: 100;
-  position: relative;
+  border-bottom: 1px solid var(--border-light);
+  background: var(--bg-surface);
 }
 
-.header-center {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-}
+.left-controls { display: flex; align-items: center; gap: 16px; }
+.mission-title { font-family: var(--font-mono); font-size: 13px; color: var(--text-muted); letter-spacing: 1px; }
 
-.brand {
-  font-family: 'JetBrains Mono', monospace;
-  font-weight: 800;
-  font-size: 18px;
-  letter-spacing: 1px;
-  cursor: pointer;
-}
+.icon-btn { color: var(--text-muted); font-size: 18px; transition: color 0.2s; }
+.icon-btn:hover { color: var(--text-main); }
 
-.view-switcher {
+/* View Toggles */
+.view-toggles {
   display: flex;
-  background: #F5F5F5;
+  background: rgba(0,0,0,0.2);
   padding: 4px;
-  border-radius: 6px;
-  gap: 4px;
+  border-radius: var(--radius-sm);
+  gap: 2px;
 }
 
-.switch-btn {
-  border: none;
-  background: transparent;
-  padding: 6px 16px;
-  font-size: 12px;
-  font-weight: 600;
-  color: #666;
+.toggle-chip {
+  padding: 6px 14px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
   border-radius: 4px;
-  cursor: pointer;
   transition: all 0.2s;
 }
 
-.switch-btn.active {
-  background: #FFF;
-  color: #000;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+.toggle-chip:hover { color: var(--text-main); }
+.toggle-chip.active {
+  background: var(--bg-surface);
+  color: var(--primary);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
 }
 
-.header-right {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-.workflow-step {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 14px;
-}
-
-.step-num {
-  font-family: 'JetBrains Mono', monospace;
-  font-weight: 700;
-  color: #999;
-}
-
-.step-name {
-  font-weight: 700;
-  color: #000;
-}
-
-.step-divider {
-  width: 1px;
-  height: 14px;
-  background-color: #E0E0E0;
-}
-
+/* Status */
 .status-indicator {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  color: #666;
-  font-weight: 500;
+  display: flex; align-items: center; gap: 8px;
+  font-family: var(--font-mono); font-size: 12px; color: var(--success);
+  text-transform: uppercase;
+  background: rgba(16, 185, 129, 0.1);
+  padding: 6px 12px; border-radius: 20px;
+  border: 1px solid rgba(16, 185, 129, 0.2);
 }
 
-.dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #CCC;
+.pulse-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--success);
+  box-shadow: 0 0 8px var(--success);
 }
 
-.status-indicator.processing .dot { background: #FF5722; animation: pulse 1s infinite; }
-.status-indicator.completed .dot { background: #4CAF50; }
-.status-indicator.error .dot { background: #F44336; }
-
-@keyframes pulse { 50% { opacity: 0.5; } }
+.pulse-dot.processing { animation: pulse 1s infinite; }
+@keyframes pulse { 50% { opacity: 0.4; } }
 
 /* Content */
 .content-area {
@@ -489,6 +298,7 @@ onUnmounted(() => {
   display: flex;
   position: relative;
   overflow: hidden;
+  background: radial-gradient(circle at 50% 50%, #1e1b4b 0%, #000 100%);
 }
 
 .panel-wrapper {
@@ -498,108 +308,6 @@ onUnmounted(() => {
   will-change: width, opacity, transform;
 }
 
-.panel-wrapper.left {
-  border-right: 1px solid #EAEAEA;
-}
-
-.action-btn {
-  background: #FFF;
-  border: 1px solid #E0E0E0;
-  padding: 6px 12px;
-  border-radius: 6px;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  transition: all 0.2s;
-}
-
-.action-btn:hover {
-  border-color: #000;
-  background: #FAFAFA;
-}
-
-/* Modal */
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  backdrop-filter: blur(2px);
-}
-
-.modal-card {
-  background: #FFF;
-  width: 500px;
-  padding: 24px;
-  border-radius: 12px;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-}
-
-.modal-card h3 {
-  margin: 0 0 8px 0;
-  font-size: 18px;
-  font-weight: 700;
-}
-
-.modal-desc {
-  font-size: 14px;
-  color: #666;
-  margin-bottom: 16px;
-}
-
-.event-input {
-  width: 100%;
-  padding: 12px;
-  border: 1px solid #E0E0E0;
-  border-radius: 8px;
-  font-family: inherit;
-  font-size: 14px;
-  resize: vertical;
-  margin-bottom: 20px;
-}
-
-.event-input:focus {
-  outline: none;
-  border-color: #000;
-}
-
-.modal-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 12px;
-}
-
-.cancel-btn {
-  padding: 8px 16px;
-  background: transparent;
-  border: 1px solid #E0E0E0;
-  border-radius: 6px;
-  cursor: pointer;
-  font-weight: 600;
-}
-
-.confirm-btn {
-  padding: 8px 16px;
-  background: #000;
-  color: #FFF;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  font-weight: 600;
-}
-
-.confirm-btn:disabled {
-  background: #CCC;
-  cursor: not-allowed;
-}
+.panel-wrapper.left { border-right: 1px solid var(--border-light); background: rgba(0,0,0,0.2); }
+.panel-wrapper.right { background: transparent; }
 </style>
-

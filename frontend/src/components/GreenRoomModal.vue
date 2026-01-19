@@ -213,7 +213,7 @@ const close = () => {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.85);
-  backdrop-filter: blur(4px);
+  /* backdrop-filter removed */
   z-index: 9999;
   display: flex;
   align-items: center;

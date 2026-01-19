@@ -2250,7 +2250,7 @@ watch(() => props.simulationId, (newId) => {
 }
 
 .tool-purple .tool-icon-wrapper {
-  background: rgba(139, 92, 246, 0.1);
+  background: rgba(255, 87, 34, 0.1);
   color: #8B5CF6;
 }
 
@@ -4171,7 +4171,7 @@ watch(() => props.simulationId, (newId) => {
 }
 
 .agora-pill.active {
-  background: linear-gradient(135deg, #8b5cf6, #6366f1) !important;
+  background: linear-gradient(135deg, #ff5722, #6366f1) !important;
   color: white !important;
 }
 </style>

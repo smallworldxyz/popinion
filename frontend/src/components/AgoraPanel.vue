@@ -575,7 +575,7 @@ const formattedSummary = computed(() => {
 })
 
 // Agent colors for chart
-const agentColors = ['#3b82f6', '#ef4444', '#22c55e', '#f59e0b', '#8b5cf6', '#ec4899']
+const agentColors = ['#3b82f6', '#ef4444', '#22c55e', '#f59e0b', '#ff5722', '#ec4899']
 const getAgentColor = (agentId) => {
   const ids = Object.keys(debateState.value?.agent_names || {})
   const idx = ids.indexOf(String(agentId))
@@ -1607,7 +1607,7 @@ watch(() => props.simulationId, (newId, oldId) => {
 .chip-avatar {
   width: 20px;
   height: 20px;
-  background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+  background: linear-gradient(135deg, #3b82f6, #ff5722);
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -1674,7 +1674,7 @@ watch(() => props.simulationId, (newId, oldId) => {
 .start-btn {
   width: 100%;
   padding: 14px;
-  background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+  background: linear-gradient(135deg, #3b82f6, #ff5722);
   border: none;
   border-radius: 10px;
   color: white;

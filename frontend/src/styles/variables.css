@@ -1,0 +1,82 @@
+/* Popinion Design System Variables
+ * Updated: 2026-01-19
+ * Theme: OpenHands "Warm Engineering" (Cream/Paper/Technical)
+ * Font: Inter + JetBrains Mono
+ * Palette: Warm Cream + Warm Black
+ */
+
+:root {
+    /* Primary: Reddish-Orange (Brand Identity - Pops on Cream) */
+    --primary: #ff5722;
+    --primary-hover: #e64a19;
+    --primary-dark: #d84315;
+    --primary-light: #ffccbc;
+    --primary-glow: rgba(255, 87, 34, 0.15);
+
+    /* Backgrounds: Warm Paper / Cream */
+    --bg-base: #FDFBF7;
+    /* Warm Cream (OpenHands Base) */
+    --bg-surface: #F5F2EA;
+    /* Slightly Darker Cream for Cards */
+    --bg-elevated: #FFFFFF;
+    /* Pure White for Popouts */
+    --bg-hover: #ECE9E2;
+    /* Warm Interaction State */
+
+    /* Text: Warm Contrast */
+    --text-main: #1C1917;
+    /* Warm Black (Stone-900) */
+    --text-secondary: #44403C;
+    /* Warm Dark Grey (Stone-700) */
+    --text-muted: #78716C;
+    /* Warm Grey (Stone-500) */
+    --text-disabled: #A8A29E;
+    /* Stone-400 */
+
+    /* Borders: Warm & Organic */
+    --border: #E7E5E4;
+    /* Warm Light Grey (Stone-200) */
+    --border-light: #F5F5F4;
+    /* Stone-100 */
+    --border-focus: var(--primary);
+
+    /* Semantic Colors */
+    --success: #059669;
+    /* Emerald-600 */
+    --warning: #D97706;
+    /* Amber-600 */
+    --error: #DC2626;
+    /* Red-600 */
+    --info: #2563EB;
+    /* Blue-600 */
+
+    /* Shadows: Soft & Natural */
+    --shadow-sm: 0 1px 2px 0 rgba(28, 25, 23, 0.05);
+    --shadow-md: 0 4px 6px -1px rgba(28, 25, 23, 0.08), 0 2px 4px -1px rgba(28, 25, 23, 0.04);
+    --shadow-lg: 0 10px 15px -3px rgba(28, 25, 23, 0.08), 0 4px 6px -2px rgba(28, 25, 23, 0.04);
+
+    /* Typography */
+    --font-main: 'Inter', system-ui, -apple-system, sans-serif;
+    --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+    /* Spacing & Radius */
+    --radius-sm: 4px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+
+    /* Transitions */
+    --transition-fast: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-normal: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-slow: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Base Styles */
+body {
+    background: var(--bg-base);
+    color: var(--text-main);
+    font-family: var(--font-main);
+    margin: 0;
+    padding: 0;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+}

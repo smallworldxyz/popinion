@@ -192,28 +192,24 @@ const vOutsideClick = {
 }
 </script>
 
-<style scoped>
+/* Settings Modal Styles - Light/Dark Compatible */
 .settings-modal-overlay {
     position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.7);
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0, 0, 0, 0.5); /* Semi-transparent overlay */
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 1000;
-    backdrop-filter: blur(4px);
+    z-index: 9999;
 }
 
 .settings-modal {
-    background: #1a1a1a;
+    background: var(--bg-surface);
     width: 480px;
     max-width: 90vw;
     border-radius: 12px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+    border: 1px solid var(--border-light);
+    box-shadow: 0 20px 50px rgba(0,0,0,0.2);
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -221,16 +217,16 @@ const vOutsideClick = {
 
 .modal-header {
     padding: 20px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    border-bottom: 1px solid var(--border);
     display: flex;
     justify-content: space-between;
     align-items: center;
-    background: #222;
+    background: var(--bg-elevated);
 }
 
 .modal-header h3 {
     margin: 0;
-    color: #fff;
+    color: var(--text-main);
     font-size: 16px;
     font-weight: 600;
 }
@@ -238,25 +234,26 @@ const vOutsideClick = {
 .close-btn {
     background: none;
     border: none;
-    color: #888;
+    color: var(--text-muted);
     font-size: 24px;
     cursor: pointer;
     line-height: 1;
 }
 
-.close-btn:hover { color: #fff; }
+.close-btn:hover { color: var(--text-main); }
 
 .modal-body {
     padding: 20px;
     display: flex;
     flex-direction: column;
     gap: 20px;
+    background: var(--bg-surface);
 }
 
 .section-desc {
     margin: 0;
     font-size: 13px;
-    color: #888;
+    color: var(--text-secondary);
     line-height: 1.4;
 }
 
@@ -269,7 +266,7 @@ const vOutsideClick = {
 .setting-label {
     font-size: 12px;
     font-weight: 600;
-    color: #ccc;
+    color: var(--text-secondary);
     text-transform: uppercase;
     letter-spacing: 0.5px;
 }
@@ -277,7 +274,7 @@ const vOutsideClick = {
 .provider-selector {
     display: flex;
     gap: 8px;
-    background: #333;
+    background: var(--bg-hover);
     padding: 4px;
     border-radius: 6px;
 }
@@ -286,7 +283,7 @@ const vOutsideClick = {
     flex: 1;
     background: transparent;
     border: none;
-    color: #888;
+    color: var(--text-muted);
     padding: 8px;
     font-size: 13px;
     font-weight: 600;
@@ -296,9 +293,9 @@ const vOutsideClick = {
 }
 
 .provider-btn.active {
-    background: #444;
-    color: #fff;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    background: var(--bg-base);
+    color: var(--text-main);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
 }
 
 .input-wrapper {
@@ -308,9 +305,9 @@ const vOutsideClick = {
 
 .setting-input {
     flex: 1;
-    background: #333;
-    border: 1px solid #444;
-    color: #fff;
+    background: var(--bg-base);
+    border: 1px solid var(--border);
+    color: var(--text-main);
     padding: 10px;
     border-radius: 6px;
     font-family: monospace;
@@ -319,14 +316,14 @@ const vOutsideClick = {
 
 .setting-input:focus {
     outline: none;
-    border-color: #00FF9D;
-    background: #2a2a2a;
+    border-color: var(--primary);
+    background: var(--bg-base);
 }
 
 .toggle-visibility {
-    background: #333;
-    border: 1px solid #444;
-    color: #ccc;
+    background: var(--bg-hover);
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
     padding: 0 12px;
     border-radius: 6px;
     cursor: pointer;
@@ -335,14 +332,14 @@ const vOutsideClick = {
 
 .help-text {
     font-size: 11px;
-    color: #666;
+    color: var(--text-muted);
     margin: 0;
 }
 
 .modal-footer {
     padding: 15px 20px;
-    background: #222;
-    border-top: 1px solid rgba(255, 255, 255, 0.05);
+    background: var(--bg-elevated);
+    border-top: 1px solid var(--border);
     display: flex;
     justify-content: flex-end;
     gap: 10px;
@@ -350,8 +347,8 @@ const vOutsideClick = {
 
 .btn-cancel {
     background: transparent;
-    border: 1px solid #444;
-    color: #ccc;
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
     padding: 8px 16px;
     border-radius: 6px;
     cursor: pointer;
@@ -359,9 +356,9 @@ const vOutsideClick = {
 }
 
 .btn-save {
-    background: #00FF9D;
+    background: var(--primary);
     border: none;
-    color: #000;
+    color: white;
     font-weight: 600;
     padding: 8px 16px;
     border-radius: 6px;
@@ -371,6 +368,5 @@ const vOutsideClick = {
 }
 
 .btn-save:hover {
-    background: #00cc7d;
+    background: var(--primary-hover);
 }
-</style>
