@@ -1,0 +1,411 @@
+use super::action::{ActionType, Decision};
+use super::agent::{Agent, AgentProfile};
+use super::config::SimConfig;
+use super::store::Store;
+use super::{Command, SimHandle};
+use crate::llm::{Llm, Msg};
+use anyhow::Result;
+use futures::StreamExt;
+use serde_json::json;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use tokio::sync::{mpsc, oneshot};
+
+/// Max concurrent LLM calls per round (mirrors the Python `semaphore=30`).
+const MAX_CONCURRENCY: usize = 30;
+/// How many recent posts an agent sees in its feed.
+const FEED_SIZE: i64 = 12;
+
+pub struct Engine {
+    store: Arc<Store>,
+    agents: Vec<Agent>,
+    llm: Llm,
+    config: SimConfig,
+    rng: Rng,
+}
+
+impl Engine {
+    pub fn new(store: Arc<Store>, profiles: Vec<AgentProfile>, config: SimConfig, llm: Llm) -> Self {
+        // Join profiles with per-agent activity config (by user_id == agent_id).
+        let cfg_by_id: HashMap<i64, &super::config::AgentConfig> =
+            config.agent_configs.iter().map(|a| (a.agent_id, a)).collect();
+        let agents = profiles
+            .into_iter()
+            .map(|p| {
+                let ac = cfg_by_id.get(&p.user_id);
+                Agent {
+                    activity_level: ac.map(|a| a.activity_level).unwrap_or(0.5),
+                    active_hours: ac.map(|a| a.active_hours.clone()).unwrap_or_else(|| (8..23).collect()),
+                    profile: p,
+                }
+            })
+            .collect();
+        let seed = config.simulation_id.bytes().fold(0x9e3779b97f4a7c15u64, |a, b| {
+            a.rotate_left(5) ^ (b as u64).wrapping_mul(0x100000001b3)
+        });
+        Engine {
+            store,
+            agents,
+            llm,
+            config,
+            rng: Rng::new(seed | 1),
+        }
+    }
+
+    /// Spawn the engine as a background task. Returns a handle with a command
+    /// channel — interviews and stop flow through it, no subprocess/file IPC.
+    pub fn spawn(self, simulation_id: String, max_rounds: Option<u32>) -> SimHandle {
+        let status = Arc::new(Mutex::new("initializing".to_string()));
+        let (tx, rx) = mpsc::channel::<Command>(64);
+        let handle = SimHandle {
+            simulation_id: simulation_id.clone(),
+            status: status.clone(),
+            cmd: tx,
+        };
+        tokio::spawn(async move {
+            if let Err(e) = self.run(rx, status.clone(), max_rounds).await {
+                tracing::error!("simulation {simulation_id} failed: {e}");
+                *status.lock().unwrap() = format!("error: {e}");
+            }
+        });
+        handle
+    }
+
+    async fn run(
+        mut self,
+        mut rx: mpsc::Receiver<Command>,
+        status: Arc<Mutex<String>>,
+        max_rounds: Option<u32>,
+    ) -> Result<()> {
+        self.reset()?;
+        *status.lock().unwrap() = "running".into();
+
+        let mut total = self.config.time_config.total_rounds();
+        if let Some(m) = max_rounds {
+            if m > 0 {
+                total = total.min(m);
+            }
+        }
+        let minutes_per_round = self.config.time_config.minutes_per_round.max(1);
+
+        let mut stopped = false;
+        for round in 0..total {
+            // Serve any interview/stop commands queued between rounds.
+            while let Ok(cmd) = rx.try_recv() {
+                if self.handle_command(cmd).await {
+                    stopped = true;
+                    break;
+                }
+            }
+            if stopped {
+                break;
+            }
+            let sim_minutes = round * minutes_per_round;
+            let hour = ((sim_minutes / 60) % 24) as u32;
+            self.step_round(round as i64, hour).await?;
+            if (round + 1) % 10 == 0 || round == 0 {
+                tracing::info!("sim round {}/{}", round + 1, total);
+            }
+        }
+
+        // Post-run: stay "alive" to serve interviews (panel chat / survey) until stopped.
+        *status.lock().unwrap() = "alive".into();
+        while let Some(cmd) = rx.recv().await {
+            if self.handle_command(cmd).await {
+                break;
+            }
+        }
+        *status.lock().unwrap() = "stopped".into();
+        Ok(())
+    }
+
+    /// Returns true if the engine should stop.
+    async fn handle_command(&mut self, cmd: Command) -> bool {
+        match cmd {
+            Command::Stop => true,
+            Command::Interview { user_id, prompt, reply } => {
+                let res = self.interview(user_id, &prompt).await;
+                let _ = reply.send(res);
+                false
+            }
+        }
+    }
+
+    fn reset(&mut self) -> Result<()> {
+        for a in &self.agents {
+            self.store.add_user(
+                a.profile.user_id,
+                a.profile.user_id,
+                &a.profile.name,
+                &a.profile.user_name,
+                &a.profile.bio,
+                &a.profile.persona,
+            )?;
+        }
+        // Seed the discussion with the configured initial posts (the "event").
+        for post in &self.config.event_config.initial_posts {
+            self.store.add_post(post.poster_agent_id, &post.content, 0, Some("seed"), None)?;
+        }
+        Ok(())
+    }
+
+    fn active_agents(&mut self, hour: u32) -> Vec<usize> {
+        let tc = &self.config.time_config;
+        let mult = tc.hour_multiplier(hour);
+        let target =
+            (self.rng.uniform(tc.agents_per_hour_min as f64, tc.agents_per_hour_max as f64) * mult) as usize;
+        let mut candidates: Vec<usize> = Vec::new();
+        for (i, a) in self.agents.iter().enumerate() {
+            if !a.active_hours.contains(&hour) {
+                continue;
+            }
+            if self.rng.next_f64() < a.activity_level {
+                candidates.push(i);
+            }
+        }
+        self.rng.shuffle(&mut candidates);
+        candidates.truncate(target.max(1).min(self.agents.len()));
+        candidates
+    }
+
+    async fn step_round(&mut self, round: i64, hour: u32) -> Result<()> {
+        let active = self.active_agents(hour);
+        if active.is_empty() {
+            return Ok(());
+        }
+
+        // 1) Build each active agent's feed (fast, sync store reads).
+        let feed = self.store.list_posts(FEED_SIZE, 0)?;
+        let feed_str = format_feed(&feed);
+
+        // 2) Concurrent LLM decisions (bounded). Materialize owned per-agent
+        // data first so the futures don't borrow `self`.
+        let tasks: Vec<(i64, String)> = active
+            .iter()
+            .map(|&i| (self.agents[i].profile.user_id, self.agents[i].profile.persona_prompt()))
+            .collect();
+        let llm = self.llm.clone();
+        let decisions: Vec<(i64, Decision)> = futures::stream::iter(tasks.into_iter().map(|(uid, sys)| {
+            let feed_str = feed_str.clone();
+            let llm = llm.clone();
+            async move {
+                match decide(&llm, &sys, &feed_str).await {
+                    Ok(d) => Some((uid, d)),
+                    Err(e) => {
+                        tracing::warn!("agent {uid} decision failed: {e}");
+                        None
+                    }
+                }
+            }
+        }))
+        .buffer_unordered(MAX_CONCURRENCY)
+        .filter_map(|x| async move { x })
+        .collect()
+        .await;
+
+        // 3) Apply sequentially (single writer).
+        for (uid, d) in decisions {
+            self.apply(uid, d, round)?;
+        }
+        Ok(())
+    }
+
+    fn apply(&self, user_id: i64, decision: Decision, round: i64) -> Result<()> {
+        let d = decision.normalized();
+        let info = json!({
+            "action": d.action,
+            "content": d.content,
+            "target_post_id": d.target_post_id,
+            "stance": d.stance,
+            "sentiment": d.sentiment,
+            "reasoning": d.reasoning,
+        });
+        match d.action_type() {
+            ActionType::CreatePost => {
+                if let Some(c) = d.content.as_deref() {
+                    if !c.trim().is_empty() {
+                        self.store.add_post(user_id, c, round, d.stance.as_deref(), d.sentiment)?;
+                    }
+                }
+            }
+            ActionType::CreateComment => {
+                if let (Some(pid), Some(c)) = (d.target_post_id, d.content.as_deref()) {
+                    if !c.trim().is_empty() {
+                        self.store.add_comment(pid, user_id, c, round, d.stance.as_deref(), d.sentiment)?;
+                    }
+                }
+            }
+            ActionType::LikePost => {
+                if let Some(pid) = d.target_post_id {
+                    self.store.like_post(pid, user_id, false)?;
+                }
+            }
+            ActionType::DislikePost => {
+                if let Some(pid) = d.target_post_id {
+                    self.store.like_post(pid, user_id, true)?;
+                }
+            }
+            ActionType::Follow => {
+                if let Some(tid) = d.target_user_id {
+                    self.store.follow(user_id, tid)?;
+                }
+            }
+            ActionType::DoNothing | ActionType::Interview => {}
+        }
+        self.store.trace(user_id, d.action_type().as_str(), &info, round)
+    }
+
+    /// Ask a specific agent a question, in-character. Records to the trace log.
+    pub async fn interview(&self, user_id: i64, prompt: &str) -> Result<String> {
+        let agent = self
+            .agents
+            .iter()
+            .find(|a| a.profile.user_id == user_id)
+            .ok_or_else(|| anyhow::anyhow!("agent {user_id} not found"))?;
+        let sys = format!(
+            "{}\n\nAnswer the following question in first person, staying fully in character. Be concise and specific about your opinion.",
+            agent.profile.persona_prompt()
+        );
+        let answer = self
+            .llm
+            .chat(&[Msg::system(sys), Msg::user(prompt.to_string())], 0.7, 800)
+            .await?;
+        self.store
+            .trace(user_id, "interview", &json!({ "prompt": prompt, "response": answer }), -1)?;
+        Ok(answer)
+    }
+}
+
+fn format_feed(feed: &[serde_json::Value]) -> String {
+    if feed.is_empty() {
+        return "(the feed is empty — you may start a discussion by creating a post)".into();
+    }
+    let mut s = String::from("Current feed (most recent first):\n");
+    for p in feed {
+        s.push_str(&format!(
+            "- post #{} by @{}: {} [likes {}, dislikes {}]\n",
+            p["post_id"], p["user_name"], p["content"], p["num_likes"], p["num_dislikes"]
+        ));
+    }
+    s
+}
+
+async fn decide(llm: &Llm, persona: &str, feed: &str) -> Result<Decision> {
+    let sys = format!(
+        "{persona}\n\nYou are browsing a social platform. Given the feed, choose ONE action that reflects your \
+         genuine opinion. Respond ONLY with JSON:\n\
+         {{\"action\": \"create_post|create_comment|like_post|dislike_post|follow|do_nothing\", \
+         \"content\": \"text if posting/commenting\", \"target_post_id\": <id if reacting/commenting>, \
+         \"target_user_id\": <id if following>, \"stance\": \"support|oppose|neutral\", \
+         \"sentiment\": <number -1..1>, \"reasoning\": \"one short sentence\"}}"
+    );
+    let v = llm
+        .chat_json(&[Msg::system(sys), Msg::user(feed.to_string())], 0.9, 500)
+        .await?;
+    Ok(serde_json::from_value::<Decision>(v).unwrap_or_default())
+}
+
+// ---- interview convenience on the handle ----
+impl SimHandle {
+    pub async fn interview_agent(&self, user_id: i64, prompt: String) -> Result<String> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd
+            .send(Command::Interview { user_id, prompt, reply: tx })
+            .await
+            .map_err(|_| anyhow::anyhow!("simulation not running"))?;
+        rx.await.map_err(|_| anyhow::anyhow!("simulation dropped the request"))?
+    }
+
+    pub async fn stop(&self) {
+        let _ = self.cmd.send(Command::Stop).await;
+    }
+}
+
+/// Tiny deterministic xorshift RNG — reproducible sims without a `rand` dep.
+// ponytail: xorshift64 is plenty for agent selection; swap for `rand` only if
+// we ever need a proven distribution.
+struct Rng(u64);
+impl Rng {
+    fn new(seed: u64) -> Self {
+        Rng(seed)
+    }
+    fn next_u64(&mut self) -> u64 {
+        let mut x = self.0;
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        self.0 = x;
+        x
+    }
+    fn next_f64(&mut self) -> f64 {
+        (self.next_u64() >> 11) as f64 / (1u64 << 53) as f64
+    }
+    fn uniform(&mut self, lo: f64, hi: f64) -> f64 {
+        lo + (hi - lo) * self.next_f64()
+    }
+    fn shuffle<T>(&mut self, v: &mut [T]) {
+        for i in (1..v.len()).rev() {
+            let j = (self.next_u64() % (i as u64 + 1)) as usize;
+            v.swap(i, j);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn profile(id: i64) -> AgentProfile {
+        AgentProfile {
+            user_id: id,
+            user_name: format!("u{id}"),
+            name: format!("User {id}"),
+            bio: "test".into(),
+            persona: "opinionated".into(),
+            age: None,
+            gender: None,
+            mbti: None,
+            country: None,
+            profession: None,
+            interested_topics: vec![],
+        }
+    }
+
+    #[test]
+    fn reset_seeds_users_and_initial_posts() {
+        let dir = std::env::temp_dir().join(format!("popinion-eng-{}", std::process::id()));
+        let store = Arc::new(Store::open(&dir.join("s.db")).unwrap());
+        let mut cfg = SimConfig::default();
+        cfg.simulation_id = "t1".into();
+        cfg.event_config.initial_posts = vec![super::super::config::InitialPost {
+            poster_agent_id: 1,
+            content: "The policy is good".into(),
+        }];
+        let llm = Llm::new("", "http://localhost", "test");
+        let mut eng = Engine::new(store.clone(), vec![profile(1), profile(2)], cfg, llm);
+        eng.reset().unwrap();
+        assert_eq!(store.count_posts().unwrap(), 1);
+        let posts = store.list_posts(10, 0).unwrap();
+        assert_eq!(posts[0]["content"], "The policy is good");
+        assert_eq!(posts[0]["stance"], "seed");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn active_agents_respects_hours() {
+        let dir = std::env::temp_dir().join(format!("popinion-eng2-{}", std::process::id()));
+        let store = Arc::new(Store::open(&dir.join("s.db")).unwrap());
+        let mut cfg = SimConfig::default();
+        cfg.simulation_id = "t2".into();
+        // both agents active only at hour 10, always post
+        cfg.agent_configs = vec![
+            super::super::config::AgentConfig { agent_id: 1, active_hours: vec![10], activity_level: 1.0 },
+            super::super::config::AgentConfig { agent_id: 2, active_hours: vec![10], activity_level: 1.0 },
+        ];
+        let llm = Llm::new("", "http://localhost", "test");
+        let mut eng = Engine::new(store.clone(), vec![profile(1), profile(2)], cfg, llm);
+        assert!(eng.active_agents(3).is_empty(), "nobody active at 3am");
+        assert!(!eng.active_agents(10).is_empty(), "someone active at 10am");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+}

@@ -1,16 +1,35 @@
+pub mod action;
+pub mod agent;
+pub mod config;
+pub mod engine;
 pub mod store;
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use tokio::sync::{mpsc, oneshot};
 
-/// Handle to a running simulation: cancellation + a channel to send interview
-/// commands into the in-process engine task. Replaces the Python subprocess +
-/// file-polling IPC entirely.
+/// Commands sent into a running engine task (replaces the Python file-polling IPC).
+pub enum Command {
+    Interview {
+        user_id: i64,
+        prompt: String,
+        reply: oneshot::Sender<anyhow::Result<String>>,
+    },
+    Stop,
+}
+
+/// Handle to a running simulation: live status + a channel into the engine task.
 #[derive(Clone)]
 pub struct SimHandle {
     pub simulation_id: String,
     pub status: Arc<Mutex<String>>,
-    // Filled in when the engine is built (interview command sender, cancel token).
+    pub cmd: mpsc::Sender<Command>,
+}
+
+impl SimHandle {
+    pub fn status(&self) -> String {
+        self.status.lock().unwrap().clone()
+    }
 }
 
 /// Registry of live simulations, keyed by simulation_id.
@@ -21,9 +40,7 @@ pub struct SimRegistry {
 
 impl SimRegistry {
     pub fn new() -> Self {
-        SimRegistry {
-            inner: Arc::new(Mutex::new(HashMap::new())),
-        }
+        SimRegistry { inner: Arc::new(Mutex::new(HashMap::new())) }
     }
 
     pub fn get(&self, id: &str) -> Option<SimHandle> {
@@ -31,10 +48,7 @@ impl SimRegistry {
     }
 
     pub fn insert(&self, handle: SimHandle) {
-        self.inner
-            .lock()
-            .unwrap()
-            .insert(handle.simulation_id.clone(), handle);
+        self.inner.lock().unwrap().insert(handle.simulation_id.clone(), handle);
     }
 
     pub fn remove(&self, id: &str) -> Option<SimHandle> {
