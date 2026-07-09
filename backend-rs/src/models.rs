@@ -110,6 +110,8 @@ pub fn default_true() -> bool {
     true
 }
 
-/// Back-compat alias for subsystems written against the earlier `Ok` name.
-/// Use `Success` in new code; `Ok` shadows `Result::Ok` if imported bare.
-pub type Ok<T> = Success<T>;
+/// Back-compat re-export for subsystems written against the earlier `Ok` name.
+/// A `use` alias (unlike a `type` alias) carries the tuple constructor, so
+/// `models::Ok(x)` still builds. Use `Success` in new code; `Ok` shadows
+/// `Result::Ok` if ever imported bare.
+pub use self::Success as Ok;
