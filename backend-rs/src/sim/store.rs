@@ -229,6 +229,28 @@ impl Store {
         Ok(rows)
     }
 
+    /// An agent's own most-recent comments — interview context alongside posts,
+    /// so agents who only commented aren't treated as silent.
+    pub fn comments_by_user(&self, user_id: i64, limit: i64) -> Result<Vec<Value>> {
+        let c = self.conn.lock().unwrap();
+        let mut stmt = c.prepare(
+            "SELECT comment_id, post_id, content, round, stance
+             FROM comment WHERE user_id = ?1 ORDER BY comment_id DESC LIMIT ?2",
+        )?;
+        let rows = stmt
+            .query_map(params![user_id, limit], |r| {
+                Ok(json!({
+                    "comment_id": r.get::<_, i64>(0)?,
+                    "post_id": r.get::<_, i64>(1)?,
+                    "content": r.get::<_, String>(2)?,
+                    "round": r.get::<_, i64>(3)?,
+                    "stance": r.get::<_, Option<String>>(4)?,
+                }))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
     pub fn count_posts(&self) -> Result<i64> {
         let c = self.conn.lock().unwrap();
         Ok(c.query_row("SELECT COUNT(*) FROM post", [], |r| r.get(0))?)
@@ -331,9 +353,13 @@ impl Store {
     /// opinion analysis" metric that OASIS could only produce via a later pass.
     pub fn stance_distribution(&self) -> Result<Value> {
         let c = self.conn.lock().unwrap();
+        // Exclude seed posts: 'seed' marks the injected event, not an opinion.
+        // Counting it inflates every run's shared mass and biases the honesty
+        // metrics toward "no effect".
         let mut stmt = c.prepare(
             "SELECT COALESCE(stance,'unknown') s, COUNT(*), AVG(sentiment)
-             FROM post GROUP BY s ORDER BY COUNT(*) DESC",
+             FROM post WHERE stance IS NULL OR stance != 'seed'
+             GROUP BY s ORDER BY COUNT(*) DESC",
         )?;
         let rows = stmt
             .query_map([], |r| {

@@ -100,6 +100,26 @@ pub fn eligible(bundle: &EvidenceBundle, min_evidence: usize) -> bool {
     bundle.evidence_score() >= min_evidence.max(1)
 }
 
+/// Cap on facts rendered into a persona prompt. A hub entity can have hundreds
+/// of incident edges; pasting all of them into every decision prompt is costly
+/// and drowns the signal. Stance facts are kept first.
+const MAX_EVIDENCE: usize = 12;
+
+/// The facts to ground a persona on: stance facts first, then other facts,
+/// deduped and capped.
+fn selected_evidence(bundle: &EvidenceBundle) -> Vec<String> {
+    let mut out: Vec<String> = Vec::with_capacity(MAX_EVIDENCE);
+    for f in bundle.stance_facts.iter().chain(bundle.facts.iter()) {
+        if out.len() >= MAX_EVIDENCE {
+            break;
+        }
+        if !out.contains(f) {
+            out.push(f.clone());
+        }
+    }
+    out
+}
+
 /// Deterministic persona from evidence alone (no LLM, no fabrication).
 /// `user_id` is the sequential agent id assigned by the caller.
 pub fn to_profile(bundle: &EvidenceBundle, user_id: i64) -> AgentProfile {
@@ -122,7 +142,7 @@ pub fn to_profile(bundle: &EvidenceBundle, user_id: i64) -> AgentProfile {
         interested_topics: vec![],
         source_entity_uuid: Some(bundle.uuid.clone()),
         source_entity_type: Some(bundle.entity_type.clone()),
-        evidence: bundle.facts.clone(),
+        evidence: selected_evidence(bundle),
         synthetic: false,
     }
 }

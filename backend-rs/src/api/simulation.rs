@@ -160,6 +160,9 @@ struct PrepareReq {
     use_llm_for_profiles: bool,
     #[serde(default)]
     min_evidence: Option<usize>,
+    /// Optional scenario/event to seed the discussion (e.g. the policy under test).
+    #[serde(default)]
+    event: Option<String>,
 }
 fn default_true() -> bool {
     true
@@ -170,20 +173,24 @@ fn default_true() -> bool {
 async fn prepare(State(st): State<AppState>, Json(req): Json<PrepareReq>) -> AppResult<Success<Value>> {
     let graph_id = resolve_graph_id(&st, &req.simulation_id)?;
     let graph = st.graph()?.clone();
-    let llm = st.llm.clone();
+    // Persona synthesis is low-volume + quality-sensitive → the boost slot.
+    let llm = st.llm_boost.clone();
     let manager = st.sim_manager();
     let sim_id = req.simulation_id;
     let selected = req.selected_entity_ids;
     let types = req.entity_types;
     let use_llm = req.use_llm_for_profiles;
     let min_evidence = req.min_evidence.unwrap_or(2);
+    let event = req.event;
 
     let task_id = tasks::create("persona_prepare", json!({"simulation_id": sim_id, "graph_id": graph_id}));
     let tid = task_id.clone();
     let sim_for_task = sim_id.clone();
     tokio::spawn(async move {
-        if let Err(e) =
-            run_prepare(&graph, &llm, &manager, &tid, &sim_for_task, &graph_id, selected, types, use_llm, min_evidence).await
+        if let Err(e) = run_prepare(
+            &graph, &llm, &manager, &tid, &sim_for_task, &graph_id, selected, types, use_llm, min_evidence, event,
+        )
+        .await
         {
             tracing::error!("persona prepare {tid} failed: {e:#}");
             tasks::fail(&tid, format!("{e:#}"));
@@ -204,6 +211,7 @@ async fn run_prepare(
     types: Vec<String>,
     use_llm: bool,
     min_evidence: usize,
+    event: Option<String>,
 ) -> anyhow::Result<()> {
     tasks::update(task_id, 10, "Loading graph...");
     let data = neo4j::get_graph_data(graph, graph_id).await?;
@@ -237,7 +245,7 @@ async fn run_prepare(
         tasks::update(task_id, prog.min(90), format!("Compiled {}/{total} personas", i + 1));
     }
 
-    manager.attach_profiles(sim_id, profiles)?;
+    manager.attach_profiles(sim_id, profiles, event)?;
     tasks::complete(
         task_id,
         json!({

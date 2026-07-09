@@ -77,7 +77,9 @@ impl Manager {
     /// Populate (or replace) a graph-linked sim's personas after /prepare.
     /// Preserves the sim's existing config (initial posts, timing) and only
     /// swaps the personas; bumps num_agents and marks it ready to start.
-    pub fn attach_profiles(&self, id: &str, profiles: Vec<AgentProfile>) -> Result<()> {
+    /// `event`, when set, seeds the discussion with that post (the scenario the
+    /// population reacts to) attributed to the first agent.
+    pub fn attach_profiles(&self, id: &str, profiles: Vec<AgentProfile>, event: Option<String>) -> Result<()> {
         let dir = self.dir(id);
         if !dir.exists() {
             anyhow::bail!("simulation {id} not found");
@@ -89,6 +91,9 @@ impl Manager {
             Err(_) => SimConfig::default(),
         };
         config.agent_configs.clear();
+        if let Some(content) = event.filter(|e| !e.trim().is_empty()) {
+            config.event_config.initial_posts = vec![super::config::InitialPost { poster_agent_id: 0, content }];
+        }
         self.write_profiles_and_config(id, &profiles, config)?;
         let mut meta = self.meta(id)?;
         meta.num_agents = profiles.len();
