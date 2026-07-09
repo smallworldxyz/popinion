@@ -22,6 +22,11 @@ pub struct EvidenceBundle {
     pub facts: Vec<String>,
     /// The subset of `facts` that express a stance (SUPPORTS/OPPOSES/…).
     pub stance_facts: Vec<String>,
+    /// Did this entity SOURCE a supportive / an opposing stance edge? An
+    /// entity's own camp comes from the stances it authored, not those aimed
+    /// at it (the debate subject is the *target* of everyone's stances).
+    pub sourced_support: bool,
+    pub sourced_oppose: bool,
 }
 
 impl EvidenceBundle {
@@ -30,10 +35,16 @@ impl EvidenceBundle {
     pub fn evidence_score(&self) -> usize {
         self.facts.len() + usize::from(!self.summary.trim().is_empty())
     }
-}
 
-fn is_stance_rel(rel: &str) -> bool {
-    stance_polarity(rel).is_some()
+    /// The entity's stance camp from its outgoing stance edges: only supports →
+    /// "pro", only opposes → "con", both or neither → None (neutral).
+    pub fn faction(&self) -> Option<&'static str> {
+        match (self.sourced_support, self.sourced_oppose) {
+            (true, false) => Some("pro"),
+            (false, true) => Some("con"),
+            _ => None,
+        }
+    }
 }
 
 /// Polarity of a stance relationship: Some(true)=supportive, Some(false)=opposed,
@@ -80,6 +91,8 @@ pub fn build_bundles(graph_data: &Value) -> Vec<EvidenceBundle> {
                 summary: n["summary"].as_str().unwrap_or("").to_string(),
                 facts: Vec::new(),
                 stance_facts: Vec::new(),
+                sourced_support: false,
+                sourced_oppose: false,
             },
         );
     }
@@ -91,13 +104,23 @@ pub fn build_bundles(graph_data: &Value) -> Vec<EvidenceBundle> {
         let fact_text = e["fact"].as_str().filter(|s| !s.is_empty()).map(String::from).unwrap_or_else(|| {
             format!("{src_name} {} {tgt_name}", rel.replace('_', " ").to_lowercase())
         });
-        let stance = is_stance_rel(rel);
+        let stance = stance_polarity(rel);
         for uuid_key in [e["source_node_uuid"].as_str(), e["target_node_uuid"].as_str()].into_iter().flatten() {
             if let Some(b) = bundles.get_mut(uuid_key) {
                 b.facts.push(fact_text.clone());
-                if stance {
+                if stance.is_some() {
                     b.stance_facts.push(fact_text.clone());
                 }
+            }
+        }
+        // Only the SOURCE authored the stance; record it for faction derivation.
+        if let (Some(supports), Some(b)) =
+            (stance, e["source_node_uuid"].as_str().and_then(|u| bundles.get_mut(u)))
+        {
+            if supports {
+                b.sourced_support = true;
+            } else {
+                b.sourced_oppose = true;
             }
         }
     }
@@ -154,6 +177,7 @@ pub fn to_profile(bundle: &EvidenceBundle, user_id: i64) -> AgentProfile {
         source_entity_type: Some(bundle.entity_type.clone()),
         evidence: selected_evidence(bundle),
         synthetic: false,
+        faction: bundle.faction().map(String::from),
     }
 }
 
@@ -223,7 +247,9 @@ pub fn synthesize_audience(graph_data: &Value, per_faction: usize, start_id: i64
 
     let mut out = Vec::new();
     let mut id = start_id;
-    for (label, verb, facts) in [("Supporter", "support", &pro), ("Opponent", "oppose", &con)] {
+    for (label, verb, faction, facts) in
+        [("Supporter", "support", "pro", &pro), ("Opponent", "oppose", "con", &con)]
+    {
         if facts.is_empty() {
             continue;
         }
@@ -251,6 +277,7 @@ pub fn synthesize_audience(graph_data: &Value, per_faction: usize, start_id: i64
                 source_entity_type: Some("synthetic_audience".into()),
                 evidence: sample.clone(),
                 synthetic: true,
+                faction: Some(faction.into()),
             });
             id += 1;
         }
@@ -375,6 +402,32 @@ mod tests {
     }
 
     #[test]
+    fn faction_from_outgoing_stance_edges() {
+        let bundles = build_bundles(&fixture());
+        let union = bundles.iter().find(|b| b.uuid == "u1").unwrap();
+        assert_eq!(union.faction(), Some("con"), "sources an OPPOSES edge");
+        assert_eq!(to_profile(union, 0).faction.as_deref(), Some("con"));
+        let minister = bundles.iter().find(|b| b.uuid == "u2").unwrap();
+        assert_eq!(minister.faction(), None, "target of stances, source of none -> neutral");
+        assert!(to_profile(minister, 1).faction.is_none());
+    }
+
+    #[test]
+    fn faction_neutral_when_stances_mixed() {
+        let g = json!({
+            "nodes": [{"uuid": "u1", "name": "Fence Sitter", "labels": ["Person"], "summary": "s"}],
+            "edges": [
+                {"name": "SUPPORTS", "fact": "backs part A", "source_node_uuid": "u1", "target_node_uuid": "x",
+                 "source_node_name": "Fence Sitter", "target_node_name": "A"},
+                {"name": "OPPOSES", "fact": "rejects part B", "source_node_uuid": "u1", "target_node_uuid": "y",
+                 "source_node_name": "Fence Sitter", "target_node_name": "B"}
+            ]
+        });
+        let bundles = build_bundles(&g);
+        assert_eq!(bundles[0].faction(), None, "both camps -> no single faction");
+    }
+
+    #[test]
     fn audience_synthesizes_both_factions_marked_synthetic() {
         let g = json!({"nodes": [], "edges": [
             {"name": "SUPPORTS", "fact": "A backs the plan on cost grounds.", "source_node_name": "A", "target_node_name": "P"},
@@ -387,9 +440,12 @@ mod tests {
         assert!(a.iter().any(|p| p.name.starts_with("Supporter")));
         assert!(a.iter().any(|p| p.name.starts_with("Opponent")));
         assert_eq!(a[0].user_id, 100, "ids continue from start_id");
-        // The camp's real arguments seed the persona.
+        // The camp's real arguments seed the persona; the camp is its faction.
         let sup = a.iter().find(|p| p.name.starts_with("Supporter")).unwrap();
         assert!(sup.persona.contains("backs the plan"));
+        assert_eq!(sup.faction.as_deref(), Some("pro"));
+        let opp = a.iter().find(|p| p.name.starts_with("Opponent")).unwrap();
+        assert_eq!(opp.faction.as_deref(), Some("con"));
     }
 
     #[test]

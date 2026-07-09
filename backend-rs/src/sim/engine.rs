@@ -161,22 +161,33 @@ impl Engine {
         }
         // Seed an influence network: the synthetic public follows the named
         // influencers (non-synthetic, graph-grounded agents), so elite posts
-        // reach the crowd and stances can propagate. Emergent follows on top of
-        // this come from agents' own Follow actions during the run.
-        // ponytail: everyone-follows-elites seeding. Faction-homophilous follows
-        // (supporters follow pro-elites) is the upgrade for echo-chamber studies.
-        let elites: Vec<i64> = self
+        // reach the crowd and stances can propagate. Follows are faction-
+        // homophilous — supporters follow pro-elites, opponents con-elites —
+        // which is what forms echo chambers; neutral elites (the debate
+        // subject, media) are shared broadcasters everyone follows. If no elite
+        // has a determinable faction, fall back to everyone-follows-elites.
+        // Emergent follows on top of this come from agents' own Follow actions.
+        // ponytail: hard faction homophily. Probabilistic cross-camp leakage
+        // (follow the other side with small p) is the upgrade for studying
+        // filter-bubble permeability.
+        let elites: Vec<(i64, Option<&str>)> = self
             .agents
             .iter()
             .filter(|a| !a.profile.synthetic)
-            .map(|a| a.profile.user_id)
+            .map(|a| (a.profile.user_id, a.profile.faction.as_deref()))
             .collect();
+        let any_faction = elites.iter().any(|(_, f)| f.is_some());
         for a in &self.agents {
-            if a.profile.synthetic {
-                for &e in &elites {
-                    if e != a.profile.user_id {
-                        self.store.follow(a.profile.user_id, e)?;
-                    }
+            if !a.profile.synthetic {
+                continue;
+            }
+            let own = a.profile.faction.as_deref();
+            for &(e, ef) in &elites {
+                if e == a.profile.user_id {
+                    continue;
+                }
+                if !any_faction || own.is_none() || ef.is_none() || ef == own {
+                    self.store.follow(a.profile.user_id, e)?;
                 }
             }
         }
@@ -533,6 +544,7 @@ mod tests {
             source_entity_type: None,
             evidence: vec![],
             synthetic: false,
+            faction: None,
         }
     }
 
@@ -617,6 +629,40 @@ mod tests {
         let feed = store.feed_for(2, 10).unwrap();
         assert_eq!(feed[0]["user_id"], 1);
         assert_eq!(feed[0]["followed"], true, "public follows the named influencer");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn reset_seeds_homophilous_follows_by_faction() {
+        let dir = std::env::temp_dir().join(format!("popinion-homo-{}", std::process::id()));
+        let store = Arc::new(Store::open(&dir.join("s.db")).unwrap());
+        let mut cfg = SimConfig::default();
+        cfg.simulation_id = "homo".into();
+        let mut pro_elite = profile(1);
+        pro_elite.faction = Some("pro".into());
+        let mut con_elite = profile(2);
+        con_elite.faction = Some("con".into());
+        let neutral_elite = profile(3); // faction None: the debate subject / media
+        let mut supporter = profile(4);
+        supporter.synthetic = true;
+        supporter.faction = Some("pro".into());
+        let llm = Llm::new("", "http://localhost", "test");
+        let mut eng = Engine::new(
+            store.clone(),
+            vec![pro_elite, con_elite, neutral_elite, supporter],
+            cfg,
+            llm,
+        );
+        eng.reset().unwrap();
+        // Each elite posts; the supporter's feed shows who it actually follows.
+        store.add_post(1, "pro statement", 0, Some("support"), None).unwrap();
+        store.add_post(2, "con statement", 0, Some("oppose"), None).unwrap();
+        store.add_post(3, "neutral statement", 0, Some("neutral"), None).unwrap();
+        let feed = store.feed_for(4, 10).unwrap();
+        let followed = |uid: i64| feed.iter().find(|p| p["user_id"] == uid).unwrap()["followed"] == true;
+        assert!(followed(1), "supporter follows the pro-elite");
+        assert!(!followed(2), "supporter does NOT follow the con-elite");
+        assert!(followed(3), "neutral elite is a shared broadcaster");
         std::fs::remove_dir_all(&dir).ok();
     }
 

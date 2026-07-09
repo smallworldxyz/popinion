@@ -40,6 +40,10 @@ pub struct AgentProfile {
     /// disclose synthetic personas; graph-grounded ones set this false.
     #[serde(default)]
     pub synthetic: bool,
+    /// Stance camp: "pro" or "con". None = neutral (the debate subject, media)
+    /// or unknown; neutral agents are followed by both camps at seeding.
+    #[serde(default)]
+    pub faction: Option<String>,
 }
 
 impl AgentProfile {
