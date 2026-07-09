@@ -5,6 +5,7 @@ pub mod engine;
 pub mod manager;
 pub mod persona;
 pub mod store;
+pub mod validate;
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};

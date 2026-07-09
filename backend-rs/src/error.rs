@@ -9,8 +9,6 @@ pub enum AppError {
     NotFound(String),
     #[error("bad request: {0}")]
     BadRequest(String),
-    #[error("not implemented: {0}")]
-    NotImplemented(String),
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }
@@ -20,7 +18,6 @@ impl AppError {
         match self {
             AppError::NotFound(_) => StatusCode::NOT_FOUND,
             AppError::BadRequest(_) => StatusCode::BAD_REQUEST,
-            AppError::NotImplemented(_) => StatusCode::NOT_IMPLEMENTED,
             AppError::Other(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }

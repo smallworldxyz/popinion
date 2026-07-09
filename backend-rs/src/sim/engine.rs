@@ -29,7 +29,7 @@ impl Engine {
         // Join profiles with per-agent activity config (by user_id == agent_id).
         let cfg_by_id: HashMap<i64, &super::config::AgentConfig> =
             config.agent_configs.iter().map(|a| (a.agent_id, a)).collect();
-        let agents = profiles
+        let mut agents: Vec<Agent> = profiles
             .into_iter()
             .map(|p| {
                 let ac = cfg_by_id.get(&p.user_id);
@@ -40,8 +40,21 @@ impl Engine {
                 }
             })
             .collect();
-        let seed = config.simulation_id.bytes().fold(0x9e3779b97f4a7c15u64, |a, b| {
-            a.rotate_left(5) ^ (b as u64).wrapping_mul(0x100000001b3)
+        // Ablation: swap personas among agents while keeping each agent's id and
+        // activity schedule, so only the persona→identity mapping changes.
+        if config.permute_personas && agents.len() > 1 {
+            let personas: Vec<AgentProfile> = agents.iter().map(|a| a.profile.clone()).collect();
+            let n = personas.len();
+            for (i, a) in agents.iter_mut().enumerate() {
+                let uid = a.profile.user_id;
+                a.profile = personas[(i + 1) % n].clone();
+                a.profile.user_id = uid;
+            }
+        }
+        let seed = config.seed.unwrap_or_else(|| {
+            config.simulation_id.bytes().fold(0x9e3779b97f4a7c15u64, |a, b| {
+                a.rotate_left(5) ^ (b as u64).wrapping_mul(0x100000001b3)
+            })
         });
         Engine {
             store,
@@ -101,7 +114,7 @@ impl Engine {
                 break;
             }
             let sim_minutes = round * minutes_per_round;
-            let hour = ((sim_minutes / 60) % 24) as u32;
+            let hour = (sim_minutes / 60) % 24;
             self.step_round(round as i64, hour).await?;
             if (round + 1) % 10 == 0 || round == 0 {
                 tracing::info!("sim round {}/{}", round + 1, total);

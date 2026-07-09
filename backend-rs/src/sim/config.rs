@@ -15,6 +15,14 @@ pub struct SimConfig {
     pub agent_configs: Vec<AgentConfig>,
     #[serde(default)]
     pub event_config: EventConfig,
+    /// Explicit RNG seed for reproducible / seed-variance runs. Falls back to a
+    /// value derived from simulation_id when unset.
+    #[serde(default)]
+    pub seed: Option<u64>,
+    /// Honesty test: rotate personas across agents (identities/activity kept).
+    /// If the stance distribution barely moves, the personas are inert.
+    #[serde(default)]
+    pub permute_personas: bool,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, Default, PartialEq, Eq)]

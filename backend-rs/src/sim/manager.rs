@@ -153,14 +153,21 @@ impl Manager {
     }
 
     /// Spawn the engine for a sim. Idempotent-ish: errors if already running.
-    pub fn start(&self, id: &str, max_rounds: Option<u32>) -> Result<()> {
+    /// `seed`/`permute` override the stored config for honesty-test runs.
+    pub fn start(&self, id: &str, max_rounds: Option<u32>, seed: Option<u64>, permute: bool) -> Result<()> {
         if self.registry.get(id).is_some() {
             anyhow::bail!("simulation {id} already running");
         }
         let dir = self.dir(id);
         let profiles: Vec<AgentProfile> =
             serde_json::from_slice(&std::fs::read(dir.join("profiles.json"))?)?;
-        let config: SimConfig = serde_json::from_slice(&std::fs::read(dir.join("config.json"))?)?;
+        let mut config: SimConfig = serde_json::from_slice(&std::fs::read(dir.join("config.json"))?)?;
+        if seed.is_some() {
+            config.seed = seed;
+        }
+        if permute {
+            config.permute_personas = true;
+        }
         let store = self.store(id)?;
         let engine = Engine::new(store, profiles, config, self.llm.clone());
         let handle = engine.spawn(id.to_string(), max_rounds);

@@ -46,6 +46,7 @@ pub fn router() -> Router<AppState> {
         .route("/prepare", post(prepare))
         .route("/prepare/preview", post(prepare_preview))
         .route("/prepare/status", post(prepare_status))
+        .route("/validate", post(validate))
         .route("/start", post(start))
         .route("/stop", post(stop))
         .route("/close-env", post(stop))
@@ -261,14 +262,75 @@ async fn prepare_status(Json(req): Json<PrepareStatusReq>) -> AppResult<Success<
     Ok(Success(serde_json::to_value(task).map_err(|e| AppError::Other(e.into()))?))
 }
 
+// ---- honesty tests: seed-variance noise floor + persona-permutation ablation ----
+
+#[derive(Deserialize)]
+struct ValidateReq {
+    /// Sibling runs (same prepared sim, different seeds) → noise floor.
+    #[serde(default)]
+    simulation_ids: Vec<String>,
+    /// Optional ablation pair: a normal run vs a persona-permuted run.
+    #[serde(default)]
+    baseline_id: Option<String>,
+    #[serde(default)]
+    permuted_id: Option<String>,
+}
+
+/// Compare the stance distributions of completed runs. Callers produce the runs
+/// (start the same sim with different `seed`s, and one with `permute_personas`),
+/// then pass the ids here to see whether any effect exceeds the noise floor.
+async fn validate(State(st): State<AppState>, Json(req): Json<ValidateReq>) -> AppResult<Success<Value>> {
+    let manager = st.sim_manager();
+    let shares_of = |id: &str| -> AppResult<std::collections::BTreeMap<String, f64>> {
+        let store = manager.store(id).map_err(|_| AppError::NotFound(format!("simulation {id}")))?;
+        let dist = store.stance_distribution().map_err(AppError::Other)?;
+        Ok(crate::sim::validate::stance_shares(&dist))
+    };
+
+    let mut runs = Vec::new();
+    let mut run_shares = Vec::new();
+    for id in &req.simulation_ids {
+        let s = shares_of(id)?;
+        runs.push(json!({ "simulation_id": id, "shares": s }));
+        run_shares.push(s);
+    }
+    let floor = crate::sim::validate::noise_floor(&run_shares);
+
+    let mut out = json!({
+        "runs": runs,
+        "noise_floor": floor,
+        "note": "a claimed effect smaller than noise_floor is indistinguishable from seed noise",
+    });
+    if let (Some(b), Some(p)) = (&req.baseline_id, &req.permuted_id) {
+        let dist = crate::sim::validate::total_variation(&shares_of(b)?, &shares_of(p)?);
+        let threshold = if floor > 0.0 { floor * 1.5 } else { 0.05 };
+        out["persona_ablation"] = json!({
+            "baseline_id": b,
+            "permuted_id": p,
+            "distance": dist,
+            "personas_matter": dist > threshold,
+            "note": "distance at or below the noise floor => personas are inert; the output is the model prior",
+        });
+    }
+    Ok(Success(out))
+}
+
 #[derive(Deserialize)]
 struct StartReq {
     simulation_id: String,
     #[serde(default)]
     max_rounds: Option<u32>,
+    /// Honesty-test overrides: fix the seed (seed-variance) and/or permute
+    /// personas (ablation) for this run.
+    #[serde(default)]
+    seed: Option<u64>,
+    #[serde(default)]
+    permute_personas: bool,
 }
 async fn start(State(st): State<AppState>, Json(req): Json<StartReq>) -> AppResult<Success<Value>> {
-    st.sim_manager().start(&req.simulation_id, req.max_rounds).map_err(AppError::Other)?;
+    st.sim_manager()
+        .start(&req.simulation_id, req.max_rounds, req.seed, req.permute_personas)
+        .map_err(AppError::Other)?;
     Ok(Success(json!({ "simulation_id": req.simulation_id, "status": "running" })))
 }
 
