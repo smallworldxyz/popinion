@@ -2,147 +2,134 @@
 
 > **Popinion** (Public Opinion) — Don't guess the future. Rehearse it.
 
-
 ---
 
 ## ⚡ Overview
 
-**Popinion** is an AI prediction engine. It creates a "Digital Mirror World" — a simulation of your society where thousands of AI agents react to your ideas. Test a policy, a message, or a strategy here first. See how the world might react. Then act with confidence.
+**Popinion** is an AI prediction engine. It builds a knowledge graph of a real
+opinion landscape from crawled and uploaded data, compiles that graph into a
+population of AI agents, and runs a multi-agent simulation to see how opinion
+forms, shifts, and spreads. Test a policy, a message, or a strategy here first —
+then act with the evidence in hand.
 
-### Core Capabilities
+### Pipeline
+
+```
+Real Data  →  Knowledge Graph  →  Personas  →  Simulation  →  Report
+ (crawl/       (Neo4j, entity      (graph-      (in-process    (grounded
+  upload)       extraction)         grounded)    agents)        analysis)
+```
+
+### Core capabilities
 
 | Feature | Description |
 |---------|-------------|
-| **Smart Scraping** | AI-driven search planning with specialized crawlers (Telegram, News, etc.) |
-| **Ghost Injection** | Inject real-world data as a "World Agent" to seed simulations |
-| **Swarm Simulation** | Thousands of autonomous agents with memory, personality, and social behavior |
-| **Prediction Reports** | Deep analysis with agent interviews and trend forecasting |
+| **Crawlers** | Telegram / X / Facebook scraping via headless Chrome (CDP). |
+| **Knowledge graph** | LLM entity + relationship extraction into Neo4j, guided by a generated ontology. |
+| **Graph-grounded personas** | `/prepare` compiles each entity into a persona from its *observed evidence* (summary + relationship facts, incl. stance edges) — with provenance, no fabricated attributes. |
+| **Simulation** | In-process multi-agent engine; agents post/comment/react over rounds. Stance & sentiment are captured at action time. |
+| **Reports & panels** | Report agent (with a `web_search` tool), panel chat, and surveys over the live agents. |
+| **Honesty tests** | Seed-variance noise floor + persona-permutation ablation, so a claimed effect can be told apart from model noise. |
 
-> **Input:** Upload seed materials (news, reports, social data) + describe your prediction scenario  
-> **Output:** A detailed prediction report + an interactive digital world you can query
+## 🛠️ Tech stack
 
-### Our Vision
+- **Frontend**: Vue 3 + Vite (Bun)
+- **Backend**: Rust (`backend-rs`, Axum) — the `popinion` binary
+- **Database**: Neo4j (graph)
+- **Per-sim store**: SQLite (stance/sentiment as first-class columns)
+- **LLM**: any OpenAI-compatible endpoint — local (Ollama) for bulk work, a metered API for quality
 
-Popinion enables **High-Stakes Social Wargaming**:
-
-- **Policy Crash Testing**: Test laws and announcements before they hit headlines
-- **Diplomatic Save Game**: Simulate negotiation outcomes before entering the room
-- **Cognitive Vaccination**: Pre-test counter-narratives against disinformation
-
-From serious predictions to playful simulations, we let every "what if" see its outcome.
-
-## 🔄 Workflow
-
-1. **Graph Building**: Seed extraction → AI Search Planning → Smart Scraping (Telegram, News, etc.) → GraphRAG construction
-2. **Environment Setup**: Entity extraction → Persona generation → Agent configuration
-3. **Simulation**: Dual-platform (Twitter + Reddit) parallel evolution with dynamic memory
-4. **Report Generation**: ReportAgent with Deep Insight, Panorama Search, and Agent Interview tools
-5. **Deep Interaction**: Chat with any agent or query the ReportAgent for custom analysis
-
-## 🚀 Quick Start
+## 🚀 Quick start
 
 ### Prerequisites
 
-> Note: Popinion was developed and tested on Mac and Linux. Windows compatibility is experimental.
+| Tool | Purpose | Check |
+|------|---------|-------|
+| **Rust** (stable) | Backend | `cargo --version` |
+| **Bun** | Frontend | `bun -v` |
+| **Docker** | Neo4j | `docker --version` |
+| **Ollama** *(optional)* | Free local LLM for bulk work | `ollama --version` |
 
-| Tool | Version | Description | Check Installation |
-|------|---------|-------------|-------------------|
-| **Bun** | Latest | Fast JavaScript runtime & package manager | `bun -v` |
-| **Python** | 3.11+ | Backend runtime | `python --version` |
-| **uv** | Latest | Python package manager | `uv --version` |
-| **Docker** | Latest | For Neo4j database | `docker --version` |
-
-### 1. Start Neo4j Database
+### 1. Start Neo4j
 
 ```bash
-# Start Neo4j using Docker Compose
-docker-compose up -d
-
-# Neo4j Browser available at: http://localhost:7474
-# Default credentials: neo4j / pubop123
+docker-compose up -d          # Neo4j Browser: http://localhost:7474  (neo4j / pubop123)
 ```
 
-### 2. Configure Environment Variables
+### 2. Configure environment
 
 ```bash
-# Copy the example configuration file
-cp .env.example .env
-
-# Edit the .env file and fill in the required API keys
+cp .env.example .env          # then edit .env
 ```
 
-**Required Environment Variables:**
+The LLM is split into two slots (see `.env.example` for the full notes):
 
 ```env
-# LLM API Configuration (supports any LLM with OpenAI SDK format)
-# Recommended: Use a capable model like GPT-4, Claude, or Qwen
-LLM_API_KEY=your_api_key
-LLM_BASE_URL=https://api.openai.com/v1
-LLM_MODEL_NAME=gpt-4
+# Bulk work (extraction, ontology, the simulation loop) — free local model
+LLM_API_KEY=ollama            # any non-empty string; Ollama ignores it
+LLM_BASE_URL=http://localhost:11434/v1
+LLM_MODEL_NAME=qwen2.5:14b
 
-# Neo4j Graph Database Configuration
-# Use Docker Compose to start local Neo4j: docker-compose up -d
-NEO4J_URI=bolt://localhost:7687
-NEO4J_USERNAME=neo4j
-NEO4J_PASSWORD=pubop123
-NEO4J_DATABASE=neo4j
+# Quality path (report/persona synthesis) — metered OpenAI-standard API
+# Set ALL THREE or it silently falls back to the local model above.
+LLM_BOOST_API_KEY=your_openai_api_key_here
+LLM_BOOST_BASE_URL=https://api.openai.com/v1
+LLM_BOOST_MODEL_NAME=gpt-4o
+
+# Optional: web search for the report agent (blank = disabled)
+TAVILY_API_KEY=
 ```
 
-### 3. Install Dependencies
+For a local model: `ollama serve && ollama pull qwen2.5:14b`.
+
+### 3. Run
 
 ```bash
-# One-click installation of all dependencies (root + frontend + backend)
-bun run setup:all
+# Backend (Rust) — serves the API on :5001
+cd backend-rs && cargo run
+
+# Frontend (Vue) — dev server on :3000, proxies /api to :5001
+cd frontend && bun install && bun run dev
 ```
 
-Or install step by step:
+Or start both from the repo root:
 
 ```bash
-# Install dependencies (root + frontend)
-bun install
-
-# Install Python dependencies (auto-creates virtual environment)
-bun run setup:backend
+bun run dev
 ```
 
-### 4. Start Services
+**Service URLs** — Frontend `http://localhost:3000`, Backend API `http://localhost:5001`.
+
+## 🔄 Workflow
+
+1. **Crawl / upload** — gather real posts and documents.
+2. **Build the graph** — entity & relationship extraction into Neo4j.
+3. **Prepare** — compile eligible graph entities into grounded personas
+   (`/api/simulation/prepare/preview` → `/prepare` → `/prepare/status`).
+4. **Simulate** — run the agents over rounds; stance/sentiment recorded per action.
+5. **Analyze** — generate a report, run panel chat / surveys, or interview any agent.
+6. **Validate** — `/api/simulation/validate` compares runs to report the noise floor
+   and whether personas actually move the outcome.
+
+## 🧪 Development
 
 ```bash
-# Start both frontend and backend (run from project root)
-bun dev
+cd backend-rs
+cargo test            # unit tests
+cargo clippy          # lints
+cargo run             # start the API
 ```
-
-**Service URLs:**
-- Frontend: `http://localhost:3000`
-- Backend API: `http://localhost:5001`
-
-**Start Individually:**
-
-```bash
-bun run backend   # Start backend only
-bun run frontend  # Start frontend only
-```
-
-## 🛠️ Tech Stack
-
-- **Frontend**: Vue 3 + Vite + TypeScript
-- **Backend**: Python + Flask
-- **Database**: Neo4j (Graph Database)
-- **Simulation**: OASIS (Open Agent Social Interaction Simulations)
-- **LLM Integration**: OpenAI-compatible API
 
 ## 📄 Acknowledgments
 
-Popinion stands on the shoulders of giants:
+Popinion's design draws on prior work:
 
 | Project | Contribution |
 |---------|--------------|
-| **[OASIS](https://github.com/camel-ai/oasis)** | Core multi-agent simulation engine (by [CAMEL-AI](https://github.com/camel-ai)) |
-| **[MiroFish](https://github.com/rithythul/mirofish)** | Social simulation architecture & workflow design |
-| **[BettaFish](https://github.com/rithythul/bettafish)** | Real-world data extraction & scraping framework |
-
-We are grateful to these open-source communities for making Popinion possible.
+| **[OASIS](https://github.com/camel-ai/oasis)** | Multi-agent social-simulation concepts (by [CAMEL-AI](https://github.com/camel-ai)); the simulation is now a native Rust engine. |
+| **[MiroFish](https://github.com/rithythul/mirofish)** | Social simulation architecture & workflow design. |
+| **[BettaFish](https://github.com/rithythul/bettafish)** | Real-world data extraction & scraping framework. |
 
 ## 📝 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT — see [LICENSE](LICENSE).

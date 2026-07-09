@@ -3,15 +3,15 @@
   "version": "0.3.0",
   "description": "pubop - Global Public Opinion Analysis Platform powered by AI Simulation",
   "scripts": {
-    "setup": "npm install && cd frontend && npm install",
-    "setup:backend": "cd backend && uv sync",
-    "setup:all": "npm run setup && npm run setup:backend",
-    "dev": "concurrently -n \"backend,frontend\" -c \"yellow,cyan\" \"npm run backend\" \"npm run frontend\"",
-    "preview": "concurrently -n \"backend,frontend\" -c \"yellow,cyan\" \"npm run backend\" \"npm run frontend:preview\"",
-    "backend": "cd backend && uv run python run.py",
-    "frontend": "cd frontend && npm run dev",
-    "frontend:preview": "cd frontend && npm run preview -- --host",
-    "build": "cd frontend && npm run build"
+    "setup": "bun install && cd frontend && bun install",
+    "setup:backend": "cd backend-rs && cargo build",
+    "setup:all": "bun run setup && bun run setup:backend",
+    "dev": "concurrently -n \"backend,frontend\" -c \"yellow,cyan\" \"bun run backend\" \"bun run frontend\"",
+    "preview": "concurrently -n \"backend,frontend\" -c \"yellow,cyan\" \"bun run backend\" \"bun run frontend:preview\"",
+    "backend": "cd backend-rs && cargo run",
+    "frontend": "cd frontend && bun run dev",
+    "frontend:preview": "cd frontend && bun run preview -- --host",
+    "build": "cd frontend && bun run build"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"
