@@ -207,6 +207,28 @@ impl Store {
         Ok(rows)
     }
 
+    /// An agent's own most-recent posts — context for in-character interviews
+    /// so answers reflect what the agent actually said in the simulation.
+    pub fn posts_by_user(&self, user_id: i64, limit: i64) -> Result<Vec<Value>> {
+        let c = self.conn.lock().unwrap();
+        let mut stmt = c.prepare(
+            "SELECT post_id, content, round, stance, sentiment
+             FROM post WHERE user_id = ?1 ORDER BY post_id DESC LIMIT ?2",
+        )?;
+        let rows = stmt
+            .query_map(params![user_id, limit], |r| {
+                Ok(json!({
+                    "post_id": r.get::<_, i64>(0)?,
+                    "content": r.get::<_, String>(1)?,
+                    "round": r.get::<_, i64>(2)?,
+                    "stance": r.get::<_, Option<String>>(3)?,
+                    "sentiment": r.get::<_, Option<f64>>(4)?,
+                }))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
     pub fn count_posts(&self) -> Result<i64> {
         let c = self.conn.lock().unwrap();
         Ok(c.query_row("SELECT COUNT(*) FROM post", [], |r| r.get(0))?)

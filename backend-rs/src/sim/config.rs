@@ -124,7 +124,9 @@ pub struct EventConfig {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct InitialPost {
-    #[serde(default)]
+    // The crawler bridge emits this field as `user_id`; accept both so real
+    // seed posts keep their author instead of collapsing to agent 0.
+    #[serde(default, alias = "user_id")]
     pub poster_agent_id: i64,
     #[serde(default)]
     pub content: String,
@@ -133,6 +135,16 @@ pub struct InitialPost {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn initial_post_accepts_bridge_user_id_field() {
+        // The bridge serializes seed posts with `user_id`, not `poster_agent_id`.
+        let p: InitialPost = serde_json::from_str(r#"{"user_id": 7, "content": "hi"}"#).unwrap();
+        assert_eq!(p.poster_agent_id, 7, "seed post must keep its author, not collapse to 0");
+        // The native field name still works.
+        let p2: InitialPost = serde_json::from_str(r#"{"poster_agent_id": 3, "content": "x"}"#).unwrap();
+        assert_eq!(p2.poster_agent_id, 3);
+    }
 
     #[test]
     fn defaults_fill_from_empty_json() {
