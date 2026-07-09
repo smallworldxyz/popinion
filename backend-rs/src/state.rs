@@ -44,4 +44,8 @@ impl AppState {
             .as_ref()
             .ok_or_else(|| crate::error::AppError::Other(anyhow::anyhow!("Neo4j not connected")))
     }
+
+    pub fn sim_manager(&self) -> crate::sim::manager::Manager {
+        crate::sim::manager::Manager::new(self.cfg.sim_data_dir.clone(), self.sims.clone(), self.llm.clone())
+    }
 }

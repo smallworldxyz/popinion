@@ -4,9 +4,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 /// Success envelope matching the Vue frontend axios interceptor (`res.success`).
-pub struct Ok<T: Serialize>(pub T);
+/// Named `Success` (not `Ok`) so it never shadows `Result::Ok` in handlers.
+pub struct Success<T: Serialize>(pub T);
 
-impl<T: Serialize> IntoResponse for Ok<T> {
+impl<T: Serialize> IntoResponse for Success<T> {
     fn into_response(self) -> Response {
         let mut v = serde_json::to_value(self.0).unwrap_or(Value::Null);
         // Merge `success: true` into object payloads; wrap non-objects under `data`.
@@ -108,3 +109,7 @@ pub struct CrawlResult {
 pub fn default_true() -> bool {
     true
 }
+
+/// Back-compat alias for subsystems written against the earlier `Ok` name.
+/// Use `Success` in new code; `Ok` shadows `Result::Ok` if imported bare.
+pub type Ok<T> = Success<T>;

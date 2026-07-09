@@ -236,6 +236,75 @@ impl Store {
         Ok(rows)
     }
 
+    /// Posts + comments per round — feeds the frontend timeline view.
+    pub fn timeline(&self) -> Result<Vec<Value>> {
+        let c = self.conn.lock().unwrap();
+        let mut stmt = c.prepare(
+            "SELECT r, SUM(posts), SUM(comments), AVG(sent) FROM (
+                 SELECT round r, COUNT(*) posts, 0 comments, AVG(sentiment) sent FROM post GROUP BY round
+                 UNION ALL
+                 SELECT round r, 0 posts, COUNT(*) comments, AVG(sentiment) sent FROM comment GROUP BY round
+             ) GROUP BY r ORDER BY r ASC",
+        )?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok(json!({
+                    "round": r.get::<_, i64>(0)?,
+                    "posts": r.get::<_, i64>(1)?,
+                    "comments": r.get::<_, i64>(2)?,
+                    "avg_sentiment": r.get::<_, Option<f64>>(3)?,
+                }))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    /// Per-agent activity summary.
+    pub fn agent_stats(&self) -> Result<Vec<Value>> {
+        let c = self.conn.lock().unwrap();
+        let mut stmt = c.prepare(
+            "SELECT u.user_id, u.user_name, u.num_followers,
+                    (SELECT COUNT(*) FROM post p WHERE p.user_id = u.user_id) posts,
+                    (SELECT COUNT(*) FROM comment cm WHERE cm.user_id = u.user_id) comments,
+                    (SELECT AVG(sentiment) FROM post p WHERE p.user_id = u.user_id) avg_sent
+             FROM user u ORDER BY posts DESC",
+        )?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok(json!({
+                    "user_id": r.get::<_, i64>(0)?,
+                    "user_name": r.get::<_, Option<String>>(1)?,
+                    "num_followers": r.get::<_, i64>(2)?,
+                    "posts": r.get::<_, i64>(3)?,
+                    "comments": r.get::<_, i64>(4)?,
+                    "avg_sentiment": r.get::<_, Option<f64>>(5)?,
+                }))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    /// Recent action trace (the activity log the frontend polls).
+    pub fn list_actions(&self, limit: i64) -> Result<Vec<Value>> {
+        let c = self.conn.lock().unwrap();
+        let mut stmt = c.prepare(
+            "SELECT user_id, action, info, round, created_at FROM trace ORDER BY id DESC LIMIT ?1",
+        )?;
+        let rows = stmt
+            .query_map(params![limit], |r| {
+                let info: Option<String> = r.get(2)?;
+                Ok(json!({
+                    "user_id": r.get::<_, i64>(0)?,
+                    "action": r.get::<_, String>(1)?,
+                    "info": info.and_then(|s| serde_json::from_str::<Value>(&s).ok()),
+                    "round": r.get::<_, i64>(3)?,
+                    "created_at": r.get::<_, Option<String>>(4)?,
+                }))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
     /// Aggregate stance distribution across posts — a first-class "better
     /// opinion analysis" metric that OASIS could only produce via a later pass.
     pub fn stance_distribution(&self) -> Result<Value> {

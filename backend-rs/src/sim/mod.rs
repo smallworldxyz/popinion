@@ -2,6 +2,7 @@ pub mod action;
 pub mod agent;
 pub mod config;
 pub mod engine;
+pub mod manager;
 pub mod store;
 
 use std::collections::HashMap;
