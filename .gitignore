@@ -53,11 +53,11 @@ mydoc/
 mytest/
 
 # logs
-backend/logs/
+backend-rs/logs/
 *.log
 
 # uploads
-backend/uploads/
+backend-rs/uploads/
 
 # Docker
 data/
