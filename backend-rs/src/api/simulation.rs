@@ -1,14 +1,41 @@
 use crate::error::{AppError, AppResult};
 use crate::models::Success;
+use crate::services::report::{
+    self, AgentInterviewer, PanelChatOptions, Panelist,
+};
 use crate::sim::agent::AgentProfile;
 use crate::sim::config::SimConfig;
+use crate::sim::SimHandle;
 use crate::state::AppState;
+use async_trait::async_trait;
 use axum::extract::{Path, Query, State};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::collections::HashMap;
+
+/// Bridges the report subsystem's `AgentInterviewer` seam to a live engine task.
+struct LiveInterviewer(SimHandle);
+
+#[async_trait]
+impl AgentInterviewer for LiveInterviewer {
+    async fn interview(&self, agent_id: i64, prompt: &str) -> anyhow::Result<String> {
+        self.0.interview_agent(agent_id, prompt.to_string()).await
+    }
+}
+
+/// Panelists default to the first N personas of the sim when the request omits them.
+fn default_panelists(st: &AppState, sim_id: &str, n: usize) -> AppResult<Vec<Panelist>> {
+    let path = std::path::Path::new(&st.cfg.sim_data_dir).join(sim_id).join("profiles.json");
+    let raw = std::fs::read(path).map_err(|_| AppError::NotFound(format!("profiles for {sim_id}")))?;
+    let profiles: Vec<AgentProfile> = serde_json::from_slice(&raw).map_err(|e| AppError::Other(e.into()))?;
+    Ok(profiles
+        .into_iter()
+        .take(n)
+        .map(|p| Panelist { agent_id: p.user_id, name: p.name, faction: String::new(), platform: String::new() })
+        .collect())
+}
 
 /// Simulation lifecycle + read API. The in-process engine (crate::sim::engine)
 /// is driven through crate::sim::manager::Manager; reads open the sim's SQLite
@@ -24,6 +51,11 @@ pub fn router() -> Router<AppState> {
         .route("/env-status", post(env_status))
         .route("/list", get(list))
         .route("/interview/batch", post(interview_batch))
+        .route("/panel-chat", post(panel_chat_h))
+        .route("/survey/create", post(survey_create_h))
+        .route("/survey/deploy", post(survey_deploy_h))
+        .route("/survey/list", get(survey_list_h))
+        .route("/survey/:survey_id", get(survey_get_h))
         .route("/:id", get(get_sim))
         .route("/:id/config", get(get_config))
         .route("/:id/profiles", get(get_profiles))
@@ -232,4 +264,83 @@ async fn interview_batch(
         }));
     }
     Ok(Success(json!({ "results": results })))
+}
+
+// ---- deliberation (report subsystem, mounted here since the frontend calls
+//      them under /api/simulation) ----
+
+#[derive(Deserialize)]
+struct PanelChatReq {
+    simulation_id: String,
+    question: String,
+    #[serde(default)]
+    panelists: Vec<Panelist>,
+    #[serde(default)]
+    rounds: Option<u32>,
+}
+
+async fn panel_chat_h(State(st): State<AppState>, Json(req): Json<PanelChatReq>) -> AppResult<Success<Value>> {
+    let handle = st
+        .sims
+        .get(&req.simulation_id)
+        .ok_or_else(|| AppError::BadRequest("simulation not running (panel chat needs a live env)".into()))?;
+    let panelists = if req.panelists.is_empty() {
+        default_panelists(&st, &req.simulation_id, 12)?
+    } else {
+        req.panelists
+    };
+    let opts = PanelChatOptions { rounds: req.rounds.unwrap_or(1), ..Default::default() };
+    let interviewer = LiveInterviewer(handle);
+    let result = report::panel_chat(&st.llm, &interviewer, &req.question, &panelists, &opts)
+        .await
+        .map_err(AppError::Other)?;
+    Ok(Success(json!({ "result": result })))
+}
+
+#[derive(Deserialize)]
+struct SurveyCreateReq {
+    title: String,
+    #[serde(default)]
+    description: String,
+    questions: Vec<Value>,
+}
+
+async fn survey_create_h(Json(req): Json<SurveyCreateReq>) -> AppResult<Success<Value>> {
+    let t = report::survey_create(&req.title, &req.description, &req.questions).map_err(AppError::Other)?;
+    Ok(Success(json!({ "survey": t })))
+}
+
+#[derive(Deserialize)]
+struct SurveyDeployReq {
+    simulation_id: String,
+    survey_id: String,
+    #[serde(default)]
+    respondents: Vec<Panelist>,
+}
+
+async fn survey_deploy_h(State(st): State<AppState>, Json(req): Json<SurveyDeployReq>) -> AppResult<Success<Value>> {
+    let handle = st
+        .sims
+        .get(&req.simulation_id)
+        .ok_or_else(|| AppError::BadRequest("simulation not running (survey needs a live env)".into()))?;
+    let respondents = if req.respondents.is_empty() {
+        default_panelists(&st, &req.simulation_id, 50)?
+    } else {
+        req.respondents
+    };
+    let interviewer = LiveInterviewer(handle);
+    let result = report::survey_deploy(&interviewer, &req.survey_id, &respondents)
+        .await
+        .map_err(AppError::Other)?;
+    Ok(Success(json!({ "result": result })))
+}
+
+async fn survey_list_h() -> AppResult<Success<Value>> {
+    Ok(Success(json!({ "surveys": report::survey_list() })))
+}
+
+async fn survey_get_h(Path(survey_id): Path<String>) -> AppResult<Success<Value>> {
+    report::survey_get(&survey_id)
+        .map(|s| Success(json!({ "survey": s })))
+        .ok_or_else(|| AppError::NotFound(format!("survey {survey_id}")))
 }
