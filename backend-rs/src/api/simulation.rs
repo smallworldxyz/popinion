@@ -336,11 +336,11 @@ async fn classify_stance_h(
             .map_err(AppError::Other)?;
     }
 
+    // `agreement` carries both distributions over the same labelled set (posts +
+    // comments) plus the agreement rate and confusion — an apples-to-apples view.
     Ok(Success(json!({
         "classified": classified,
         "topic": topic,
-        "self_reported_distribution": store.stance_distribution().map_err(AppError::Other)?,
-        "independent_distribution": store.independent_distribution().map_err(AppError::Other)?,
         "agreement": store.stance_agreement().map_err(AppError::Other)?,
     })))
 }

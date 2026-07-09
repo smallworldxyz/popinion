@@ -93,7 +93,10 @@ impl Store {
             std::fs::create_dir_all(dir).ok();
         }
         let conn = Connection::open(path)?;
-        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;")?;
+        // busy_timeout lets a concurrent writer (e.g. /classify-stance writing
+        // labels while the engine is still running) wait for the lock instead of
+        // failing immediately with SQLITE_BUSY.
+        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA busy_timeout=5000;")?;
         conn.execute_batch(SCHEMA)?;
         Ok(Store { conn: Mutex::new(conn) })
     }
@@ -398,16 +401,19 @@ impl Store {
     pub fn agent_stance_distribution(&self) -> Result<Value> {
         let c = self.conn.lock().unwrap();
         let mut stmt = c.prepare(
+            // Order by created_at, not the id: post_id and comment_id are
+            // independent sequences, so comparing them mixes two id-spaces and
+            // an agent's post-then-comment in one round would tiebreak wrongly.
             "WITH acts AS (
-                 SELECT user_id, stance, round, post_id AS oid FROM post
+                 SELECT user_id, stance, round, created_at FROM post
                  WHERE stance IS NOT NULL AND stance != 'seed'
                  UNION ALL
-                 SELECT user_id, stance, round, comment_id AS oid FROM comment
+                 SELECT user_id, stance, round, created_at FROM comment
                  WHERE stance IS NOT NULL AND stance != 'seed'
              ),
              latest AS (
                  SELECT user_id, stance,
-                        ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY round DESC, oid DESC) rn
+                        ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY round DESC, created_at DESC) rn
                  FROM acts
              )
              SELECT stance, COUNT(*) FROM latest WHERE rn = 1 GROUP BY stance ORDER BY COUNT(*) DESC",
@@ -496,20 +502,6 @@ impl Store {
         Ok(())
     }
 
-    /// Distribution of the independent classifier's labels.
-    pub fn independent_distribution(&self) -> Result<Value> {
-        let c = self.conn.lock().unwrap();
-        let mut stmt = c.prepare(
-            "SELECT ind_stance, COUNT(*) FROM independent_stance GROUP BY ind_stance ORDER BY COUNT(*) DESC",
-        )?;
-        let rows = stmt
-            .query_map([], |r| {
-                Ok(json!({ "stance": r.get::<_, String>(0)?, "count": r.get::<_, i64>(1)? }))
-            })?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        Ok(json!(rows))
-    }
-
     /// How often the agents' self-reported stance matched the independent label.
     /// Low agreement means the self-reports (and headline numbers) are unreliable.
     pub fn stance_agreement(&self) -> Result<Value> {
@@ -533,10 +525,26 @@ impl Store {
                 }))
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
+        // Both marginals over the SAME labelled set (posts + comments), so the
+        // self-reported vs independent comparison is apples-to-apples.
+        let marginal = |col: &str| -> Result<Value> {
+            let mut s = c.prepare(&format!(
+                "SELECT {col}, COUNT(*) FROM independent_stance
+                 WHERE {col} IS NOT NULL GROUP BY {col} ORDER BY COUNT(*) DESC"
+            ))?;
+            let rows = s
+                .query_map([], |r| {
+                    Ok(json!({ "stance": r.get::<_, String>(0)?, "count": r.get::<_, i64>(1)? }))
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            Ok(json!(rows))
+        };
         Ok(json!({
             "labelled": n,
             "agree": agree,
             "agreement_rate": if n > 0 { agree as f64 / n as f64 } else { 0.0 },
+            "self_distribution": marginal("self_stance")?,
+            "independent_distribution": marginal("ind_stance")?,
             "confusion": confusion,
         }))
     }
@@ -582,8 +590,12 @@ mod tests {
         s.set_independent_stance("post", p1, 1, Some("support"), "support").unwrap();
         s.set_independent_stance("post", p2, 1, Some("support"), "oppose").unwrap();
 
-        let dist = s.independent_distribution().unwrap();
-        let counts: std::collections::HashMap<String, i64> = dist
+        let ag = s.stance_agreement().unwrap();
+        assert_eq!(ag["labelled"], 2);
+        assert_eq!(ag["agree"], 1);
+        assert!((ag["agreement_rate"].as_f64().unwrap() - 0.5).abs() < 1e-9);
+        // Independent marginal (same labelled set): support 1, oppose 1.
+        let counts: std::collections::HashMap<String, i64> = ag["independent_distribution"]
             .as_array()
             .unwrap()
             .iter()
@@ -591,11 +603,6 @@ mod tests {
             .collect();
         assert_eq!(counts.get("support"), Some(&1));
         assert_eq!(counts.get("oppose"), Some(&1));
-
-        let ag = s.stance_agreement().unwrap();
-        assert_eq!(ag["labelled"], 2);
-        assert_eq!(ag["agree"], 1);
-        assert!((ag["agreement_rate"].as_f64().unwrap() - 0.5).abs() < 1e-9);
 
         // Already-labelled posts are not re-served to the classifier.
         assert!(s.unlabeled_content(100).unwrap().is_empty());

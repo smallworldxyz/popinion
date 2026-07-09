@@ -191,6 +191,24 @@ impl Engine {
                 }
             }
         }
+        // A system "Event" account authors injected scenario posts, so they
+        // aren't misattributed to a real graph entity.
+        if self
+            .config
+            .event_config
+            .initial_posts
+            .iter()
+            .any(|p| p.poster_agent_id == super::config::EVENT_AUTHOR_ID)
+        {
+            self.store.add_user(
+                super::config::EVENT_AUTHOR_ID,
+                super::config::EVENT_AUTHOR_ID,
+                "Event",
+                "event",
+                "",
+                "The event under discussion.",
+            )?;
+        }
         // Seed the discussion with the configured initial posts (the "event").
         for post in &self.config.event_config.initial_posts {
             self.store.add_post(post.poster_agent_id, &post.content, 0, Some("seed"), None)?;

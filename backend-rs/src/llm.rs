@@ -128,7 +128,10 @@ impl Llm {
         match serde_json::from_str::<Value>(&candidate) {
             Ok(v) => Ok(v),
             Err(_) => serde_json::from_str::<Value>(&repair_truncated_json(&candidate))
-                .with_context(|| format!("LLM returned invalid JSON: {}", &raw[..raw.len().min(500)])),
+                // Truncate by chars, not bytes: multilingual replies (Khmer,
+                // Chinese, …) would panic on a mid-codepoint byte slice, and this
+                // runs inside decide()'s `?`, taking down the whole sim task.
+                .with_context(|| format!("LLM returned invalid JSON: {}", raw.chars().take(500).collect::<String>())),
         }
     }
 }
@@ -144,8 +147,13 @@ pub fn extract_json(s: &str) -> String {
     if let Some(rest) = t.strip_suffix("```") {
         t = rest.trim();
     }
-    let start = t.find(['{', '[']);
-    let end = t.rfind(['}', ']']);
+    // Every caller returns a JSON object, so prefer the object braces: prose
+    // before the payload that happens to contain a '[' (e.g. "[note] {...}")
+    // otherwise derails extraction. Fall back to array brackets for array docs.
+    // ponytail: object-first; a top-level array of objects would need the min of
+    // the two positions instead — no caller returns one today.
+    let start = t.find('{').or_else(|| t.find('['));
+    let end = t.rfind('}').or_else(|| t.rfind(']'));
     match (start, end) {
         (Some(a), Some(b)) if b >= a => t[a..=b].to_string(),
         (Some(a), _) => t[a..].to_string(),
@@ -204,5 +212,7 @@ mod tests {
         assert_eq!(extract_json("```json\n{\"a\":1}\n```"), r#"{"a":1}"#);
         assert_eq!(extract_json("Here is the answer: [1,2,3] hope it helps"), "[1,2,3]");
         assert_eq!(extract_json(r#"{"a":1}"#), r#"{"a":1}"#);
+        // Prose before the object containing a stray bracket must not derail it.
+        assert_eq!(extract_json(r#"[note] {"action":"like_post"}"#), r#"{"action":"like_post"}"#);
     }
 }

@@ -140,6 +140,11 @@ pub struct InitialPost {
     pub content: String,
 }
 
+/// Author id for an event injected by /prepare — a system "Event" account, not
+/// a real agent, so the scenario isn't misattributed to a graph entity. Outside
+/// the agent id range (agents are assigned 0..N).
+pub const EVENT_AUTHOR_ID: i64 = -1;
+
 #[cfg(test)]
 mod tests {
     use super::*;

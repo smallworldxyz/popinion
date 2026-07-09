@@ -92,7 +92,10 @@ impl Manager {
         };
         config.agent_configs.clear();
         if let Some(content) = event.filter(|e| !e.trim().is_empty()) {
-            config.event_config.initial_posts = vec![super::config::InitialPost { poster_agent_id: 0, content }];
+            config.event_config.initial_posts = vec![super::config::InitialPost {
+                poster_agent_id: super::config::EVENT_AUTHOR_ID,
+                content,
+            }];
         }
         self.write_profiles_and_config(id, &profiles, config)?;
         let mut meta = self.meta(id)?;
