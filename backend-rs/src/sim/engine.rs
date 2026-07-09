@@ -438,7 +438,7 @@ async fn decide(llm: &Llm, persona: &str, memory: &str, feed: &str) -> Result<De
          \"sentiment\": <number -1..1>, \"reasoning\": \"one short sentence\"}}"
     );
     let v = llm
-        .chat_json(&[Msg::system(sys), Msg::user(feed.to_string())], 0.9, 500)
+        .chat_json(&[Msg::system(sys), Msg::user(feed.to_string())], 0.9, 900)
         .await?;
     Ok(serde_json::from_value::<Decision>(v).unwrap_or_default())
 }

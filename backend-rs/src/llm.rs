@@ -60,15 +60,18 @@ impl Llm {
         if self.api_key.is_empty() {
             return Err(anyhow!("LLM_API_KEY not configured"));
         }
-        let mut body = json!({
+        // NOTE: we deliberately do NOT send response_format: json_object. It is
+        // not universally supported across OpenAI-compatible servers (LM Studio
+        // rejects it for some models, wanting json_schema/text), and the callers
+        // already instruct the model to emit JSON. chat_json() extracts the JSON
+        // span from the reply, tolerating prose/fence wrapping instead.
+        let _ = json_mode;
+        let body = json!({
             "model": self.model,
             "messages": messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
         });
-        if json_mode {
-            body["response_format"] = json!({ "type": "json_object" });
-        }
 
         let url = format!("{}/chat/completions", self.base_url);
         // Retry on 429 / transient errors with capped exponential backoff + jitter.
@@ -116,14 +119,37 @@ impl Llm {
         self.call(messages, temperature, max_tokens, false).await
     }
 
-    /// Chat returning parsed JSON, with a best-effort repair for truncated output.
+    /// Chat returning parsed JSON. Tolerates models that wrap JSON in prose or
+    /// markdown fences (or, like reasoning models, leak a token before it) and
+    /// repairs truncated output.
     pub async fn chat_json(&self, messages: &[Msg], temperature: f32, max_tokens: u32) -> Result<Value> {
         let raw = self.call(messages, temperature, max_tokens, true).await?;
-        match serde_json::from_str::<Value>(&raw) {
+        let candidate = extract_json(&raw);
+        match serde_json::from_str::<Value>(&candidate) {
             Ok(v) => Ok(v),
-            Err(_) => serde_json::from_str::<Value>(&repair_truncated_json(&raw))
+            Err(_) => serde_json::from_str::<Value>(&repair_truncated_json(&candidate))
                 .with_context(|| format!("LLM returned invalid JSON: {}", &raw[..raw.len().min(500)])),
         }
+    }
+}
+
+/// Pull the JSON document out of an LLM reply: strip markdown fences and any
+/// prose before the first `{`/`[` or after the last `}`/`]`. Non-strict models
+/// (and reasoning models that leak a stray token) otherwise fail to parse.
+pub fn extract_json(s: &str) -> String {
+    let mut t = s.trim();
+    if let Some(rest) = t.strip_prefix("```json").or_else(|| t.strip_prefix("```")) {
+        t = rest.trim();
+    }
+    if let Some(rest) = t.strip_suffix("```") {
+        t = rest.trim();
+    }
+    let start = t.find(['{', '[']);
+    let end = t.rfind(['}', ']']);
+    match (start, end) {
+        (Some(a), Some(b)) if b >= a => t[a..=b].to_string(),
+        (Some(a), _) => t[a..].to_string(),
+        _ => t.to_string(),
     }
 }
 
@@ -170,5 +196,13 @@ mod tests {
         let broken = r#"{"a": "hello wor"#;
         let fixed = repair_truncated_json(broken);
         assert!(serde_json::from_str::<Value>(&fixed).is_ok(), "got: {fixed}");
+    }
+
+    #[test]
+    fn extract_json_strips_prose_fences_and_leaks() {
+        assert_eq!(extract_json(r#" Festival{"a":1}"#), r#"{"a":1}"#);
+        assert_eq!(extract_json("```json\n{\"a\":1}\n```"), r#"{"a":1}"#);
+        assert_eq!(extract_json("Here is the answer: [1,2,3] hope it helps"), "[1,2,3]");
+        assert_eq!(extract_json(r#"{"a":1}"#), r#"{"a":1}"#);
     }
 }
