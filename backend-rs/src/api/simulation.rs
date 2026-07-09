@@ -9,6 +9,7 @@ use crate::sim::SimHandle;
 use crate::state::AppState;
 use async_trait::async_trait;
 use axum::extract::{Path, Query, State};
+use futures::StreamExt;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::Deserialize;
@@ -69,6 +70,7 @@ pub fn router() -> Router<AppState> {
         .route("/:id/actions", get(actions))
         .route("/:id/agent-stats", get(agent_stats))
         .route("/:id/stance", get(stance))
+        .route("/:id/classify-stance", post(classify_stance_h))
 }
 
 #[derive(Deserialize)]
@@ -281,6 +283,66 @@ async fn prepare_status(Json(req): Json<PrepareStatusReq>) -> AppResult<Success<
     let tid = req.task_id.ok_or_else(|| AppError::BadRequest("task_id required".into()))?;
     let task = tasks::get(&tid).ok_or_else(|| AppError::NotFound(format!("task {tid}")))?;
     Ok(Success(serde_json::to_value(task).map_err(|e| AppError::Other(e.into()))?))
+}
+
+// ---- independent stance measurement (break the model monoculture) ----
+
+#[derive(Deserialize)]
+struct ClassifyReq {
+    /// The issue to classify stance toward. Defaults to the simulation's name.
+    #[serde(default)]
+    topic: Option<String>,
+}
+
+/// Re-label every post/comment with an independent classifier pass on the boost
+/// model, then report how often the agents' self-reported stance agreed. Low
+/// agreement means the headline stance numbers are the acting model grading its
+/// own homework and should not be trusted.
+async fn classify_stance_h(
+    Path(id): Path<String>,
+    State(st): State<AppState>,
+    Json(req): Json<ClassifyReq>,
+) -> AppResult<Success<Value>> {
+    let manager = st.sim_manager();
+    let store = manager.store(&id).map_err(|_| AppError::NotFound(format!("simulation {id}")))?;
+    let topic = req
+        .topic
+        .filter(|t| !t.trim().is_empty())
+        .or_else(|| manager.meta(&id).ok().map(|m| m.name))
+        .unwrap_or_else(|| "the main issue in the discussion".into());
+
+    let items = store.unlabeled_content(300).map_err(AppError::Other)?;
+    let llm = st.llm_boost.clone();
+    let labels: Vec<(String, i64, i64, Option<String>, String)> = futures::stream::iter(items.into_iter().map(|it| {
+        let llm = llm.clone();
+        let topic = topic.clone();
+        async move {
+            let kind = it["kind"].as_str().unwrap_or("post").to_string();
+            let ref_id = it["ref_id"].as_i64().unwrap_or(0);
+            let user_id = it["user_id"].as_i64().unwrap_or(0);
+            let self_stance = it["self_stance"].as_str().map(String::from);
+            let label = crate::sim::classify::classify_stance(&llm, &topic, it["content"].as_str().unwrap_or("")).await;
+            (kind, ref_id, user_id, self_stance, label)
+        }
+    }))
+    .buffer_unordered(8)
+    .collect()
+    .await;
+
+    let classified = labels.len();
+    for (kind, ref_id, user_id, self_stance, label) in labels {
+        store
+            .set_independent_stance(&kind, ref_id, user_id, self_stance.as_deref(), &label)
+            .map_err(AppError::Other)?;
+    }
+
+    Ok(Success(json!({
+        "classified": classified,
+        "topic": topic,
+        "self_reported_distribution": store.stance_distribution().map_err(AppError::Other)?,
+        "independent_distribution": store.independent_distribution().map_err(AppError::Other)?,
+        "agreement": store.stance_agreement().map_err(AppError::Other)?,
+    })))
 }
 
 // ---- honesty tests: seed-variance noise floor + persona-permutation ablation ----

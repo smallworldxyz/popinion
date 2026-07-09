@@ -73,6 +73,15 @@ CREATE TABLE IF NOT EXISTS trace (
     round       INTEGER DEFAULT 0,
     created_at  TEXT
 );
+CREATE TABLE IF NOT EXISTS independent_stance (
+    kind        TEXT NOT NULL,
+    ref_id      INTEGER NOT NULL,
+    user_id     INTEGER,
+    self_stance TEXT,
+    ind_stance  TEXT,
+    created_at  TEXT,
+    PRIMARY KEY (kind, ref_id)
+);
 CREATE INDEX IF NOT EXISTS idx_post_user ON post(user_id);
 CREATE INDEX IF NOT EXISTS idx_comment_post ON comment(post_id);
 CREATE INDEX IF NOT EXISTS idx_trace_user ON trace(user_id, action);
@@ -437,6 +446,100 @@ impl Store {
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(json!(rows))
     }
+
+    // ---- independent stance measurement (monoculture check) ----
+
+    /// Posts/comments not yet independently labelled (seed excluded), for the
+    /// classifier to process. Returns kind, ref_id, user_id, content, self_stance.
+    pub fn unlabeled_content(&self, limit: i64) -> Result<Vec<Value>> {
+        let c = self.conn.lock().unwrap();
+        let mut stmt = c.prepare(
+            "SELECT 'post' AS kind, p.post_id AS ref_id, p.user_id, p.content, p.stance
+             FROM post p
+             WHERE (p.stance IS NULL OR p.stance != 'seed')
+               AND NOT EXISTS (SELECT 1 FROM independent_stance s WHERE s.kind='post' AND s.ref_id=p.post_id)
+             UNION ALL
+             SELECT 'comment', cm.comment_id, cm.user_id, cm.content, cm.stance
+             FROM comment cm
+             WHERE (cm.stance IS NULL OR cm.stance != 'seed')
+               AND NOT EXISTS (SELECT 1 FROM independent_stance s WHERE s.kind='comment' AND s.ref_id=cm.comment_id)
+             LIMIT ?1",
+        )?;
+        let rows = stmt
+            .query_map(params![limit], |r| {
+                Ok(json!({
+                    "kind": r.get::<_, String>(0)?,
+                    "ref_id": r.get::<_, i64>(1)?,
+                    "user_id": r.get::<_, i64>(2)?,
+                    "content": r.get::<_, String>(3)?,
+                    "self_stance": r.get::<_, Option<String>>(4)?,
+                }))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    pub fn set_independent_stance(
+        &self,
+        kind: &str,
+        ref_id: i64,
+        user_id: i64,
+        self_stance: Option<&str>,
+        ind_stance: &str,
+    ) -> Result<()> {
+        let c = self.conn.lock().unwrap();
+        c.execute(
+            "INSERT OR REPLACE INTO independent_stance (kind, ref_id, user_id, self_stance, ind_stance, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![kind, ref_id, user_id, self_stance, ind_stance, now()],
+        )?;
+        Ok(())
+    }
+
+    /// Distribution of the independent classifier's labels.
+    pub fn independent_distribution(&self) -> Result<Value> {
+        let c = self.conn.lock().unwrap();
+        let mut stmt = c.prepare(
+            "SELECT ind_stance, COUNT(*) FROM independent_stance GROUP BY ind_stance ORDER BY COUNT(*) DESC",
+        )?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok(json!({ "stance": r.get::<_, String>(0)?, "count": r.get::<_, i64>(1)? }))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(json!(rows))
+    }
+
+    /// How often the agents' self-reported stance matched the independent label.
+    /// Low agreement means the self-reports (and headline numbers) are unreliable.
+    pub fn stance_agreement(&self) -> Result<Value> {
+        let c = self.conn.lock().unwrap();
+        let (n, agree): (i64, i64) = c.query_row(
+            "SELECT COUNT(*), COALESCE(SUM(CASE WHEN self_stance = ind_stance THEN 1 ELSE 0 END), 0)
+             FROM independent_stance WHERE self_stance IS NOT NULL",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?;
+        let mut stmt = c.prepare(
+            "SELECT COALESCE(self_stance,'none') s, ind_stance i, COUNT(*) n
+             FROM independent_stance GROUP BY s, i ORDER BY n DESC",
+        )?;
+        let confusion = stmt
+            .query_map([], |r| {
+                Ok(json!({
+                    "self": r.get::<_, String>(0)?,
+                    "independent": r.get::<_, String>(1)?,
+                    "count": r.get::<_, i64>(2)?,
+                }))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(json!({
+            "labelled": n,
+            "agree": agree,
+            "agreement_rate": if n > 0 { agree as f64 / n as f64 } else { 0.0 },
+            "confusion": confusion,
+        }))
+    }
 }
 
 fn now() -> String {
@@ -465,6 +568,37 @@ mod tests {
         assert_eq!(comments.len(), 1);
         let dist = s.stance_distribution().unwrap();
         assert_eq!(dist[0]["stance"], "support");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn independent_labels_drive_distribution_and_agreement() {
+        let dir = std::env::temp_dir().join(format!("popinion-indep-{}", std::process::id()));
+        let s = Store::open(&dir.join("s.db")).unwrap();
+        s.add_user(1, 1, "u", "u", "", "").unwrap();
+        let p1 = s.add_post(1, "I back the plan", 0, Some("support"), None).unwrap();
+        let p2 = s.add_post(1, "actually this is terrible", 0, Some("support"), None).unwrap();
+        // Independent classifier agrees on p1, disagrees on p2 (self=support, indep=oppose).
+        s.set_independent_stance("post", p1, 1, Some("support"), "support").unwrap();
+        s.set_independent_stance("post", p2, 1, Some("support"), "oppose").unwrap();
+
+        let dist = s.independent_distribution().unwrap();
+        let counts: std::collections::HashMap<String, i64> = dist
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| (r["stance"].as_str().unwrap().to_string(), r["count"].as_i64().unwrap()))
+            .collect();
+        assert_eq!(counts.get("support"), Some(&1));
+        assert_eq!(counts.get("oppose"), Some(&1));
+
+        let ag = s.stance_agreement().unwrap();
+        assert_eq!(ag["labelled"], 2);
+        assert_eq!(ag["agree"], 1);
+        assert!((ag["agreement_rate"].as_f64().unwrap() - 0.5).abs() < 1e-9);
+
+        // Already-labelled posts are not re-served to the classifier.
+        assert!(s.unlabeled_content(100).unwrap().is_empty());
         std::fs::remove_dir_all(&dir).ok();
     }
 
