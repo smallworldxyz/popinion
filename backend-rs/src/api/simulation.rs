@@ -163,6 +163,10 @@ struct PrepareReq {
     /// Optional scenario/event to seed the discussion (e.g. the policy under test).
     #[serde(default)]
     event: Option<String>,
+    /// Synthesize this many background-population agents per stance faction
+    /// (supporters / opponents) so the sim is a public, not just the elites.
+    #[serde(default)]
+    audience_per_faction: Option<usize>,
 }
 fn default_true() -> bool {
     true
@@ -182,6 +186,7 @@ async fn prepare(State(st): State<AppState>, Json(req): Json<PrepareReq>) -> App
     let use_llm = req.use_llm_for_profiles;
     let min_evidence = req.min_evidence.unwrap_or(2);
     let event = req.event;
+    let audience = req.audience_per_faction.unwrap_or(0);
 
     let task_id = tasks::create("persona_prepare", json!({"simulation_id": sim_id, "graph_id": graph_id}));
     let tid = task_id.clone();
@@ -189,6 +194,7 @@ async fn prepare(State(st): State<AppState>, Json(req): Json<PrepareReq>) -> App
     tokio::spawn(async move {
         if let Err(e) = run_prepare(
             &graph, &llm, &manager, &tid, &sim_for_task, &graph_id, selected, types, use_llm, min_evidence, event,
+            audience,
         )
         .await
         {
@@ -212,6 +218,7 @@ async fn run_prepare(
     use_llm: bool,
     min_evidence: usize,
     event: Option<String>,
+    audience_per_faction: usize,
 ) -> anyhow::Result<()> {
     tasks::update(task_id, 10, "Loading graph...");
     let data = neo4j::get_graph_data(graph, graph_id).await?;
@@ -245,12 +252,18 @@ async fn run_prepare(
         tasks::update(task_id, prog.min(90), format!("Compiled {}/{total} personas", i + 1));
     }
 
+    // Synthesize a background public from the graph's stance factions.
+    let audience = persona::synthesize_audience(&data, audience_per_faction, profiles.len() as i64);
+    let audience_count = audience.len();
+    profiles.extend(audience);
+
     manager.attach_profiles(sim_id, profiles, event)?;
     tasks::complete(
         task_id,
         json!({
             "simulation_id": sim_id,
             "personas_created": total,
+            "audience_created": audience_count,
             "min_evidence": min_evidence,
             "grounded": true,
         }),

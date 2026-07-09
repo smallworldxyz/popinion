@@ -33,10 +33,20 @@ impl EvidenceBundle {
 }
 
 fn is_stance_rel(rel: &str) -> bool {
+    stance_polarity(rel).is_some()
+}
+
+/// Polarity of a stance relationship: Some(true)=supportive, Some(false)=opposed,
+/// None=not a stance edge.
+fn stance_polarity(rel: &str) -> Option<bool> {
     let r = rel.to_uppercase();
-    ["SUPPORT", "OPPOS", "ENDORS", "CRITIC", "AGAINST", "BACK", "CONDEMN"]
-        .iter()
-        .any(|k| r.contains(k))
+    if ["SUPPORT", "ENDORS", "BACK", "FAVOR"].iter().any(|k| r.contains(k)) {
+        Some(true)
+    } else if ["OPPOS", "AGAINST", "CRITIC", "CONDEMN", "REJECT"].iter().any(|k| r.contains(k)) {
+        Some(false)
+    } else {
+        None
+    }
 }
 
 /// Build one evidence bundle per entity from `neo4j::get_graph_data` output
@@ -180,6 +190,74 @@ pub async fn synthesize_persona(llm: &Llm, bundle: &EvidenceBundle) -> String {
     }
 }
 
+/// Generate synthetic background-population agents from the graph's stance
+/// edges, so the simulated population is a *public* rather than only the named
+/// elites. Supporters and opponents each get `per_faction` ordinary-citizen
+/// agents, seeded with the arguments their camp actually made. All are flagged
+/// `synthetic=true` (no source entity) so reports can disclose the synthetic share.
+// ponytail: factions split by polarity (single-issue assumption) and weighted
+// equally. Weight by observed audience size (followers/subscribers) and split by
+// target when the graph carries multiple issues.
+pub fn synthesize_audience(graph_data: &Value, per_faction: usize, start_id: i64) -> Vec<AgentProfile> {
+    if per_faction == 0 {
+        return vec![];
+    }
+    let empty = vec![];
+    let (mut pro, mut con): (Vec<String>, Vec<String>) = (Vec::new(), Vec::new());
+    for e in graph_data["edges"].as_array().unwrap_or(&empty) {
+        let rel = e["name"].as_str().or_else(|| e["fact_type"].as_str()).unwrap_or("");
+        let Some(supports) = stance_polarity(rel) else { continue };
+        let src = e["source_node_name"].as_str().unwrap_or("");
+        let tgt = e["target_node_name"].as_str().unwrap_or("");
+        let fact = e["fact"]
+            .as_str()
+            .filter(|s| !s.is_empty())
+            .map(String::from)
+            .unwrap_or_else(|| format!("{src} {} {tgt}", rel.replace('_', " ").to_lowercase()));
+        if supports {
+            pro.push(fact);
+        } else {
+            con.push(fact);
+        }
+    }
+
+    let mut out = Vec::new();
+    let mut id = start_id;
+    for (label, verb, facts) in [("Supporter", "support", &pro), ("Opponent", "oppose", &con)] {
+        if facts.is_empty() {
+            continue;
+        }
+        let sample: Vec<String> = facts.iter().take(3).cloned().collect();
+        for i in 0..per_faction {
+            let persona = format!(
+                "You are an ordinary member of the public who tends to {verb} the proposal at the \
+                 centre of this discussion. React authentically as a regular citizen — not an \
+                 official or an organization. Views common in your camp: {}",
+                sample.join(" | ")
+            );
+            out.push(AgentProfile {
+                user_id: id,
+                user_name: format!("{verb}er_{id}"),
+                name: format!("{label} {}", i + 1),
+                bio: String::new(),
+                persona,
+                age: None,
+                gender: None,
+                mbti: None,
+                country: None,
+                profession: None,
+                interested_topics: vec![],
+                source_entity_uuid: None,
+                source_entity_type: Some("synthetic_audience".into()),
+                evidence: sample.clone(),
+                synthetic: true,
+            });
+            id += 1;
+        }
+    }
+    out
+}
+
 /// Entities grouped by type with evidence scores, for the /prepare/preview picker.
 pub fn preview(graph_data: &Value, min_evidence: usize) -> Value {
     let bundles = build_bundles(graph_data);
@@ -294,6 +372,31 @@ mod tests {
         assert!(!p.evidence.is_empty(), "carries the facts it rests on");
         // The evidence shows up in the prompt block.
         assert!(p.persona_prompt().contains("opposes the policy"));
+    }
+
+    #[test]
+    fn audience_synthesizes_both_factions_marked_synthetic() {
+        let g = json!({"nodes": [], "edges": [
+            {"name": "SUPPORTS", "fact": "A backs the plan on cost grounds.", "source_node_name": "A", "target_node_name": "P"},
+            {"name": "OPPOSES", "fact": "B rejects the plan over job losses.", "source_node_name": "B", "target_node_name": "P"},
+            {"name": "AFFILIATED_WITH", "fact": "C works for P.", "source_node_name": "C", "target_node_name": "P"}
+        ]});
+        let a = synthesize_audience(&g, 2, 100);
+        assert_eq!(a.len(), 4, "2 per faction × 2 factions; non-stance edge ignored");
+        assert!(a.iter().all(|p| p.synthetic && p.source_entity_uuid.is_none()));
+        assert!(a.iter().any(|p| p.name.starts_with("Supporter")));
+        assert!(a.iter().any(|p| p.name.starts_with("Opponent")));
+        assert_eq!(a[0].user_id, 100, "ids continue from start_id");
+        // The camp's real arguments seed the persona.
+        let sup = a.iter().find(|p| p.name.starts_with("Supporter")).unwrap();
+        assert!(sup.persona.contains("backs the plan"));
+    }
+
+    #[test]
+    fn audience_empty_when_no_stance_edges_or_zero_count() {
+        let g = json!({"nodes": [], "edges": [{"name": "AFFILIATED_WITH", "source_node_name": "A", "target_node_name": "B"}]});
+        assert!(synthesize_audience(&g, 5, 0).is_empty());
+        assert!(synthesize_audience(&fixture(), 0, 0).is_empty());
     }
 
     #[test]
