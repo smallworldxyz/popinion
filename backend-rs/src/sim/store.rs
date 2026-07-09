@@ -349,6 +349,37 @@ impl Store {
         Ok(rows)
     }
 
+    /// Agent-weighted stance distribution: one vote per agent, their most recent
+    /// stance-bearing action (post or comment). This is the honest population
+    /// metric — post-weighted counts let one hyperactive agent dominate.
+    pub fn agent_stance_distribution(&self) -> Result<Value> {
+        let c = self.conn.lock().unwrap();
+        let mut stmt = c.prepare(
+            "WITH acts AS (
+                 SELECT user_id, stance, round, post_id AS oid FROM post
+                 WHERE stance IS NOT NULL AND stance != 'seed'
+                 UNION ALL
+                 SELECT user_id, stance, round, comment_id AS oid FROM comment
+                 WHERE stance IS NOT NULL AND stance != 'seed'
+             ),
+             latest AS (
+                 SELECT user_id, stance,
+                        ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY round DESC, oid DESC) rn
+                 FROM acts
+             )
+             SELECT stance, COUNT(*) FROM latest WHERE rn = 1 GROUP BY stance ORDER BY COUNT(*) DESC",
+        )?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok(json!({
+                    "stance": r.get::<_, String>(0)?,
+                    "count": r.get::<_, i64>(1)?,
+                }))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(json!(rows))
+    }
+
     /// Aggregate stance distribution across posts — a first-class "better
     /// opinion analysis" metric that OASIS could only produce via a later pass.
     pub fn stance_distribution(&self) -> Result<Value> {
@@ -400,6 +431,37 @@ mod tests {
         assert_eq!(comments.len(), 1);
         let dist = s.stance_distribution().unwrap();
         assert_eq!(dist[0]["stance"], "support");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn agent_weighted_counts_one_vote_per_agent() {
+        let dir = std::env::temp_dir().join(format!("popinion-agentw-{}", std::process::id()));
+        let s = Store::open(&dir.join("s.db")).unwrap();
+        s.add_user(1, 1, "A", "a", "", "").unwrap();
+        s.add_user(2, 2, "B", "b", "", "").unwrap();
+        // Agent 1 is hyperactive: 3 support posts. Agent 2: one oppose comment.
+        for _ in 0..3 {
+            s.add_post(1, "yes", 0, Some("support"), Some(0.5)).unwrap();
+        }
+        let p = s.add_post(2, "topic", 0, Some("seed"), None).unwrap();
+        s.add_comment(p, 2, "no", 1, Some("oppose"), Some(-0.5)).unwrap();
+
+        // Post-weighted: support dominates 3:0 (seed excluded).
+        let post_w = s.stance_distribution().unwrap();
+        assert_eq!(post_w[0]["stance"], "support");
+        assert_eq!(post_w[0]["count"], 3);
+
+        // Agent-weighted: one vote each → support 1, oppose 1.
+        let agent_w = s.agent_stance_distribution().unwrap();
+        let counts: std::collections::HashMap<String, i64> = agent_w
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| (r["stance"].as_str().unwrap().to_string(), r["count"].as_i64().unwrap()))
+            .collect();
+        assert_eq!(counts.get("support"), Some(&1));
+        assert_eq!(counts.get("oppose"), Some(&1));
         std::fs::remove_dir_all(&dir).ok();
     }
 }

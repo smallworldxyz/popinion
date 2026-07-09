@@ -289,9 +289,10 @@ struct ValidateReq {
 /// then pass the ids here to see whether any effect exceeds the noise floor.
 async fn validate(State(st): State<AppState>, Json(req): Json<ValidateReq>) -> AppResult<Success<Value>> {
     let manager = st.sim_manager();
+    // Agent-weighted (one vote per agent) — the honest population metric.
     let shares_of = |id: &str| -> AppResult<std::collections::BTreeMap<String, f64>> {
         let store = manager.store(id).map_err(|_| AppError::NotFound(format!("simulation {id}")))?;
-        let dist = store.stance_distribution().map_err(AppError::Other)?;
+        let dist = store.agent_stance_distribution().map_err(AppError::Other)?;
         Ok(crate::sim::validate::stance_shares(&dist))
     };
 
