@@ -207,6 +207,40 @@ impl Store {
         Ok(rows)
     }
 
+    /// A personalized feed for one agent: posts from accounts it follows first
+    /// (the network), then globally trending by likes, then recent — excluding
+    /// the agent's own posts. This is what makes Follow and likes matter:
+    /// influence and engagement shape what each agent sees, enabling echo
+    /// chambers and cascades instead of one shared global timeline.
+    pub fn feed_for(&self, user_id: i64, limit: i64) -> Result<Vec<Value>> {
+        let c = self.conn.lock().unwrap();
+        let mut stmt = c.prepare(
+            "SELECT p.post_id, p.user_id, u.user_name, p.content, p.num_likes, p.num_dislikes,
+                    p.stance,
+                    (SELECT COUNT(*) FROM follow f
+                     WHERE f.follower_id = ?1 AND f.followee_id = p.user_id) AS followed
+             FROM post p LEFT JOIN user u ON u.user_id = p.user_id
+             WHERE p.user_id != ?1
+             ORDER BY followed DESC, p.num_likes DESC, p.post_id DESC
+             LIMIT ?2",
+        )?;
+        let rows = stmt
+            .query_map(params![user_id, limit], |r| {
+                Ok(json!({
+                    "post_id": r.get::<_, i64>(0)?,
+                    "user_id": r.get::<_, i64>(1)?,
+                    "user_name": r.get::<_, Option<String>>(2)?,
+                    "content": r.get::<_, String>(3)?,
+                    "num_likes": r.get::<_, i64>(4)?,
+                    "num_dislikes": r.get::<_, i64>(5)?,
+                    "stance": r.get::<_, Option<String>>(6)?,
+                    "followed": r.get::<_, i64>(7)? > 0,
+                }))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
     /// An agent's own most-recent posts — context for in-character interviews
     /// so answers reflect what the agent actually said in the simulation.
     pub fn posts_by_user(&self, user_id: i64, limit: i64) -> Result<Vec<Value>> {
@@ -431,6 +465,29 @@ mod tests {
         assert_eq!(comments.len(), 1);
         let dist = s.stance_distribution().unwrap();
         assert_eq!(dist[0]["stance"], "support");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn feed_prioritizes_followed_then_trending_and_excludes_self() {
+        let dir = std::env::temp_dir().join(format!("popinion-feed-{}", std::process::id()));
+        let s = Store::open(&dir.join("s.db")).unwrap();
+        for id in 1..=3 {
+            s.add_user(id, id, "u", "u", "", "").unwrap();
+        }
+        let p_followee = s.add_post(2, "from someone I follow", 0, Some("support"), None).unwrap();
+        let p_trending = s.add_post(3, "popular but not followed", 0, Some("oppose"), None).unwrap();
+        s.add_post(1, "my own post", 0, Some("support"), None).unwrap();
+        // Trending post has more likes, but agent 1 only follows agent 2.
+        s.like_post(p_trending, 1, false).unwrap();
+        s.like_post(p_trending, 2, false).unwrap();
+        s.follow(1, 2).unwrap();
+
+        let feed = s.feed_for(1, 10).unwrap();
+        assert_eq!(feed[0]["post_id"], p_followee, "followed post ranks first despite fewer likes");
+        assert_eq!(feed[0]["followed"], true);
+        assert_eq!(feed[1]["post_id"], p_trending, "then trending by likes");
+        assert!(feed.iter().all(|p| p["user_id"] != 1), "own posts excluded");
         std::fs::remove_dir_all(&dir).ok();
     }
 

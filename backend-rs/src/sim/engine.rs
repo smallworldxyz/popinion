@@ -159,6 +159,27 @@ impl Engine {
                 &a.profile.persona,
             )?;
         }
+        // Seed an influence network: the synthetic public follows the named
+        // influencers (non-synthetic, graph-grounded agents), so elite posts
+        // reach the crowd and stances can propagate. Emergent follows on top of
+        // this come from agents' own Follow actions during the run.
+        // ponytail: everyone-follows-elites seeding. Faction-homophilous follows
+        // (supporters follow pro-elites) is the upgrade for echo-chamber studies.
+        let elites: Vec<i64> = self
+            .agents
+            .iter()
+            .filter(|a| !a.profile.synthetic)
+            .map(|a| a.profile.user_id)
+            .collect();
+        for a in &self.agents {
+            if a.profile.synthetic {
+                for &e in &elites {
+                    if e != a.profile.user_id {
+                        self.store.follow(a.profile.user_id, e)?;
+                    }
+                }
+            }
+        }
         // Seed the discussion with the configured initial posts (the "event").
         for post in &self.config.event_config.initial_posts {
             self.store.add_post(post.poster_agent_id, &post.content, 0, Some("seed"), None)?;
@@ -191,26 +212,28 @@ impl Engine {
             return Ok(());
         }
 
-        // 1) Build each active agent's feed (fast, sync store reads).
-        let feed = self.store.list_posts(FEED_SIZE, 0)?;
-        let feed_str = format_feed(&feed);
-
-        // 2) Concurrent LLM decisions (bounded). Materialize owned per-agent
-        // data first so the futures don't borrow `self`. Each agent carries its
-        // own recent activity + current stance so opinion has inertia across
-        // rounds instead of being re-derived from scratch every time.
-        let tasks: Vec<(i64, String, String)> = active
+        // Concurrent LLM decisions (bounded). Materialize owned per-agent data
+        // first so the futures don't borrow `self`. Each agent gets a PERSONALIZED
+        // feed (who it follows + trending) plus its own recent activity + current
+        // stance, so opinion has inertia and influence flows through the network
+        // instead of every agent reading one shared global timeline.
+        let tasks: Vec<(i64, String, String, String)> = active
             .iter()
             .map(|&i| {
                 let uid = self.agents[i].profile.user_id;
+                let feed = self.store.feed_for(uid, FEED_SIZE).unwrap_or_default();
                 let posts = self.store.posts_by_user(uid, 5).unwrap_or_default();
                 let comments = self.store.comments_by_user(uid, 5).unwrap_or_default();
-                (uid, self.agents[i].profile.persona_prompt(), format_agent_memory(&posts, &comments))
+                (
+                    uid,
+                    self.agents[i].profile.persona_prompt(),
+                    format_agent_memory(&posts, &comments),
+                    format_feed(&feed),
+                )
             })
             .collect();
         let llm = self.llm.clone();
-        let decisions: Vec<(i64, Decision)> = futures::stream::iter(tasks.into_iter().map(|(uid, sys, mem)| {
-            let feed_str = feed_str.clone();
+        let decisions: Vec<(i64, Decision)> = futures::stream::iter(tasks.into_iter().map(|(uid, sys, mem, feed_str)| {
             let llm = llm.clone();
             async move {
                 match decide(&llm, &sys, &mem, &feed_str).await {
@@ -575,6 +598,26 @@ mod tests {
         let feed = vec![json!({"post_id": 1, "user_name": "a", "content": "hello", "num_likes": 0, "num_dislikes": 0})];
         let out = format_feed(&feed);
         assert!(out.contains("«hello»"));
+    }
+
+    #[test]
+    fn reset_seeds_influence_network_from_public_to_elites() {
+        let dir = std::env::temp_dir().join(format!("popinion-net-{}", std::process::id()));
+        let store = Arc::new(Store::open(&dir.join("s.db")).unwrap());
+        let mut cfg = SimConfig::default();
+        cfg.simulation_id = "net".into();
+        let elite = profile(1); // synthetic = false
+        let mut citizen = profile(2);
+        citizen.synthetic = true;
+        let llm = Llm::new("", "http://localhost", "test");
+        let mut eng = Engine::new(store.clone(), vec![elite, citizen], cfg, llm);
+        eng.reset().unwrap();
+        // The elite posts; the synthetic citizen should already follow it.
+        store.add_post(1, "elite statement", 0, Some("support"), None).unwrap();
+        let feed = store.feed_for(2, 10).unwrap();
+        assert_eq!(feed[0]["user_id"], 1);
+        assert_eq!(feed[0]["followed"], true, "public follows the named influencer");
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
