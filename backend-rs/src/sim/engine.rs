@@ -420,6 +420,10 @@ mod tests {
             country: None,
             profession: None,
             interested_topics: vec![],
+            source_entity_uuid: None,
+            source_entity_type: None,
+            evidence: vec![],
+            synthetic: false,
         }
     }
 

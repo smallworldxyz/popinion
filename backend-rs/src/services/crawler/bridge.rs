@@ -9,11 +9,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 
-const MBTI_TYPES: [&str; 16] = [
-    "INTJ", "INTP", "ENTJ", "ENTP", "INFJ", "INFP", "ENFJ", "ENFP", "ISTJ", "ISFJ", "ESTJ",
-    "ESFJ", "ISTP", "ISFP", "ESTP", "ESFP",
-];
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct OasisAgentProfile {
     pub user_id: i64,
@@ -97,7 +92,9 @@ pub fn create_seed(result: &CrawlResult, anonymize: bool, max_profiles: usize) -
             follower_count: 150,
             statuses_count: 500,
             age: None,
-            mbti: Some(MBTI_TYPES[id as usize % 16].to_string()),
+            // No fabricated personality — MBTI-by-id is noise the model reads as
+            // real. Attributes come from observed data or stay absent.
+            mbti: None,
             profession: None,
             interested_topics: vec![],
             source_entity_uuid: Some(post.author_id.clone()),
@@ -144,7 +141,7 @@ fn user_to_profile(user: &ScrapedUser, user_id: i64, anonymize: bool) -> OasisAg
         follower_count: user.followers,
         statuses_count: user.post_count,
         age: infer_age(&user.bio, user_id),
-        mbti: Some(MBTI_TYPES[user_id as usize % 16].to_string()),
+        mbti: None,
         profession: infer_profession(&user.bio),
         interested_topics: extract_topics(&user.bio),
         source_entity_uuid: Some(user.user_id.clone()),

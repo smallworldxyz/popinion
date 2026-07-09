@@ -25,6 +25,21 @@ pub struct AgentProfile {
     pub profession: Option<String>,
     #[serde(default)]
     pub interested_topics: Vec<String>,
+
+    // ---- provenance (graph-grounded personas) ----
+    /// The knowledge-graph entity this persona was compiled from.
+    #[serde(default)]
+    pub source_entity_uuid: Option<String>,
+    #[serde(default)]
+    pub source_entity_type: Option<String>,
+    /// Real facts (entity summary + relationship facts) this persona rests on.
+    /// Empty for fabricated/legacy profiles.
+    #[serde(default)]
+    pub evidence: Vec<String>,
+    /// True when attributes were invented rather than observed. Reports must
+    /// disclose synthetic personas; graph-grounded ones set this false.
+    #[serde(default)]
+    pub synthetic: bool,
 }
 
 impl AgentProfile {
@@ -34,10 +49,11 @@ impl AgentProfile {
         if let Some(age) = self.age {
             s.push_str(&format!(" Age: {age}."));
         }
+        // MBTI is deliberately not rendered: it was fabricated (round-robin by
+        // id) and only injects the model's stereotype priors as false texture.
         for (label, v) in [
             ("Profession", &self.profession),
             ("Country", &self.country),
-            ("Personality (MBTI)", &self.mbti),
             ("Gender", &self.gender),
         ] {
             if let Some(v) = v {
@@ -54,6 +70,13 @@ impl AgentProfile {
         }
         if !self.persona.is_empty() {
             s.push_str(&format!("\nPersona: {}", self.persona));
+        }
+        // Ground the persona in observed evidence when we have it.
+        if !self.evidence.is_empty() {
+            s.push_str("\nWhat is known about you (from real observed data):");
+            for fact in &self.evidence {
+                s.push_str(&format!("\n- {fact}"));
+            }
         }
         s
     }

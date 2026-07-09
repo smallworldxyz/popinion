@@ -27,6 +27,12 @@ pub struct SimMeta {
     pub num_agents: usize,
     #[serde(default)]
     pub status: String,
+    /// The knowledge graph this sim draws its population from (the "God's-eye"
+    /// source). Set when created via the wizard; used by /prepare.
+    #[serde(default)]
+    pub graph_id: Option<String>,
+    #[serde(default)]
+    pub project_id: Option<String>,
 }
 
 impl Manager {
@@ -41,12 +47,59 @@ impl Manager {
         self.dir(id).join("social.db")
     }
 
-    /// Create a sim on disk from personas + optional config. Returns its id.
-    pub fn create(&self, name: &str, profiles: Vec<AgentProfile>, mut config: SimConfig) -> Result<String> {
+    /// Create a sim on disk. Personas may be empty when the sim is graph-linked
+    /// and will be populated later via /prepare. Returns its id.
+    pub fn create(
+        &self,
+        name: &str,
+        profiles: Vec<AgentProfile>,
+        config: SimConfig,
+        graph_id: Option<String>,
+        project_id: Option<String>,
+    ) -> Result<String> {
         let id = uuid::Uuid::new_v4().to_string();
         let dir = self.dir(&id);
         std::fs::create_dir_all(&dir)?;
-        config.simulation_id = id.clone();
+        let meta = SimMeta {
+            simulation_id: id.clone(),
+            name: name.to_string(),
+            created_at: chrono::Utc::now().to_rfc3339(),
+            num_agents: profiles.len(),
+            status: "created".into(),
+            graph_id,
+            project_id,
+        };
+        self.write_profiles_and_config(&id, &profiles, config)?;
+        self.write_meta(&meta)?;
+        Ok(id)
+    }
+
+    /// Populate (or replace) a graph-linked sim's personas after /prepare.
+    /// Preserves the sim's existing config (initial posts, timing) and only
+    /// swaps the personas; bumps num_agents and marks it ready to start.
+    pub fn attach_profiles(&self, id: &str, profiles: Vec<AgentProfile>) -> Result<()> {
+        let dir = self.dir(id);
+        if !dir.exists() {
+            anyhow::bail!("simulation {id} not found");
+        }
+        // Keep the existing config; reset agent_configs so they regenerate for
+        // the new persona set.
+        let mut config: SimConfig = match std::fs::read(dir.join("config.json")) {
+            Ok(raw) => serde_json::from_slice(&raw).unwrap_or_default(),
+            Err(_) => SimConfig::default(),
+        };
+        config.agent_configs.clear();
+        self.write_profiles_and_config(id, &profiles, config)?;
+        let mut meta = self.meta(id)?;
+        meta.num_agents = profiles.len();
+        meta.status = "prepared".into();
+        self.write_meta(&meta)?;
+        Ok(())
+    }
+
+    fn write_profiles_and_config(&self, id: &str, profiles: &[AgentProfile], mut config: SimConfig) -> Result<()> {
+        let dir = self.dir(id);
+        config.simulation_id = id.to_string();
         // Default one agent-config row per profile if none supplied.
         if config.agent_configs.is_empty() {
             config.agent_configs = profiles
@@ -58,17 +111,9 @@ impl Manager {
                 })
                 .collect();
         }
-        std::fs::write(dir.join("profiles.json"), serde_json::to_vec_pretty(&profiles)?)?;
+        std::fs::write(dir.join("profiles.json"), serde_json::to_vec_pretty(profiles)?)?;
         std::fs::write(dir.join("config.json"), serde_json::to_vec_pretty(&config)?)?;
-        let meta = SimMeta {
-            simulation_id: id.clone(),
-            name: name.to_string(),
-            created_at: chrono::Utc::now().to_rfc3339(),
-            num_agents: profiles.len(),
-            status: "created".into(),
-        };
-        self.write_meta(&meta)?;
-        Ok(id)
+        Ok(())
     }
 
     fn write_meta(&self, meta: &SimMeta) -> Result<()> {

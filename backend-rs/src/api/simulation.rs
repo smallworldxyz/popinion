@@ -45,6 +45,7 @@ pub fn router() -> Router<AppState> {
         .route("/create", post(create))
         .route("/prepare", post(prepare))
         .route("/prepare/preview", post(prepare_preview))
+        .route("/prepare/status", post(prepare_status))
         .route("/start", post(start))
         .route("/stop", post(stop))
         .route("/close-env", post(stop))
@@ -79,31 +80,185 @@ struct CreateReq {
     config: Option<SimConfig>,
     #[serde(default)]
     initial_posts: Vec<crate::sim::config::InitialPost>,
+    /// Wizard flow: create an empty sim tied to a graph, then /prepare it.
+    #[serde(default)]
+    graph_id: Option<String>,
+    #[serde(default)]
+    project_id: Option<String>,
 }
 fn default_name() -> String {
     "Untitled Simulation".into()
 }
 
 async fn create(State(st): State<AppState>, Json(req): Json<CreateReq>) -> AppResult<Success<Value>> {
-    if req.profiles.is_empty() {
-        return Err(AppError::BadRequest("no agent profiles provided".into()));
+    // Personas may be supplied directly, or omitted when the sim is graph-linked
+    // and will be populated by /prepare. Reject only the truly empty case.
+    if req.profiles.is_empty() && req.graph_id.is_none() && req.project_id.is_none() {
+        return Err(AppError::BadRequest(
+            "provide agent profiles, or a graph_id/project_id to prepare personas from".into(),
+        ));
     }
     let mut config = req.config.unwrap_or_default();
     if !req.initial_posts.is_empty() {
         config.event_config.initial_posts = req.initial_posts;
     }
-    let id = st.sim_manager().create(&req.name, req.profiles, config).map_err(AppError::Other)?;
+    let id = st
+        .sim_manager()
+        .create(&req.name, req.profiles, config, req.graph_id, req.project_id)
+        .map_err(AppError::Other)?;
     Ok(Success(json!({ "simulation_id": id })))
 }
 
-// Graph-grounded persona/config generation lands with the persona service.
-async fn prepare(State(_st): State<AppState>, Json(_b): Json<Value>) -> AppResult<Success<Value>> {
-    Err(AppError::NotImplemented(
-        "prepare (graph-grounded persona generation) is wired after the persona service; use /create with profiles for now".into(),
-    ))
+// ---- graph-grounded persona generation (the God's-eye → simulation link) ----
+
+use crate::services::graph::{neo4j, projects, tasks};
+use crate::sim::persona;
+
+/// Which knowledge graph does this sim draw its population from?
+fn resolve_graph_id(st: &AppState, sim_id: &str) -> AppResult<String> {
+    let meta = st
+        .sim_manager()
+        .meta(sim_id)
+        .map_err(|_| AppError::NotFound(format!("simulation {sim_id}")))?;
+    if let Some(g) = meta.graph_id {
+        return Ok(g);
+    }
+    if let Some(pid) = meta.project_id {
+        if let Some(g) = projects::get(&pid).and_then(|p| p.graph_id) {
+            return Ok(g);
+        }
+    }
+    Err(AppError::BadRequest(format!("simulation {sim_id} has no graph to prepare from")))
 }
-async fn prepare_preview(State(_st): State<AppState>, Json(_b): Json<Value>) -> AppResult<Success<Value>> {
-    Err(AppError::NotImplemented("prepare/preview pending persona service".into()))
+
+#[derive(Deserialize)]
+struct PreparePreviewReq {
+    simulation_id: String,
+    #[serde(default)]
+    min_evidence: Option<usize>,
+}
+
+/// Entities grouped by type with evidence scores, so the user picks who becomes
+/// a named agent. Synchronous — one graph read.
+async fn prepare_preview(State(st): State<AppState>, Json(req): Json<PreparePreviewReq>) -> AppResult<Success<Value>> {
+    let graph_id = resolve_graph_id(&st, &req.simulation_id)?;
+    let data = neo4j::get_graph_data(st.graph()?, &graph_id).await.map_err(AppError::Other)?;
+    Ok(Success(persona::preview(&data, req.min_evidence.unwrap_or(2))))
+}
+
+#[derive(Deserialize)]
+struct PrepareReq {
+    simulation_id: String,
+    /// Explicit entity uuids to instantiate. If empty, every eligible entity
+    /// (optionally filtered by `entity_types`) is used.
+    #[serde(default)]
+    selected_entity_ids: Vec<String>,
+    #[serde(default)]
+    entity_types: Vec<String>,
+    #[serde(default = "default_true")]
+    use_llm_for_profiles: bool,
+    #[serde(default)]
+    min_evidence: Option<usize>,
+}
+fn default_true() -> bool {
+    true
+}
+
+/// Compile graph entities into grounded personas and attach them to the sim.
+/// Async: returns a task_id to poll via /prepare/status.
+async fn prepare(State(st): State<AppState>, Json(req): Json<PrepareReq>) -> AppResult<Success<Value>> {
+    let graph_id = resolve_graph_id(&st, &req.simulation_id)?;
+    let graph = st.graph()?.clone();
+    let llm = st.llm.clone();
+    let manager = st.sim_manager();
+    let sim_id = req.simulation_id;
+    let selected = req.selected_entity_ids;
+    let types = req.entity_types;
+    let use_llm = req.use_llm_for_profiles;
+    let min_evidence = req.min_evidence.unwrap_or(2);
+
+    let task_id = tasks::create("persona_prepare", json!({"simulation_id": sim_id, "graph_id": graph_id}));
+    let tid = task_id.clone();
+    let sim_for_task = sim_id.clone();
+    tokio::spawn(async move {
+        if let Err(e) =
+            run_prepare(&graph, &llm, &manager, &tid, &sim_for_task, &graph_id, selected, types, use_llm, min_evidence).await
+        {
+            tracing::error!("persona prepare {tid} failed: {e:#}");
+            tasks::fail(&tid, format!("{e:#}"));
+        }
+    });
+    Ok(Success(json!({ "task_id": task_id, "simulation_id": sim_id })))
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn run_prepare(
+    graph: &neo4rs::Graph,
+    llm: &crate::llm::Llm,
+    manager: &crate::sim::manager::Manager,
+    task_id: &str,
+    sim_id: &str,
+    graph_id: &str,
+    selected: Vec<String>,
+    types: Vec<String>,
+    use_llm: bool,
+    min_evidence: usize,
+) -> anyhow::Result<()> {
+    tasks::update(task_id, 10, "Loading graph...");
+    let data = neo4j::get_graph_data(graph, graph_id).await?;
+    let bundles = persona::build_bundles(&data);
+    tasks::update(task_id, 40, format!("{} entities in graph", bundles.len()));
+
+    let id_set: std::collections::HashSet<String> = selected.into_iter().collect();
+    let type_set: std::collections::HashSet<String> = types.into_iter().collect();
+    let chosen: Vec<&persona::EvidenceBundle> = bundles
+        .iter()
+        .filter(|b| {
+            if !id_set.is_empty() {
+                return id_set.contains(&b.uuid);
+            }
+            persona::eligible(b, min_evidence) && (type_set.is_empty() || type_set.contains(&b.entity_type))
+        })
+        .collect();
+    if chosen.is_empty() {
+        anyhow::bail!("no entities matched (min_evidence={min_evidence}); loosen selection or lower the bar");
+    }
+
+    let total = chosen.len();
+    let mut profiles = Vec::with_capacity(total);
+    for (i, b) in chosen.into_iter().enumerate() {
+        let mut p = persona::to_profile(b, i as i64);
+        if use_llm {
+            p.persona = persona::synthesize_persona(llm, b).await;
+        }
+        profiles.push(p);
+        let prog = 40 + (50 * (i + 1) / total) as u8;
+        tasks::update(task_id, prog.min(90), format!("Compiled {}/{total} personas", i + 1));
+    }
+
+    manager.attach_profiles(sim_id, profiles)?;
+    tasks::complete(
+        task_id,
+        json!({
+            "simulation_id": sim_id,
+            "personas_created": total,
+            "min_evidence": min_evidence,
+            "grounded": true,
+        }),
+    );
+    Ok(())
+}
+
+#[derive(Deserialize)]
+struct PrepareStatusReq {
+    #[serde(default)]
+    task_id: Option<String>,
+}
+
+async fn prepare_status(Json(req): Json<PrepareStatusReq>) -> AppResult<Success<Value>> {
+    let tid = req.task_id.ok_or_else(|| AppError::BadRequest("task_id required".into()))?;
+    let task = tasks::get(&tid).ok_or_else(|| AppError::NotFound(format!("task {tid}")))?;
+    Ok(Success(serde_json::to_value(task).map_err(|e| AppError::Other(e.into()))?))
 }
 
 #[derive(Deserialize)]
