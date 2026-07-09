@@ -3,3 +3,4 @@
 pub mod crawler;
 pub mod graph;
 pub mod report;
+pub mod search;

@@ -36,6 +36,7 @@ fn tools_description() -> &'static str {
 - search_posts: find posts matching keywords. parameters: {"query": "keywords", "limit": 10}
 - statistics: overall numbers - post count, stance distribution, most-liked posts, round range. parameters: {}
 - stance_distribution: per-stance post counts and average sentiment. parameters: {}
+- web_search: look up current real-world context outside the simulation (news, facts, background). parameters: {"query": "search terms", "max_results": 5}
 
 To call a tool, emit exactly:
 <tool_call>
@@ -287,7 +288,16 @@ async fn generate(st: &AppState, report_id: &str) -> anyhow::Result<()> {
             let params = call["parameters"].clone();
             registry::agent_log(report_id, "tool_call", "gathering", json!({"tool": name, "parameters": params}));
             registry::console_log(report_id, "INFO", &format!("tool call: {name} {params}"));
-            let result = execute_tool(&store, &name, &params).unwrap_or_else(|e| format!("Tool failed: {e}"));
+            // web_search is async (HTTP); the store tools are sync. Dispatch here.
+            let result = if name == "web_search" {
+                let query = params["query"].as_str().unwrap_or("");
+                let max_results = params["max_results"].as_u64().unwrap_or(5) as usize;
+                crate::services::search::web_search(&st.cfg.tavily_api_key, query, max_results)
+                    .await
+                    .unwrap_or_else(|e| format!("Tool failed: {e}"))
+            } else {
+                execute_tool(&store, &name, &params).unwrap_or_else(|e| format!("Tool failed: {e}"))
+            };
             let result = trim(&result, OBSERVATION_LIMIT);
             registry::agent_log(
                 report_id,

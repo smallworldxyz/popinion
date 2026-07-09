@@ -22,6 +22,8 @@ pub struct Config {
     pub report_max_reflection_rounds: u32,
     pub report_temperature: f32,
 
+    pub tavily_api_key: String,
+
     pub port: u16,
 }
 
@@ -60,6 +62,8 @@ impl Config {
                 .parse()
                 .unwrap_or(2),
             report_temperature: var("REPORT_AGENT_TEMPERATURE", "0.5").parse().unwrap_or(0.5),
+
+            tavily_api_key: var("TAVILY_API_KEY", ""),
 
             port: var("PORT", "5001").parse().unwrap_or(5001),
         }
