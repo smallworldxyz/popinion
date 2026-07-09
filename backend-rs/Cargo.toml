@@ -1,0 +1,31 @@
+[package]
+name = "popinion"
+version = "0.3.0"
+edition = "2021"
+description = "Popinion - Public Opinion Analysis via multi-agent LLM simulation (Rust backend)"
+license = "MIT"
+
+[[bin]]
+name = "popinion"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+axum = { version = "0.7", features = ["macros"] }
+tower-http = { version = "0.6", features = ["cors", "trace"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", features = ["json", "gzip", "rustls-tls"], default-features = false }
+neo4rs = "0.8"
+rusqlite = { version = "0.32", features = ["bundled"] }
+anyhow = "1"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+dotenvy = "0.15"
+futures = "0.3"
+
+[profile.dev]
+opt-level = 0
