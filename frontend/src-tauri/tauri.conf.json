@@ -8,15 +8,7 @@
     "devUrl": "http://localhost:3100"
   },
   "app": {
-    "windows": [
-      {
-        "title": "Popinion",
-        "width": 1400,
-        "height": 950,
-        "resizable": true,
-        "fullscreen": false
-      }
-    ],
+    "windows": [],
     "security": {
       "csp": null
     }

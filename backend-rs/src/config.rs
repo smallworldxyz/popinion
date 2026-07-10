@@ -14,6 +14,10 @@ pub struct Config {
     /// Where the user-editable LLM provider settings persist (base_url/model/key
     /// per slot). Overlays the env defaults above at startup.
     pub settings_path: String,
+    /// Directory of the built frontend to serve on the same origin as the API.
+    /// Set (e.g. by the desktop shell) to make one process serve UI + API — no
+    /// separate dev server, no CORS. None = API only (browser dev via Vite).
+    pub static_dir: Option<String>,
 
     pub sim_data_dir: String,
     pub sim_default_max_rounds: u32,
@@ -51,6 +55,7 @@ impl Config {
 
             graph_db_path: var("GRAPH_DB_PATH", "./uploads/graph.db"),
             settings_path: var("SETTINGS_PATH", "./uploads/settings.json"),
+            static_dir: env::var("STATIC_DIR").ok().filter(|s| !s.is_empty()),
 
             sim_data_dir: var("OASIS_SIMULATION_DATA_DIR", "./uploads/simulations"),
             sim_default_max_rounds: var("OASIS_DEFAULT_MAX_ROUNDS", "10").parse().unwrap_or(10),
