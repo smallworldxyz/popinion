@@ -16,7 +16,6 @@ tower-http = { version = "0.6", features = ["cors", "trace"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.12", features = ["json", "gzip", "rustls-tls"], default-features = false }
-neo4rs = { version = "0.8", features = ["json"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 anyhow = "1"
 thiserror = "2"

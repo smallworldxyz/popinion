@@ -114,7 +114,7 @@ async fn create(State(st): State<AppState>, Json(req): Json<CreateReq>) -> AppRe
 
 // ---- graph-grounded persona generation (the God's-eye → simulation link) ----
 
-use crate::services::graph::{neo4j, projects, tasks};
+use crate::services::graph::{db, projects, tasks};
 use crate::sim::persona;
 
 /// Which knowledge graph does this sim draw its population from?
@@ -145,7 +145,7 @@ struct PreparePreviewReq {
 /// a named agent. Synchronous — one graph read.
 async fn prepare_preview(State(st): State<AppState>, Json(req): Json<PreparePreviewReq>) -> AppResult<Success<Value>> {
     let graph_id = resolve_graph_id(&st, &req.simulation_id)?;
-    let data = neo4j::get_graph_data(st.graph()?, &graph_id).await.map_err(AppError::Other)?;
+    let data = db::get_graph_data(st.graph(), &graph_id).await.map_err(AppError::Other)?;
     Ok(Success(persona::preview(&data, req.min_evidence.unwrap_or(2))))
 }
 
@@ -178,7 +178,7 @@ fn default_true() -> bool {
 /// Async: returns a task_id to poll via /prepare/status.
 async fn prepare(State(st): State<AppState>, Json(req): Json<PrepareReq>) -> AppResult<Success<Value>> {
     let graph_id = resolve_graph_id(&st, &req.simulation_id)?;
-    let graph = st.graph()?.clone();
+    let graph = st.graph().clone();
     // Persona synthesis is low-volume + quality-sensitive → the boost slot.
     let llm = st.llm_boost.clone();
     let manager = st.sim_manager();
@@ -209,7 +209,7 @@ async fn prepare(State(st): State<AppState>, Json(req): Json<PrepareReq>) -> App
 
 #[allow(clippy::too_many_arguments)]
 async fn run_prepare(
-    graph: &neo4rs::Graph,
+    graph: &crate::services::graph::db::GraphDb,
     llm: &crate::llm::Llm,
     manager: &crate::sim::manager::Manager,
     task_id: &str,
@@ -223,7 +223,7 @@ async fn run_prepare(
     audience_per_faction: usize,
 ) -> anyhow::Result<()> {
     tasks::update(task_id, 10, "Loading graph...");
-    let data = neo4j::get_graph_data(graph, graph_id).await?;
+    let data = db::get_graph_data(graph, graph_id).await?;
     let bundles = persona::build_bundles(&data);
     tasks::update(task_id, 40, format!("{} entities in graph", bundles.len()));
 

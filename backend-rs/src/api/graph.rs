@@ -2,7 +2,7 @@
 
 use crate::error::{AppError, AppResult};
 use crate::models::Ok as Payload;
-use crate::services::graph::{builder, file_parser, neo4j, ontology, projects, tasks};
+use crate::services::graph::{builder, db, file_parser, ontology, projects, tasks};
 use crate::state::AppState;
 use axum::extract::{DefaultBodyLimit, Multipart, Path, State};
 use axum::routing::{delete, get, post};
@@ -166,7 +166,7 @@ async fn build_graph(
     State(st): State<AppState>,
     Json(req): Json<BuildRequest>,
 ) -> AppResult<Payload<Value>> {
-    let graph = st.graph()?.clone();
+    let graph = st.graph().clone();
 
     let project_id = req.project_id.trim().to_string();
     if project_id.is_empty() {
@@ -218,7 +218,7 @@ async fn get_graph_data(
     State(st): State<AppState>,
     Path(graph_id): Path<String>,
 ) -> AppResult<Payload<Value>> {
-    let data = neo4j::get_graph_data(st.graph()?, &graph_id).await?;
+    let data = db::get_graph_data(st.graph(), &graph_id).await?;
     Ok(Payload(json!({ "data": data })))
 }
 
@@ -226,7 +226,7 @@ async fn delete_graph(
     State(st): State<AppState>,
     Path(graph_id): Path<String>,
 ) -> AppResult<Payload<Value>> {
-    neo4j::delete_graph(st.graph()?, &graph_id).await?;
+    db::delete_graph(st.graph(), &graph_id).await?;
     Ok(Payload(json!({ "message": "Graph deleted successfully" })))
 }
 

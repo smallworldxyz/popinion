@@ -34,7 +34,7 @@ impl IntoResponse for AppError {
 
 pub type AppResult<T> = Result<T, AppError>;
 
-// convenience for `?` on rusqlite / neo4rs / reqwest without manual mapping
+// convenience for `?` on rusqlite / reqwest without manual mapping
 impl From<rusqlite::Error> for AppError {
     fn from(e: rusqlite::Error) -> Self {
         AppError::Other(anyhow::Error::new(e))
@@ -42,11 +42,6 @@ impl From<rusqlite::Error> for AppError {
 }
 impl From<reqwest::Error> for AppError {
     fn from(e: reqwest::Error) -> Self {
-        AppError::Other(anyhow::Error::new(e))
-    }
-}
-impl From<neo4rs::Error> for AppError {
-    fn from(e: neo4rs::Error) -> Self {
         AppError::Other(anyhow::Error::new(e))
     }
 }

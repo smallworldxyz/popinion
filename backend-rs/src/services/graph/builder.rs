@@ -1,10 +1,10 @@
 //! Graph build orchestration (port of graph_builder.py).
 //! Spawns a tokio task that chunks the text, runs LLM extraction per chunk,
-//! upserts into Neo4j, and reports progress through the task registry.
+//! upserts into the graph store, and reports progress through the task registry.
 //! The Python version's fixed 3s-per-chunk rate-limit sleep is dropped: the
 //! Llm client already retries 429s with backoff.
 
-use super::{entity_extractor, neo4j, projects, tasks};
+use super::{db, entity_extractor, projects, tasks};
 use crate::llm::Llm;
 use serde_json::{json, Value};
 
@@ -18,7 +18,7 @@ pub struct BuildParams {
 }
 
 /// Kick off an async graph build; returns the task_id to poll.
-pub fn spawn_build(graph: neo4rs::Graph, llm: Llm, params: BuildParams) -> String {
+pub fn spawn_build(graph: db::GraphDb, llm: Llm, params: BuildParams) -> String {
     let task_id = tasks::create(
         "graph_build",
         json!({
@@ -42,7 +42,7 @@ pub fn spawn_build(graph: neo4rs::Graph, llm: Llm, params: BuildParams) -> Strin
 }
 
 async fn run_build(
-    graph: &neo4rs::Graph,
+    graph: &db::GraphDb,
     llm: &Llm,
     task_id: &str,
     params: BuildParams,
@@ -50,11 +50,11 @@ async fn run_build(
     tasks::update(task_id, 5, "Starting graph build...");
 
     // 1. Create graph metadata + constraints.
-    let graph_id = neo4j::create_graph(graph, &params.graph_name).await?;
+    let graph_id = db::create_graph(graph, &params.graph_name).await?;
     tasks::update(task_id, 10, format!("Graph created: {graph_id}"));
 
     // 2. Store ontology on the metadata node.
-    neo4j::set_ontology(graph, &graph_id, &params.ontology).await?;
+    db::set_ontology(graph, &graph_id, &params.ontology).await?;
     tasks::update(task_id, 15, "Ontology set");
 
     // 3. Chunk the text.
@@ -62,7 +62,7 @@ async fn run_build(
     let total_chunks = chunks.len();
     tasks::update(task_id, 20, format!("Text split into {total_chunks} chunks"));
 
-    // 4. Extract entities per chunk and upsert into Neo4j.
+    // 4. Extract entities per chunk and upsert into the graph store.
     let mut failed_chunks = 0usize;
     for (idx, chunk) in chunks.iter().enumerate() {
         let progress = 20 + ((idx + 1) as f64 / total_chunks.max(1) as f64 * 70.0) as u8;
@@ -76,7 +76,7 @@ async fn run_build(
             Ok(extraction) => {
                 if let Err(e) = write_extraction(graph, &graph_id, &extraction).await {
                     failed_chunks += 1;
-                    tracing::error!("failed to write chunk {idx} to Neo4j: {e:#}");
+                    tracing::error!("failed to write chunk {idx} to graph store: {e:#}");
                 }
             }
             Err(e) => {
@@ -95,7 +95,7 @@ async fn run_build(
 
     // 5. Collect graph info; refuse to complete on an empty graph.
     tasks::update(task_id, 95, "Getting graph information...");
-    let info = neo4j::graph_info(graph, &graph_id).await?;
+    let info = db::graph_info(graph, &graph_id).await?;
     if info.node_count == 0 {
         anyhow::bail!("Graph build failed: no entities were extracted. Please try again later.");
     }
@@ -127,9 +127,9 @@ async fn run_build(
     Ok(())
 }
 
-/// Write one normalized extraction ({entities, relationships}) to Neo4j.
+/// Write one normalized extraction into the graph store.
 async fn write_extraction(
-    graph: &neo4rs::Graph,
+    graph: &db::GraphDb,
     graph_id: &str,
     extraction: &Value,
 ) -> anyhow::Result<()> {
@@ -144,7 +144,7 @@ async fn write_extraction(
         if name.is_empty() || labels.is_empty() {
             continue;
         }
-        neo4j::upsert_entity(graph, graph_id, name, &labels, &props).await?;
+        db::upsert_entity(graph, graph_id, name, &labels, &props).await?;
     }
 
     for rel in extraction["relationships"].as_array().unwrap_or(&empty) {
@@ -155,7 +155,7 @@ async fn write_extraction(
         if source.is_empty() || target.is_empty() {
             continue;
         }
-        neo4j::upsert_relationship(graph, graph_id, source, target, rel_type, &props).await?;
+        db::upsert_relationship(graph, graph_id, source, target, rel_type, &props).await?;
     }
     Ok(())
 }

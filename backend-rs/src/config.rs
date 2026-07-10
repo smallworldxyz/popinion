@@ -10,10 +10,7 @@ pub struct Config {
     pub llm_boost_base_url: String,
     pub llm_boost_model: String,
 
-    pub neo4j_uri: String,
-    pub neo4j_user: String,
-    pub neo4j_password: String,
-    pub neo4j_database: String,
+    pub graph_db_path: String,
 
     pub sim_data_dir: String,
     pub sim_default_max_rounds: u32,
@@ -49,10 +46,7 @@ impl Config {
             llm_base_url,
             llm_model,
 
-            neo4j_uri: var("NEO4J_URI", "bolt://localhost:7687"),
-            neo4j_user: var("NEO4J_USERNAME", "neo4j"),
-            neo4j_password: var("NEO4J_PASSWORD", "pubop123"),
-            neo4j_database: var("NEO4J_DATABASE", "neo4j"),
+            graph_db_path: var("GRAPH_DB_PATH", "./uploads/graph.db"),
 
             sim_data_dir: var("OASIS_SIMULATION_DATA_DIR", "./uploads/simulations"),
             sim_default_max_rounds: var("OASIS_DEFAULT_MAX_ROUNDS", "10").parse().unwrap_or(10),

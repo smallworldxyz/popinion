@@ -60,7 +60,7 @@ fn stance_polarity(rel: &str) -> Option<bool> {
     }
 }
 
-/// Build one evidence bundle per entity from `neo4j::get_graph_data` output
+/// Build one evidence bundle per entity from `db::get_graph_data` output
 /// (`{nodes:[{uuid,name,labels,summary,attributes}], edges:[{fact,name(rel),
 /// source_node_uuid,target_node_uuid,source_node_name,target_node_name}]}`).
 pub fn build_bundles(graph_data: &Value) -> Vec<EvidenceBundle> {

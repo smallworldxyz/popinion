@@ -16,7 +16,7 @@ then act with the evidence in hand.
 
 ```
 Real Data  →  Knowledge Graph  →  Personas  →  Simulation  →  Report
- (crawl/       (Neo4j, entity      (graph-      (in-process    (grounded
+ (crawl/       (SQLite, entity       (graph-      (in-process    (grounded
   upload)       extraction)         grounded)    agents)        analysis)
 ```
 
@@ -25,7 +25,7 @@ Real Data  →  Knowledge Graph  →  Personas  →  Simulation  →  Report
 | Feature | Description |
 |---------|-------------|
 | **Crawlers** | Telegram / X / Facebook scraping via headless Chrome (CDP). |
-| **Knowledge graph** | LLM entity + relationship extraction into Neo4j, guided by a generated ontology. |
+| **Knowledge graph** | LLM entity + relationship extraction into an embedded graph store (SQLite), guided by a generated ontology. |
 | **Graph-grounded personas** | `/prepare` compiles each entity into a persona from its *observed evidence* (summary + relationship facts, incl. stance edges) — with provenance, no fabricated attributes. |
 | **Simulation** | In-process multi-agent engine; agents post/comment/react over rounds. Stance & sentiment are captured at action time. |
 | **Reports & panels** | Report agent (with a `web_search` tool), panel chat, and surveys over the live agents. |
@@ -35,7 +35,7 @@ Real Data  →  Knowledge Graph  →  Personas  →  Simulation  →  Report
 
 - **Frontend**: Vue 3 + Vite (Bun)
 - **Backend**: Rust (`backend-rs`, Axum) — the `popinion` binary
-- **Database**: Neo4j (graph)
+- **Graph store**: embedded SQLite (no external database)
 - **Per-sim store**: SQLite (stance/sentiment as first-class columns)
 - **LLM**: any OpenAI-compatible endpoint — local (Ollama) for bulk work, a metered API for quality
 
@@ -47,16 +47,12 @@ Real Data  →  Knowledge Graph  →  Personas  →  Simulation  →  Report
 |------|---------|-------|
 | **Rust** (stable) | Backend | `cargo --version` |
 | **Bun** | Frontend | `bun -v` |
-| **Docker** | Neo4j | `docker --version` |
 | **Ollama** *(optional)* | Free local LLM for bulk work | `ollama --version` |
 
-### 1. Start Neo4j
+No database to run — the knowledge graph is embedded (SQLite). Docker is only
+needed for the optional X/Facebook crawlers.
 
-```bash
-docker-compose up -d          # Neo4j Browser: http://localhost:7474  (neo4j / pubop123)
-```
-
-### 2. Configure environment
+### 1. Configure environment
 
 ```bash
 cp .env.example .env          # then edit .env
@@ -82,7 +78,7 @@ TAVILY_API_KEY=
 
 For a local model: `ollama serve && ollama pull qwen2.5:14b`.
 
-### 3. Run
+### 2. Run
 
 ```bash
 # Backend (Rust) — serves the API on :5001
@@ -103,7 +99,7 @@ bun run dev
 ## 🔄 Workflow
 
 1. **Crawl / upload** — gather real posts and documents.
-2. **Build the graph** — entity & relationship extraction into Neo4j.
+2. **Build the graph** — entity & relationship extraction into the embedded graph store.
 3. **Prepare** — compile eligible graph entities into grounded personas
    (`/api/simulation/prepare/preview` → `/prepare` → `/prepare/status`).
 4. **Simulate** — run the agents over rounds; stance/sentiment recorded per action.

@@ -8,9 +8,8 @@ pub struct AppState {
     pub cfg: Arc<Config>,
     pub llm: Llm,
     pub llm_boost: Llm,
-    /// Neo4j graph handle. `None` when the DB was unreachable at startup;
-    /// graph endpoints surface a clear error rather than panicking the server.
-    pub neo4j: Option<neo4rs::Graph>,
+    /// Embedded graph store (SQLite) — no external database required.
+    pub graph_db: crate::services::graph::db::GraphDb,
     pub sims: crate::sim::SimRegistry,
 }
 
@@ -19,30 +18,21 @@ impl AppState {
         let llm = Llm::new(&cfg.llm_api_key, &cfg.llm_base_url, &cfg.llm_model);
         let llm_boost = Llm::new(&cfg.llm_boost_api_key, &cfg.llm_boost_base_url, &cfg.llm_boost_model);
 
-        let neo4j = match neo4rs::Graph::new(&cfg.neo4j_uri, &cfg.neo4j_user, &cfg.neo4j_password).await {
-            Ok(g) => {
-                tracing::info!("connected to Neo4j at {}", cfg.neo4j_uri);
-                Some(g)
-            }
-            Err(e) => {
-                tracing::warn!("Neo4j unavailable ({e}); graph endpoints will error until it is up");
-                None
-            }
-        };
+        let graph_db = crate::services::graph::db::GraphDb::open(std::path::Path::new(&cfg.graph_db_path))
+            .expect("open graph database");
+        tracing::info!("graph store at {}", cfg.graph_db_path);
 
         AppState {
             llm,
             llm_boost,
-            neo4j,
+            graph_db,
             sims: crate::sim::SimRegistry::new(),
             cfg: Arc::new(cfg),
         }
     }
 
-    pub fn graph(&self) -> crate::error::AppResult<&neo4rs::Graph> {
-        self.neo4j
-            .as_ref()
-            .ok_or_else(|| crate::error::AppError::Other(anyhow::anyhow!("Neo4j not connected")))
+    pub fn graph(&self) -> &crate::services::graph::db::GraphDb {
+        &self.graph_db
     }
 
     pub fn sim_manager(&self) -> crate::sim::manager::Manager {
