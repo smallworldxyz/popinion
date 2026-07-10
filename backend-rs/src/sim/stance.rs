@@ -92,6 +92,65 @@ pub fn agreement(labels: &[IndependentLabel]) -> Value {
     })
 }
 
+/// Stance on a support(+1)/neutral(0)/oppose(−1) axis; unknown labels carry no
+/// score (they still appear in the distributions).
+fn score(stance: &str) -> Option<f64> {
+    match stance {
+        "support" => Some(1.0),
+        "neutral" => Some(0.0),
+        "oppose" => Some(-1.0),
+        _ => None,
+    }
+}
+
+/// Exposed-vs-unexposed stance comparison for one seed/injected post.
+///
+/// `first_exposure` maps agent id → the first round the post appeared in that
+/// agent's served feed. Exposed agents are scored by their latest stance act AT
+/// OR AFTER that round (an act made with the post in view); their pre-exposure
+/// acts are evidence for neither group. Unexposed agents are scored by their
+/// latest act overall. `shift` = exposed mean − unexposed mean on the
+/// support(+1)…oppose(−1) axis; null when either group has no scored agent.
+/// Observational, not causal — exposure follows network position, not random
+/// assignment.
+pub fn exposure_shift(acts: &[StanceAct], first_exposure: &HashMap<i64, i64>) -> Value {
+    let mut exposed: HashMap<i64, &StanceAct> = HashMap::new();
+    let mut unexposed: HashMap<i64, &StanceAct> = HashMap::new();
+    for act in acts {
+        let bucket = match first_exposure.get(&act.user_id) {
+            Some(&r) if act.round >= r => &mut exposed,
+            Some(_) => continue,
+            None => &mut unexposed,
+        };
+        bucket
+            .entry(act.user_id)
+            .and_modify(|cur| {
+                if (act.round, act.created_at.as_str()) > (cur.round, cur.created_at.as_str()) {
+                    *cur = act;
+                }
+            })
+            .or_insert(act);
+    }
+    let side = |group: &HashMap<i64, &StanceAct>| {
+        let mut counts: BTreeMap<&str, i64> = BTreeMap::new();
+        let mut scores: Vec<f64> = Vec::new();
+        for a in group.values() {
+            *counts.entry(a.stance.as_str()).or_insert(0) += 1;
+            scores.extend(score(&a.stance));
+        }
+        let mean =
+            (!scores.is_empty()).then(|| scores.iter().sum::<f64>() / scores.len() as f64);
+        (json!({ "agents": group.len(), "mean": mean, "distribution": stance_rows(counts) }), mean)
+    };
+    let (exposed_v, exposed_mean) = side(&exposed);
+    let (unexposed_v, unexposed_mean) = side(&unexposed);
+    let shift = match (exposed_mean, unexposed_mean) {
+        (Some(e), Some(u)) => Some(e - u),
+        _ => None,
+    };
+    json!({ "exposed_stance": exposed_v, "unexposed_stance": unexposed_v, "shift": shift })
+}
+
 /// `[{stance, count}]` sorted by count DESC. The SQL's `ORDER BY COUNT(*) DESC`
 /// left equal-count ordering unspecified; we tiebreak by stance name so the
 /// output is deterministic.
@@ -162,6 +221,45 @@ mod tests {
         assert_eq!(dist[0]["count"], 2);
         assert_eq!(dist[1]["stance"], "support");
         assert_eq!(agent_distribution(&[]), json!([]));
+    }
+
+    #[test]
+    fn exposure_shift_compares_groups_with_known_shift() {
+        // Agents 1 and 2 were served the post at round 2. Agent 1's pre-exposure
+        // oppose is evidence for neither group; post-exposure it says support.
+        // Agent 2 stays neutral. Unexposed agents 3 and 4 both oppose.
+        let acts = vec![
+            act(1, "oppose", 0, "t0"),
+            act(1, "support", 3, "t3"),
+            act(2, "neutral", 2, "t2"),
+            act(3, "oppose", 3, "t1"),
+            act(4, "oppose", 0, "t0"),
+        ];
+        let first: HashMap<i64, i64> = HashMap::from([(1, 2), (2, 2)]);
+        let v = exposure_shift(&acts, &first);
+        // exposed mean = (1 + 0) / 2 = 0.5; unexposed mean = -1; shift = +1.5
+        assert_eq!(v["exposed_stance"]["agents"], 2);
+        assert!((v["exposed_stance"]["mean"].as_f64().unwrap() - 0.5).abs() < 1e-9);
+        assert_eq!(v["unexposed_stance"]["agents"], 2);
+        assert!((v["unexposed_stance"]["mean"].as_f64().unwrap() + 1.0).abs() < 1e-9);
+        assert!((v["shift"].as_f64().unwrap() - 1.5).abs() < 1e-9);
+        assert_eq!(counts_of(&v["exposed_stance"]["distribution"]).get("support"), Some(&1));
+        assert_eq!(counts_of(&v["unexposed_stance"]["distribution"]).get("oppose"), Some(&2));
+    }
+
+    #[test]
+    fn exposure_shift_empty_groups_yield_null_not_nan() {
+        // The only exposed agent spoke before exposure only: neither group scores.
+        let acts = vec![act(1, "support", 1, "t1")];
+        let first: HashMap<i64, i64> = HashMap::from([(1, 5)]);
+        let v = exposure_shift(&acts, &first);
+        assert_eq!(v["exposed_stance"]["agents"], 0);
+        assert_eq!(v["exposed_stance"]["mean"], Value::Null);
+        assert_eq!(v["shift"], Value::Null);
+        // No exposures at all: everyone is unexposed, shift still null.
+        let v2 = exposure_shift(&acts, &HashMap::new());
+        assert_eq!(v2["unexposed_stance"]["agents"], 1);
+        assert_eq!(v2["shift"], Value::Null);
     }
 
     #[test]

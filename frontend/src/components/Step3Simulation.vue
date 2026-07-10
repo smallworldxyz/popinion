@@ -35,6 +35,24 @@
       </div>
     </div>
 
+    <!-- Mid-run injection: red-team the population while the discussion is live -->
+    <div class="inject-strip" v-if="status === 'running' || status === 'initializing'">
+      <span class="strip-label">Drop a message into the live discussion (disinformation, a policy reversal, an opponent's statement)</span>
+      <div class="inject-row">
+        <input
+          v-model="injectContent"
+          class="inject-input"
+          placeholder="e.g. Leaked memo: the ministry plans to cancel the program"
+          :disabled="injecting"
+          @keyup.enter="doInject"
+        />
+        <button class="inject-btn" :disabled="injecting || !injectContent.trim()" @click="doInject">
+          {{ injecting ? 'Injecting…' : 'Inject' }}
+        </button>
+      </div>
+      <div v-if="injectNote" class="inject-note" :class="{ err: injectError }">{{ injectNote }}</div>
+    </div>
+
     <!-- Activity feed: one honest stream of what the agents actually did -->
     <div class="feed" ref="scrollContainer">
       <div v-if="!allActions.length" class="feed-empty">
@@ -64,6 +82,31 @@
       </TransitionGroup>
     </div>
 
+    <!-- Spread: where the seed & injected messages landed -->
+    <div class="spread-strip" v-if="spreadRows.length">
+      <div class="spread-head">
+        <span class="strip-label">Spread · where the seed &amp; injected messages landed</span>
+        <button class="spread-refresh" :disabled="spreadLoading" @click="loadSpread">
+          {{ spreadLoading ? '…' : 'Refresh' }}
+        </button>
+      </div>
+      <div v-for="p in spreadRows" :key="p.post_id" class="spread-row">
+        <div class="spread-content">
+          <span class="spread-tag" :class="{ injected: p.injected }">{{ p.injected ? `INJECTED R${p.round}` : 'SEED' }}</span>
+          <span class="spread-text">{{ p.content }}</span>
+        </div>
+        <div class="spread-metrics mono">
+          <span>reach {{ p.reach }}</span>
+          <span>{{ p.engagement.likes }} likes · {{ p.engagement.dislikes }} dislikes · {{ p.engagement.comments }} replies</span>
+          <span :title="shiftTitle(p)">{{ shiftText(p) }}</span>
+        </div>
+      </div>
+      <p class="spread-caption">
+        Shift compares agents who were served the post (acting after exposure) with those who never saw it,
+        on a support&nbsp;+1&hellip;oppose&nbsp;&minus;1 axis. Observational — exposure follows network position, not random assignment.
+      </p>
+    </div>
+
     <!-- Monitor log -->
     <div class="system-logs">
       <div class="log-header">
@@ -83,7 +126,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
-import { startSimulation, getRunStatusDetail, getSimulationActions, getAgentStats } from '../api/simulation'
+import { startSimulation, getRunStatusDetail, getSimulationActions, getAgentStats, injectPost, getSpread } from '../api/simulation'
 import { generateReport } from '../api/report'
 
 const props = defineProps({
@@ -105,6 +148,13 @@ const names = ref({}) // user_id -> user_name
 const isGeneratingReport = ref(false)
 const scrollContainer = ref(null)
 const logContent = ref(null)
+const injectContent = ref('')
+const injecting = ref(false)
+const injectNote = ref('')
+const injectError = ref(false)
+const spreadRows = ref([])
+const spreadLoading = ref(false)
+let pollTick = 0
 
 const addLog = (msg) => emit('add-log', msg)
 
@@ -203,6 +253,55 @@ const poll = async () => {
     }
     if (agentCount.value === 0) loadNames()
   } catch (err) { /* transient */ }
+
+  // Spread is a cheap read but not worth every tick — every 4th poll (~10s).
+  pollTick += 1
+  if (pollTick % 4 === 1) loadSpread()
+}
+
+// ---- mid-run injection + spread ----
+const doInject = async () => {
+  const content = injectContent.value.trim()
+  if (!content || injecting.value) return
+  injecting.value = true
+  injectError.value = false
+  injectNote.value = ''
+  try {
+    const res = await injectPost(props.simulationId, { content })
+    const round = res.data?.injected_at_round
+    injectNote.value = `Landed at round ${round} — agents see it from the next round`
+    addLog(`✓ Injected post at round ${round}`)
+    injectContent.value = ''
+    loadSpread()
+  } catch (err) {
+    const msg = err.response?.data?.error || err.message
+    injectError.value = true
+    injectNote.value = `Injection failed: ${msg}`
+    addLog(`✗ Injection failed: ${msg}`)
+  } finally {
+    injecting.value = false
+  }
+}
+
+const loadSpread = async () => {
+  if (!props.simulationId || spreadLoading.value) return
+  spreadLoading.value = true
+  try {
+    const res = await getSpread(props.simulationId)
+    spreadRows.value = res.data?.posts || []
+  } catch { /* no seed/injected posts yet — nothing to show */ }
+  spreadLoading.value = false
+}
+
+const shiftText = (p) => {
+  if (p.shift == null) return 'shift —'
+  return `shift ${p.shift >= 0 ? '+' : ''}${p.shift.toFixed(2)}`
+}
+const shiftTitle = (p) => {
+  const e = p.exposed_stance || {}
+  const u = p.unexposed_stance || {}
+  if (p.shift == null) return 'Not enough stance-bearing agents in one of the groups yet'
+  return `${e.agents} exposed agents (mean ${e.mean?.toFixed(2)}) vs ${u.agents} unexposed (mean ${u.mean?.toFixed(2)})`
 }
 
 let timer = null
@@ -290,6 +389,46 @@ onUnmounted(stopPolling)
 .st-oppose { background: #dc2626; }
 .st-neutral { background: #9ca3af; }
 .st-unknown { background: #d1d5db; }
+
+/* inject strip */
+.inject-strip { padding: 12px 24px; border-bottom: 1px solid #f0f0f0; }
+.inject-row { display: flex; gap: 8px; margin-top: 8px; }
+.inject-input {
+  flex: 1; padding: 8px 12px; border: 1px solid #e5e7eb; border-radius: 6px;
+  font-family: inherit; font-size: 0.88rem; color: #1f2937;
+}
+.inject-input:focus { outline: none; border-color: #111; }
+.inject-input:disabled { background: #fafafa; color: #9ca3af; }
+.inject-btn {
+  padding: 8px 18px; background: #000; color: #fff; border: none; border-radius: 6px;
+  font-family: inherit; font-size: 0.85rem; font-weight: 600; cursor: pointer;
+}
+.inject-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.inject-btn:hover:not(:disabled) { background: #333; }
+.inject-note { margin-top: 6px; font-size: 0.78rem; color: #059669; }
+.inject-note.err { color: #dc2626; }
+
+/* spread strip */
+.spread-strip { padding: 12px 24px; border-top: 1px solid #f0f0f0; flex-shrink: 0; max-height: 220px; overflow-y: auto; }
+.spread-head { display: flex; align-items: center; justify-content: space-between; }
+.spread-refresh {
+  border: 1px solid #e5e7eb; background: #fff; color: #666; padding: 3px 12px;
+  border-radius: 5px; font-family: inherit; font-size: 0.72rem; font-weight: 600; cursor: pointer;
+}
+.spread-refresh:disabled { opacity: 0.5; cursor: default; }
+.spread-refresh:hover:not(:disabled) { border-color: #ccc; color: #111; }
+.spread-row { padding: 8px 0; border-bottom: 1px solid #f5f5f5; }
+.spread-content { display: flex; align-items: baseline; gap: 8px; }
+.spread-tag {
+  font-size: 0.6rem; letter-spacing: 0.05em; padding: 2px 6px; border-radius: 4px;
+  font-weight: 700; background: #f0f0f0; color: #666; flex-shrink: 0;
+}
+.spread-tag.injected { background: #fef3c7; color: #92400e; }
+.spread-text {
+  font-size: 0.85rem; color: #1f2937; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.spread-metrics { display: flex; gap: 18px; margin-top: 4px; font-size: 0.74rem; color: #6b7280; }
+.spread-caption { margin: 8px 0 0; font-size: 0.72rem; color: #9ca3af; line-height: 1.5; }
 
 /* feed */
 .feed { flex: 1; overflow-y: auto; padding: 16px 24px; max-width: 820px; margin: 0 auto; width: 100%; }

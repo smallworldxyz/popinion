@@ -372,11 +372,14 @@ impl Store {
         Ok(rows)
     }
 
-    /// Recent action trace (the activity log the frontend polls).
+    /// Recent action trace (the activity log the frontend polls). Exposure rows
+    /// are instrumentation (who was served what), not agent actions — they would
+    /// flood the feed at one row per active agent per round.
     pub fn list_actions(&self, limit: i64) -> Result<Vec<Value>> {
         let c = self.conn.lock().unwrap();
         let mut stmt = c.prepare(
-            "SELECT user_id, action, info, round, created_at FROM trace ORDER BY id DESC LIMIT ?1",
+            "SELECT user_id, action, info, round, created_at FROM trace
+             WHERE action != 'exposed' ORDER BY id DESC LIMIT ?1",
         )?;
         let rows = stmt
             .query_map(params![limit], |r| {
@@ -393,11 +396,9 @@ impl Store {
         Ok(rows)
     }
 
-    /// Agent-weighted stance distribution: one vote per agent, their most recent
-    /// stance-bearing action (post or comment). This is the honest population
-    /// metric — post-weighted counts let one hyperactive agent dominate.
-    /// The store only reads the raw acts; the math lives in sim::stance.
-    pub fn agent_stance_distribution(&self) -> Result<Value> {
+    /// All stance-bearing acts (posts + comments, seed excluded) — the raw rows
+    /// for sim::stance math (agent distribution, exposure shift).
+    pub fn stance_acts(&self) -> Result<Vec<super::stance::StanceAct>> {
         let c = self.conn.lock().unwrap();
         let mut stmt = c.prepare(
             "SELECT user_id, stance, round, created_at FROM post
@@ -416,7 +417,71 @@ impl Store {
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
-        Ok(super::stance::agent_distribution(&acts))
+        Ok(acts)
+    }
+
+    /// Agent-weighted stance distribution: one vote per agent, their most recent
+    /// stance-bearing action (post or comment). This is the honest population
+    /// metric — post-weighted counts let one hyperactive agent dominate.
+    /// The store only reads the raw acts; the math lives in sim::stance.
+    pub fn agent_stance_distribution(&self) -> Result<Value> {
+        Ok(super::stance::agent_distribution(&self.stance_acts()?))
+    }
+
+    /// Exposure rows the engine writes each round: (agent, round, served post
+    /// ids). Parsed in Rust — the volume is bounded (one row per active agent
+    /// per round), so no SQL JSON support is needed.
+    pub fn exposures(&self) -> Result<Vec<(i64, i64, Vec<i64>)>> {
+        let c = self.conn.lock().unwrap();
+        let mut stmt = c.prepare("SELECT user_id, round, info FROM trace WHERE action = 'exposed'")?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?, r.get::<_, Option<String>>(2)?))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows
+            .into_iter()
+            .map(|(uid, round, info)| {
+                let ids = info
+                    .and_then(|s| serde_json::from_str::<Value>(&s).ok())
+                    .and_then(|v| {
+                        v["post_ids"]
+                            .as_array()
+                            .map(|a| a.iter().filter_map(|x| x.as_i64()).collect())
+                    })
+                    .unwrap_or_default();
+                (uid, round, ids)
+            })
+            .collect())
+    }
+
+    /// The seed/injected posts (or one specific post) with engagement counts —
+    /// the subjects of the /spread readout.
+    pub fn spread_posts(&self, post_id: Option<i64>) -> Result<Vec<Value>> {
+        let c = self.conn.lock().unwrap();
+        let base = "SELECT p.post_id, p.user_id, p.content, p.round, p.num_likes, p.num_dislikes,
+                    (SELECT COUNT(*) FROM comment cm WHERE cm.post_id = p.post_id) AS num_comments
+             FROM post p";
+        let map = |r: &rusqlite::Row| -> rusqlite::Result<Value> {
+            Ok(json!({
+                "post_id": r.get::<_, i64>(0)?,
+                "user_id": r.get::<_, i64>(1)?,
+                "content": r.get::<_, String>(2)?,
+                "round": r.get::<_, i64>(3)?,
+                "num_likes": r.get::<_, i64>(4)?,
+                "num_dislikes": r.get::<_, i64>(5)?,
+                "num_comments": r.get::<_, i64>(6)?,
+            }))
+        };
+        let (sql, args) = match post_id {
+            Some(pid) => (format!("{base} WHERE p.post_id = ?1"), vec![pid]),
+            None => (format!("{base} WHERE p.stance = 'seed' ORDER BY p.post_id ASC"), vec![]),
+        };
+        let mut stmt = c.prepare(&sql)?;
+        let rows = stmt
+            .query_map(rusqlite::params_from_iter(args), map)?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
     }
 
     /// Aggregate stance distribution across posts — a first-class "better
@@ -589,6 +654,38 @@ mod tests {
         assert_eq!(feed[0]["followed"], true);
         assert_eq!(feed[1]["post_id"], p_trending, "then trending by likes");
         assert!(feed.iter().all(|p| p["user_id"] != 1), "own posts excluded");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn exposure_rows_and_spread_posts_roundtrip() {
+        let dir = std::env::temp_dir().join(format!("popinion-spread-{}", std::process::id()));
+        let s = Store::open(&dir.join("s.db")).unwrap();
+        s.add_user(1, "A", "a", "", "").unwrap();
+        s.add_user(2, "B", "b", "", "").unwrap();
+        let seed = s.add_post(-1, "the event", 0, Some("seed"), None).unwrap();
+        let normal = s.add_post(1, "a reaction", 1, Some("support"), None).unwrap();
+        s.add_comment(seed, 2, "reply on the event", 1, Some("oppose"), None).unwrap();
+        s.trace(1, "exposed", &json!({ "post_ids": [seed, normal] }), 1).unwrap();
+        s.trace(2, "exposed", &json!({ "post_ids": [normal] }), 2).unwrap();
+
+        let ex = s.exposures().unwrap();
+        assert_eq!(ex.len(), 2);
+        assert!(ex.contains(&(1, 1, vec![seed, normal])));
+        assert!(ex.contains(&(2, 2, vec![normal])));
+
+        // Default scope: only seed/injected posts, with engagement counts.
+        let sp = s.spread_posts(None).unwrap();
+        assert_eq!(sp.len(), 1);
+        assert_eq!(sp[0]["post_id"], seed);
+        assert_eq!(sp[0]["num_comments"], 1);
+        // Explicit post_id: any post is inspectable.
+        let sp2 = s.spread_posts(Some(normal)).unwrap();
+        assert_eq!(sp2[0]["post_id"], normal);
+
+        // Exposure rows are instrumentation — kept out of the activity log.
+        let actions = s.list_actions(50).unwrap();
+        assert!(actions.iter().all(|a| a["action"] != "exposed"));
         std::fs::remove_dir_all(&dir).ok();
     }
 

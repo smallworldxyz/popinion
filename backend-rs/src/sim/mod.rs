@@ -20,6 +20,12 @@ pub enum Command {
         prompt: String,
         reply: oneshot::Sender<anyhow::Result<String>>,
     },
+    /// Drop a post into the live discussion mid-run (disinformation red-team,
+    /// a policy reversal). Replies with (post_id, round it landed at).
+    InjectPost {
+        content: String,
+        reply: oneshot::Sender<anyhow::Result<(i64, i64)>>,
+    },
     Stop,
 }
 

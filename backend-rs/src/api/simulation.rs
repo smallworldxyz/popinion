@@ -69,6 +69,8 @@ pub fn router() -> Router<AppState> {
         .route("/:id/actions", get(actions))
         .route("/:id/agent-stats", get(agent_stats))
         .route("/:id/stance", get(stance))
+        .route("/:id/inject", post(inject))
+        .route("/:id/spread", get(spread))
         .route("/:id/classify-stance", post(classify_stance_h))
         .route("/:id/credibility", get(credibility))
         .route("/:id/duplicate", post(duplicate))
@@ -608,6 +610,93 @@ async fn agent_stats(State(st): State<AppState>, Path(id): Path<String>) -> AppR
 async fn stance(State(st): State<AppState>, Path(id): Path<String>) -> AppResult<Success<Value>> {
     let store = st.sim_manager().store(&id).map_err(|e| AppError::NotFound(e.to_string()))?;
     Ok(Success(json!({ "stance_distribution": store.stance_distribution()? })))
+}
+
+// ---- mid-run injection + spread (the cognitive-vaccination loop) ----
+
+#[derive(Deserialize)]
+struct InjectReq {
+    content: String,
+}
+
+/// Drop a post into a LIVE run mid-discussion (disinformation red-teaming, a
+/// policy reversal, an opponent's statement). Authored by the system Event
+/// account via the same path as the initial event, so it enters agents' feeds
+/// from the next round.
+async fn inject(
+    Path(id): Path<String>,
+    State(st): State<AppState>,
+    Json(req): Json<InjectReq>,
+) -> AppResult<Success<Value>> {
+    let content = req.content.trim().to_string();
+    if content.is_empty() {
+        return Err(AppError::BadRequest("content required — the message to drop into the discussion".into()));
+    }
+    let handle = st
+        .sims
+        .get(&id)
+        .ok_or_else(|| AppError::BadRequest("simulation not running — injection needs a live run".into()))?;
+    let (post_id, round) = handle.inject_post(content).await.map_err(AppError::Other)?;
+    Ok(Success(json!({ "injected_at_round": round, "post_id": post_id })))
+}
+
+#[derive(Deserialize)]
+struct SpreadQ {
+    #[serde(default)]
+    post_id: Option<i64>,
+}
+
+/// Where a seed/injected post landed: reach (distinct agents whose served feed
+/// contained it), engagement, and the exposed-vs-unexposed stance split. Scoped
+/// to one post via ?post_id, else covers every seed/injected post.
+async fn spread(
+    Path(id): Path<String>,
+    State(st): State<AppState>,
+    Query(q): Query<SpreadQ>,
+) -> AppResult<Success<Value>> {
+    let store = st.sim_manager().store(&id).map_err(|e| AppError::NotFound(e.to_string()))?;
+    let posts = store.spread_posts(q.post_id).map_err(AppError::Other)?;
+    if posts.is_empty() {
+        return Err(AppError::NotFound(match q.post_id {
+            Some(pid) => format!("post {pid} in simulation {id}"),
+            None => format!("no seed or injected posts in simulation {id}"),
+        }));
+    }
+    let exposures = store.exposures().map_err(AppError::Other)?;
+    let acts = store.stance_acts().map_err(AppError::Other)?;
+    let rows: Vec<Value> = posts
+        .iter()
+        .map(|p| {
+            let pid = p["post_id"].as_i64().unwrap_or(-1);
+            // First round each agent was served this post.
+            let mut first: HashMap<i64, i64> = HashMap::new();
+            for (uid, round, served) in &exposures {
+                if served.contains(&pid) {
+                    first.entry(*uid).and_modify(|r| *r = (*r).min(*round)).or_insert(*round);
+                }
+            }
+            let shift = crate::sim::stance::exposure_shift(&acts, &first);
+            json!({
+                "post_id": pid,
+                "content": p["content"],
+                "round": p["round"],
+                "injected": p["round"].as_i64().unwrap_or(0) > 0,
+                "reach": first.len(),
+                "engagement": {
+                    "likes": p["num_likes"],
+                    "dislikes": p["num_dislikes"],
+                    "comments": p["num_comments"],
+                },
+                "exposed_stance": shift["exposed_stance"],
+                "unexposed_stance": shift["unexposed_stance"],
+                "shift": shift["shift"],
+            })
+        })
+        .collect();
+    Ok(Success(json!({
+        "posts": rows,
+        "note": "shift = mean stance (support +1, neutral 0, oppose −1) of agents served the post (acts at/after first exposure) minus agents who never saw it. Observational — exposure follows network position, not random assignment.",
+    })))
 }
 
 /// (grounded, synthetic) split of a persona roster.

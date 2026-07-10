@@ -116,9 +116,9 @@ impl Engine {
 
         let mut stopped = false;
         for round in 0..total {
-            // Serve any interview/stop commands queued between rounds.
+            // Serve any interview/inject/stop commands queued between rounds.
             while let Ok(cmd) = rx.try_recv() {
-                if self.handle_command(cmd).await {
+                if self.handle_command(cmd, Some(round as i64)).await {
                     stopped = true;
                     break;
                 }
@@ -137,7 +137,7 @@ impl Engine {
         // Post-run: stay "alive" to serve interviews (panel chat / survey) until stopped.
         *status.lock().unwrap() = "alive".into();
         while let Some(cmd) = rx.recv().await {
-            if self.handle_command(cmd).await {
+            if self.handle_command(cmd, None).await {
                 break;
             }
         }
@@ -145,8 +145,9 @@ impl Engine {
         Ok(())
     }
 
-    /// Returns true if the engine should stop.
-    async fn handle_command(&mut self, cmd: Command) -> bool {
+    /// Returns true if the engine should stop. `round` is the round the command
+    /// lands before, or None once the run's rounds are exhausted.
+    async fn handle_command(&mut self, cmd: Command, round: Option<i64>) -> bool {
         match cmd {
             Command::Stop => true,
             Command::Interview { user_id, prompt, reply } => {
@@ -154,7 +155,39 @@ impl Engine {
                 let _ = reply.send(res);
                 false
             }
+            Command::InjectPost { content, reply } => {
+                let res = match round {
+                    Some(r) => self.inject_post(&content, r).map(|post_id| (post_id, r)),
+                    None => Err(anyhow::anyhow!(
+                        "simulation has finished its rounds; an injected post would never be served"
+                    )),
+                };
+                let _ = reply.send(res);
+                false
+            }
         }
+    }
+
+    /// Drop a post into the live discussion mid-run: authored by the system
+    /// Event account with the "seed" stance marker — the same path the initial
+    /// event takes — so it enters agents' feeds on subsequent rounds.
+    fn inject_post(&self, content: &str, round: i64) -> Result<i64> {
+        // Idempotent: the Event account may not exist if the run had no initial event.
+        self.store.add_user(
+            super::config::EVENT_AUTHOR_ID,
+            "Event",
+            "event",
+            "",
+            "The event under discussion.",
+        )?;
+        let post_id = self.store.add_post(super::config::EVENT_AUTHOR_ID, content, round, Some("seed"), None)?;
+        self.store.trace(
+            super::config::EVENT_AUTHOR_ID,
+            "inject",
+            &json!({ "content": content, "post_id": post_id }),
+            round,
+        )?;
+        Ok(post_id)
     }
 
     fn reset(&mut self) -> Result<()> {
@@ -258,6 +291,16 @@ impl Engine {
             .map(|&i| {
                 let uid = self.agents[i].profile.user_id;
                 let feed = self.store.feed_for(uid, FEED_SIZE).unwrap_or_default();
+                // Exposure instrumentation: record which posts were served to
+                // whom, so /spread can measure reach and the exposed-vs-unexposed
+                // stance shift. Volume ceiling: one trace row per active agent per
+                // round — ~30 agents × 144 rounds ≈ 4–5k rows per default run.
+                let served: Vec<i64> = feed.iter().filter_map(|p| p["post_id"].as_i64()).collect();
+                if !served.is_empty() {
+                    if let Err(e) = self.store.trace(uid, "exposed", &json!({ "post_ids": served }), round) {
+                        tracing::warn!("exposure log failed for agent {uid}: {e}");
+                    }
+                }
                 let posts = self.store.posts_by_user(uid, 5).unwrap_or_default();
                 let comments = self.store.comments_by_user(uid, 5).unwrap_or_default();
                 (
@@ -513,6 +556,16 @@ impl SimHandle {
         rx.await.map_err(|_| anyhow::anyhow!("simulation dropped the request"))?
     }
 
+    /// Drop a post into the live run. Returns (post_id, round it landed at).
+    pub async fn inject_post(&self, content: String) -> Result<(i64, i64)> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd
+            .send(Command::InjectPost { content, reply: tx })
+            .await
+            .map_err(|_| anyhow::anyhow!("simulation not running"))?;
+        rx.await.map_err(|_| anyhow::anyhow!("simulation dropped the request"))?
+    }
+
     pub async fn stop(&self) {
         let _ = self.cmd.send(Command::Stop).await;
     }
@@ -690,6 +743,45 @@ mod tests {
         assert!(followed(1), "supporter follows the pro-elite");
         assert!(!followed(2), "supporter does NOT follow the con-elite");
         assert!(followed(3), "neutral elite is a shared broadcaster");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[tokio::test]
+    async fn inject_post_command_writes_seed_authored_post_reachable_in_feeds() {
+        let dir = std::env::temp_dir().join(format!("popinion-inject-{}", std::process::id()));
+        let store = Arc::new(Store::open(&dir.join("s.db")).unwrap());
+        let cfg = SimConfig { simulation_id: "inj".into(), ..Default::default() };
+        let llm = Llm::new("", "http://localhost", "test");
+        let mut eng = Engine::new(store.clone(), vec![profile(1), profile(2)], cfg, llm);
+        eng.reset().unwrap();
+
+        // Mid-run injection: lands as a seed-authored post at the given round.
+        let (tx, rx) = oneshot::channel();
+        let stop = eng
+            .handle_command(
+                Command::InjectPost { content: "Leaked memo: the program is cancelled".into(), reply: tx },
+                Some(4),
+            )
+            .await;
+        assert!(!stop, "injection must not stop the engine");
+        let (post_id, round) = rx.await.unwrap().unwrap();
+        assert_eq!(round, 4);
+
+        // Authored by the Event account with the seed marker, like the initial event.
+        let posts = store.list_posts(10, 0).unwrap();
+        let injected = posts.iter().find(|p| p["post_id"] == post_id).unwrap();
+        assert_eq!(injected["user_id"], super::super::config::EVENT_AUTHOR_ID);
+        assert_eq!(injected["stance"], "seed");
+        assert_eq!(injected["round"], 4);
+
+        // Reachable in an agent's personalized feed on subsequent rounds.
+        let feed = store.feed_for(1, 10).unwrap();
+        assert!(feed.iter().any(|p| p["post_id"] == post_id), "injected post enters feeds");
+
+        // After the rounds are exhausted, injection is refused with a clear error.
+        let (tx2, rx2) = oneshot::channel();
+        eng.handle_command(Command::InjectPost { content: "too late".into(), reply: tx2 }, None).await;
+        assert!(rx2.await.unwrap().is_err(), "post-run injection would never be served");
         std::fs::remove_dir_all(&dir).ok();
     }
 

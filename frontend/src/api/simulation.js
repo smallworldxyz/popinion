@@ -178,6 +178,28 @@ export const getEnvStatus = (data) => {
 }
 
 /**
+ * Inject a post into a LIVE run mid-discussion (disinformation red-teaming,
+ * a policy reversal, an opponent's statement). Enters agents' feeds from the
+ * next round, authored by the system Event account.
+ * @param {string} simulationId
+ * @param {Object} data - { content }
+ */
+export const injectPost = (simulationId, data) => {
+  return service.post(`/api/simulation/${simulationId}/inject`, data)
+}
+
+/**
+ * Spread readout for the seed/injected post(s): reach, engagement, and the
+ * exposed-vs-unexposed stance difference.
+ * @param {string} simulationId
+ * @param {number} postId - optional, scope to one post
+ */
+export const getSpread = (simulationId, postId = null) => {
+  const params = postId != null ? { post_id: postId } : {}
+  return service.get(`/api/simulation/${simulationId}/spread`, { params })
+}
+
+/**
  * Get credibility snapshot (population provenance + both stance weightings)
  * Cheap read, no LLM calls
  * @param {string} simulationId
