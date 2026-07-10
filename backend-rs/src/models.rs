@@ -1,36 +1,7 @@
-use axum::response::{IntoResponse, Response};
-use axum::Json;
+//! Crawler-domain structs: raw crawl records (reality-seed *inputs*, never
+//! Personas). The HTTP response envelope lives in `crate::error`.
+
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
-
-/// Success envelope matching the Vue frontend axios interceptor (`res.success`).
-/// Named `Success` (not `Ok`) so it never shadows `Result::Ok` in handlers.
-pub struct Success<T: Serialize>(pub T);
-
-impl<T: Serialize> IntoResponse for Success<T> {
-    fn into_response(self) -> Response {
-        let mut v = serde_json::to_value(self.0).unwrap_or(Value::Null);
-        // Merge `success: true` into object payloads; wrap non-objects under `data`.
-        match &mut v {
-            Value::Object(map) => {
-                map.entry("success").or_insert(json!(true));
-                Json(v).into_response()
-            }
-            _ => Json(json!({ "success": true, "data": v })).into_response(),
-        }
-    }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum Platform {
-    Telegram,
-    Twitter,
-    Facebook,
-    Youtube,
-    Reddit,
-    Web,
-}
 
 fn default_now() -> chrono::DateTime<chrono::Utc> {
     chrono::Utc::now()
@@ -109,9 +80,3 @@ pub struct CrawlResult {
 pub fn default_true() -> bool {
     true
 }
-
-/// Back-compat re-export for subsystems written against the earlier `Ok` name.
-/// A `use` alias (unlike a `type` alias) carries the tuple constructor, so
-/// `models::Ok(x)` still builds. Use `Success` in new code; `Ok` shadows
-/// `Result::Ok` if ever imported bare.
-pub use self::Success as Ok;

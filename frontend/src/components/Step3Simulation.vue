@@ -173,7 +173,7 @@ const doStart = async () => {
 const loadNames = async () => {
   try {
     const res = await getAgentStats(props.simulationId)
-    for (const a of res.agents || []) names.value[a.user_id] = a.user_name
+    for (const a of res.data.agents || []) names.value[a.user_id] = a.user_name
   } catch { /* names are best-effort */ }
 }
 
@@ -182,9 +182,9 @@ const poll = async () => {
   try {
     const res = await getRunStatusDetail(props.simulationId)
     const prev = status.value
-    status.value = res.status || status.value
-    postCount.value = res.post_count || 0
-    stance.value = Array.isArray(res.stance) ? res.stance : []
+    status.value = res.data.status || status.value
+    postCount.value = res.data.post_count || 0
+    stance.value = Array.isArray(res.data.stance) ? res.data.stance : []
     if (prev !== status.value) {
       addLog(`Status: ${statusLabel.value}`)
       emit('update-status', canReport.value ? 'completed' : 'processing')
@@ -194,7 +194,7 @@ const poll = async () => {
   try {
     const res = await getSimulationActions(props.simulationId, { limit: 200 })
     // Endpoint returns newest-first; render oldest-first and append new ones.
-    const list = (res.actions || []).slice().reverse()
+    const list = (res.data.actions || []).slice().reverse()
     for (const a of list) {
       const id = `${a.round}:${a.user_id}:${a.action}:${a.created_at}`
       if (seen.value.has(id)) continue
@@ -221,7 +221,7 @@ const handleNextStep = async () => {
   addLog('Starting report generation…')
   try {
     const res = await generateReport({ simulation_id: props.simulationId, force_regenerate: true })
-    const reportId = res.report_id || (res.data && res.data.report_id)
+    const reportId = res.data?.report_id
     if (reportId) {
       addLog(`✓ Report task started: ${reportId}`)
       router.push({ name: 'Report', params: { reportId } })

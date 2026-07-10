@@ -1,5 +1,4 @@
-use crate::error::{AppError, AppResult};
-use crate::models::Success;
+use crate::error::{AppError, AppResult, Success};
 use crate::services::report::{self, AgentInterviewer, PanelChatOptions};
 use crate::sim::agent::Persona;
 use crate::sim::config::SimConfig;
@@ -158,7 +157,7 @@ struct PrepareReq {
     selected_entity_ids: Vec<String>,
     #[serde(default)]
     entity_types: Vec<String>,
-    #[serde(default = "default_true")]
+    #[serde(default = "crate::models::default_true")]
     use_llm_for_profiles: bool,
     #[serde(default)]
     min_evidence: Option<usize>,
@@ -169,9 +168,6 @@ struct PrepareReq {
     /// (supporters / opponents) so the sim is a public, not just the elites.
     #[serde(default)]
     audience_per_faction: Option<usize>,
-}
-fn default_true() -> bool {
-    true
 }
 
 /// Compile graph entities into grounded personas and attach them to the sim.
@@ -438,7 +434,7 @@ async fn list(State(st): State<AppState>) -> AppResult<Success<Value>> {
 
 async fn get_sim(State(st): State<AppState>, Path(id): Path<String>) -> AppResult<Success<Value>> {
     let m = st.sim_manager().meta(&id).map_err(|e| AppError::NotFound(e.to_string()))?;
-    Ok(Success(serde_json::to_value(m).unwrap()))
+    Ok(Success(serde_json::to_value(m).map_err(|e| AppError::Other(e.into()))?))
 }
 
 async fn get_config(State(st): State<AppState>, Path(id): Path<String>) -> AppResult<Success<Value>> {
@@ -447,7 +443,7 @@ async fn get_config(State(st): State<AppState>, Path(id): Path<String>) -> AppRe
     let raw = std::fs::read(st.sim_manager().config_path(&id))
         .map_err(|_| AppError::NotFound(format!("config for {id}")))?;
     let cfg: Value = serde_json::from_slice(&raw).map_err(|e| AppError::Other(e.into()))?;
-    Ok(Success(json!({ "config": cfg })))
+    Ok(Success(cfg))
 }
 
 async fn get_profiles(State(st): State<AppState>, Path(id): Path<String>) -> AppResult<Success<Value>> {
@@ -622,7 +618,7 @@ async fn panel_chat_h(State(st): State<AppState>, Json(req): Json<PanelChatReq>)
     let result = report::panel_chat(&st.llm(), &interviewer, &req.question, &personas, &opts)
         .await
         .map_err(AppError::Other)?;
-    Ok(Success(json!({ "result": result })))
+    Ok(Success(json!(result)))
 }
 
 #[derive(Deserialize)]
@@ -635,7 +631,7 @@ struct SurveyCreateReq {
 
 async fn survey_create_h(Json(req): Json<SurveyCreateReq>) -> AppResult<Success<Value>> {
     let t = report::survey_create(&req.title, &req.description, &req.questions).map_err(AppError::Other)?;
-    Ok(Success(json!({ "survey": t })))
+    Ok(Success(json!(t)))
 }
 
 #[derive(Deserialize)]
@@ -660,16 +656,16 @@ async fn survey_deploy_h(State(st): State<AppState>, Json(req): Json<SurveyDeplo
     let result = report::survey_deploy(&interviewer, &req.survey_id, &personas)
         .await
         .map_err(AppError::Other)?;
-    Ok(Success(json!({ "result": result })))
+    Ok(Success(json!(result)))
 }
 
 async fn survey_list_h() -> AppResult<Success<Value>> {
-    Ok(Success(json!({ "surveys": report::survey_list() })))
+    Ok(Success(json!(report::survey_list())))
 }
 
 async fn survey_get_h(Path(survey_id): Path<String>) -> AppResult<Success<Value>> {
     report::survey_get(&survey_id)
-        .map(|s| Success(json!({ "survey": s })))
+        .map(|s| Success(json!(s)))
         .ok_or_else(|| AppError::NotFound(format!("survey {survey_id}")))
 }
 

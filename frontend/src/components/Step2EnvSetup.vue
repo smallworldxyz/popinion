@@ -1068,9 +1068,11 @@ const loadEntityPreview = async () => {
     })
     
     if (res.success && res.data) {
-      previewEntities.value = res.data.entities
-      previewByType.value = res.data.by_type
-      addLog(`Found ${res.data.total_count} entities in ${Object.keys(res.data.by_type).length} categories`)
+      // Payload: { groups: [{ entity_type, count, entities }], eligible_count, ... }
+      const groups = res.data.groups || []
+      previewEntities.value = groups.flatMap(g => g.entities.map(e => ({ ...e, type: g.entity_type })))
+      previewByType.value = Object.fromEntries(groups.map(g => [g.entity_type, g.entities]))
+      addLog(`Found ${previewEntities.value.length} entities in ${groups.length} categories`)
       showEntityModal.value = true
     } else {
       addLog(`Failed to load entities: ${res.error || 'Unknown error'}`)
@@ -1412,8 +1414,8 @@ onMounted(async () => {
     try {
       const previewRes = await preparePreview({ simulation_id: props.simulationId })
       if (previewRes.success && previewRes.data) {
-        expectedTotal.value = previewRes.data.total_count
-        addLog(`Found ${previewRes.data.total_count} entities ready for selection`)
+        expectedTotal.value = previewRes.data.eligible_count
+        addLog(`Found ${previewRes.data.eligible_count} entities ready for selection`)
         addLog('Click "Select Agents" to choose specific entities, or "Start Preparation" to use all')
       }
     } catch (e) {

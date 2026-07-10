@@ -144,6 +144,21 @@ pub fn execute_tool(store: &Store, name: &str, params: &Value) -> anyhow::Result
     }
 }
 
+/// Dispatch one advertised tool. `web_search` is async (HTTP); the store
+/// tools are sync — both the generate loop and chat() route through here so
+/// every tool in `tools_description()` is actually servable.
+async fn dispatch_tool(st: &AppState, store: &Store, name: &str, params: &Value) -> String {
+    if name == "web_search" {
+        let query = params["query"].as_str().unwrap_or("");
+        let max_results = params["max_results"].as_u64().unwrap_or(5) as usize;
+        crate::services::search::web_search(&st.cfg.tavily_api_key, query, max_results)
+            .await
+            .unwrap_or_else(|e| format!("Tool failed: {e}"))
+    } else {
+        execute_tool(store, name, params).unwrap_or_else(|e| format!("Tool failed: {e}"))
+    }
+}
+
 /// Parse `<tool_call>{...}</tool_call>` blocks from an LLM reply.
 pub fn parse_tool_calls(response: &str) -> Vec<Value> {
     let mut calls = Vec::new();
@@ -289,16 +304,7 @@ async fn generate(st: &AppState, report_id: &str) -> anyhow::Result<()> {
             let params = call["parameters"].clone();
             registry::agent_log(report_id, "tool_call", "gathering", json!({"tool": name, "parameters": params}));
             registry::console_log(report_id, "INFO", &format!("tool call: {name} {params}"));
-            // web_search is async (HTTP); the store tools are sync. Dispatch here.
-            let result = if name == "web_search" {
-                let query = params["query"].as_str().unwrap_or("");
-                let max_results = params["max_results"].as_u64().unwrap_or(5) as usize;
-                crate::services::search::web_search(&st.cfg.tavily_api_key, query, max_results)
-                    .await
-                    .unwrap_or_else(|e| format!("Tool failed: {e}"))
-            } else {
-                execute_tool(&store, &name, &params).unwrap_or_else(|e| format!("Tool failed: {e}"))
-            };
+            let result = dispatch_tool(st, &store, &name, &params).await;
             let result = trim(&result, OBSERVATION_LIMIT);
             registry::agent_log(
                 report_id,
@@ -463,8 +469,7 @@ pub async fn chat(
         let mut observations = String::new();
         for call in tool_calls.into_iter().take(1) {
             let name = call["name"].as_str().unwrap_or("").to_string();
-            let result = execute_tool(&store, &name, &call["parameters"])
-                .unwrap_or_else(|e| format!("Tool failed: {e}"));
+            let result = dispatch_tool(st, &store, &name, &call["parameters"]).await;
             observations.push_str(&format!("[{name} result]\n{}\n", trim(&result, 1500)));
             tool_calls_made.push(call);
         }

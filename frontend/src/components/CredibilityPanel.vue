@@ -186,9 +186,8 @@ const load = async () => {
   loading.value = true
   error.value = null
   try {
-    // The backend flattens object payloads into the envelope ({ success, ...fields }).
     const res = await getCredibility(props.simulationId)
-    const d = res.data || res
+    const d = res.data
     if (res.success && typeof d.total === 'number') cred.value = d
   } catch (err) {
     error.value = err.message
@@ -202,7 +201,7 @@ const runCheck = async () => {
   checkError.value = null
   try {
     const res = await classifyStance(props.simulationId)
-    const d = res.data || res
+    const d = res.data
     if (res.success && d.agreement) check.value = d.agreement
   } catch (err) {
     checkError.value = err.message

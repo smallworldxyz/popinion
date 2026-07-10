@@ -1,7 +1,6 @@
 //! Knowledge-graph endpoints (port of backend/app/api/graph.py).
 
-use crate::error::{AppError, AppResult};
-use crate::models::Ok as Payload;
+use crate::error::{AppError, AppResult, Success};
 use crate::services::graph::{builder, db, file_parser, ontology, projects, tasks};
 use crate::state::AppState;
 use axum::extract::{DefaultBodyLimit, Multipart, Path, State};
@@ -31,7 +30,7 @@ pub fn router() -> Router<AppState> {
 async fn generate_ontology(
     State(st): State<AppState>,
     mut multipart: Multipart,
-) -> AppResult<Payload<Value>> {
+) -> AppResult<Success<Value>> {
     let mut files: Vec<(String, Vec<u8>)> = Vec::new();
     let mut simulation_requirement = String::new();
     let mut additional_context = String::new();
@@ -132,13 +131,11 @@ async fn generate_ontology(
     project.status = projects::status::ONTOLOGY_GENERATED.to_string();
     projects::save(&project)?;
 
-    Ok(Payload(json!({
-        "data": {
-            "project_id": project.project_id,
-            "ontology": project.ontology,
-            "analysis_summary": project.analysis_summary,
-            "total_text_length": project.total_text_length,
-        }
+    Ok(Success(json!({
+        "project_id": project.project_id,
+        "ontology": project.ontology,
+        "analysis_summary": project.analysis_summary,
+        "total_text_length": project.total_text_length,
     })))
 }
 
@@ -165,7 +162,7 @@ struct BuildRequest {
 async fn build_graph(
     State(st): State<AppState>,
     Json(req): Json<BuildRequest>,
-) -> AppResult<Payload<Value>> {
+) -> AppResult<Success<Value>> {
     let graph = st.graph().clone();
 
     let project_id = req.project_id.trim().to_string();
@@ -201,15 +198,15 @@ async fn build_graph(
         },
     );
 
-    Ok(Payload(json!({ "data": { "task_id": task_id } })))
+    Ok(Success(json!({ "task_id": task_id })))
 }
 
 // ============== Task Status ==============
 
-async fn get_task_status(Path(task_id): Path<String>) -> AppResult<Payload<Value>> {
+async fn get_task_status(Path(task_id): Path<String>) -> AppResult<Success<Value>> {
     let task = tasks::get(&task_id)
         .ok_or_else(|| AppError::NotFound(format!("Task does not exist: {task_id}")))?;
-    Ok(Payload(json!({ "data": task })))
+    Ok(Success(json!(task)))
 }
 
 // ============== Graph Data ==============
@@ -217,37 +214,35 @@ async fn get_task_status(Path(task_id): Path<String>) -> AppResult<Payload<Value
 async fn get_graph_data(
     State(st): State<AppState>,
     Path(graph_id): Path<String>,
-) -> AppResult<Payload<Value>> {
+) -> AppResult<Success<Value>> {
     let data = db::get_graph_data(st.graph(), &graph_id).await?;
-    Ok(Payload(json!({ "data": data })))
+    Ok(Success(json!(data)))
 }
 
 async fn delete_graph(
     State(st): State<AppState>,
     Path(graph_id): Path<String>,
-) -> AppResult<Payload<Value>> {
+) -> AppResult<Success<Value>> {
     db::delete_graph(st.graph(), &graph_id).await?;
-    Ok(Payload(json!({ "message": "Graph deleted successfully" })))
+    Ok(Success(json!({ "message": "Graph deleted successfully" })))
 }
 
 // ============== Projects ==============
 
-async fn list_projects() -> AppResult<Payload<Value>> {
+async fn list_projects() -> AppResult<Success<Value>> {
     let projects = projects::list(50);
-    Ok(Payload(json!({
-        "data": { "total": projects.len(), "projects": projects }
-    })))
+    Ok(Success(json!({ "total": projects.len(), "projects": projects })))
 }
 
-async fn get_project(Path(project_id): Path<String>) -> AppResult<Payload<Value>> {
+async fn get_project(Path(project_id): Path<String>) -> AppResult<Success<Value>> {
     let project = projects::get(&project_id)
         .ok_or_else(|| AppError::NotFound(format!("Project does not exist: {project_id}")))?;
-    Ok(Payload(json!({ "data": project })))
+    Ok(Success(json!(project)))
 }
 
-async fn delete_project(Path(project_id): Path<String>) -> AppResult<Payload<Value>> {
+async fn delete_project(Path(project_id): Path<String>) -> AppResult<Success<Value>> {
     if !projects::delete(&project_id) {
         return Err(AppError::NotFound(format!("Project does not exist: {project_id}")));
     }
-    Ok(Payload(json!({ "message": "Project deleted successfully" })))
+    Ok(Success(json!({ "message": "Project deleted successfully" })))
 }

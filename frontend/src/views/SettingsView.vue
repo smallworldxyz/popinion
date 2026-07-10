@@ -96,7 +96,7 @@ const savedMsg = ref('')
 // Readiness of the saved bulk slot (what Start Engine uses); null while probing.
 const ready = ref(null)
 async function refreshReady() {
-  try { ready.value = await getLlmStatus() } catch (e) { ready.value = null }
+  try { ready.value = (await getLlmStatus()).data } catch (e) { ready.value = null }
 }
 
 function pickProvider(state, e) {
@@ -116,14 +116,14 @@ const isLmStudio = (state) => (state.base_url || '').includes(':1234')
 async function refreshLms() {
   try {
     const r = await lmsModels()
-    lmModels.value = r.models || []
+    lmModels.value = r.data.models || []
   } catch (e) { lmModels.value = [] }
 }
 async function loadModel(id) {
   busy[id] = true
   try {
     const r = await lmsLoad(id)
-    if (!r.ok) dlStatus.value = { err: true, msg: r.error || 'load failed' }
+    if (!r.data.ok) dlStatus.value = { err: true, msg: r.data.error || 'load failed' }
   } finally { busy[id] = false; await refreshLms(); refreshReady() }
 }
 async function unloadModel(id) {
@@ -137,7 +137,7 @@ async function downloadModel() {
   dlStatus.value = { err: false, msg: 'starting…' }
   try {
     const r = await lmsDownload(id)
-    pollDownload(r.task_id)
+    pollDownload(r.data.task_id)
   } catch (e) {
     dlBusy.value = false
     dlStatus.value = { err: true, msg: 'failed to start' }
@@ -145,7 +145,7 @@ async function downloadModel() {
 }
 async function pollDownload(taskId) {
   try {
-    const t = await lmsDownloadStatus(taskId)
+    const t = (await lmsDownloadStatus(taskId)).data
     if (t.status === 'completed') {
       dlStatus.value = { err: false, msg: 'downloaded ✓' }
       dlBusy.value = false; dlModel.value = ''; await refreshLms()
@@ -162,14 +162,14 @@ async function pollDownload(taskId) {
   }
 }
 
-// The `Success` envelope flattens fields to the top level (no `.data` wrapper).
+// Every success response is `{ success: true, data: <payload> }` — read `.data`.
 onMounted(async () => {
   try {
-    const p = await getProviders()
+    const p = (await getProviders()).data
     providers.detected = p.detected || []
     providers.presets = p.presets || []
   } catch (e) { /* detection is best-effort */ }
-  const cur = await getLlmSettings()
+  const cur = (await getLlmSettings()).data
   Object.assign(bulk, cur.bulk, { key: '' })
   Object.assign(boost, cur.boost, { key: '' })
   refreshLms() // best-effort; only shown when a slot uses LM Studio
@@ -180,7 +180,7 @@ async function testSlot(which) {
   const s = which === 'bulk' ? bulk : boost
   status[which] = { ok: false, msg: 'testing…' }
   try {
-    const r = await testLlm({ base_url: s.base_url, model: s.model, api_key: s.key })
+    const r = (await testLlm({ base_url: s.base_url, model: s.model, api_key: s.key })).data
     status[which] = r.ok
       ? { ok: true, msg: 'works ✓' }
       : { ok: false, msg: (r.error || 'failed').slice(0, 80) }
@@ -201,7 +201,7 @@ async function save() {
   saving.value = true
   savedMsg.value = ''
   try {
-    const r = await updateLlmSettings({ bulk: payload(bulk), boost: payload(boost) })
+    const r = (await updateLlmSettings({ bulk: payload(bulk), boost: payload(boost) })).data
     Object.assign(bulk, r.bulk, { key: '' })
     Object.assign(boost, r.boost, { key: '' })
     savedMsg.value = 'Saved — new provider is live.'

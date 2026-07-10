@@ -1,9 +1,8 @@
 //! Model-selector API: read/update the LLM provider settings at runtime, test a
 //! provider, and detect locally-running model servers. Keys are never returned.
 
-use crate::error::{AppError, AppResult};
+use crate::error::{AppError, AppResult, Success};
 use crate::llm::{Llm, Msg};
-use crate::models::Success;
 use crate::settings::LlmSlot;
 use crate::state::AppState;
 use axum::extract::State;

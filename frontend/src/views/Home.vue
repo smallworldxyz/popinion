@@ -183,7 +183,7 @@ const modelStatus = ref(null)
 
 const checkModel = async () => {
   try {
-    modelStatus.value = await getLlmStatus()
+    modelStatus.value = (await getLlmStatus()).data
   } catch (e) {
     modelStatus.value = { ready: false, reason: 'Cannot reach the Popinion backend.' }
   }

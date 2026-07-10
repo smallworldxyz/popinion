@@ -1,5 +1,5 @@
-use crate::error::{AppError, AppResult};
-use crate::models::{CrawlResult, Ok as Envelope};
+use crate::error::{AppError, AppResult, Success};
+use crate::models::CrawlResult;
 use crate::services::crawler::{bridge, facebook, storage, telegram, twitter};
 use crate::state::AppState;
 use axum::extract::{Path, Query};
@@ -28,11 +28,10 @@ fn dtrue() -> bool {
     true
 }
 
-/// Shared response envelope for the three crawl endpoints: summary + optional
-/// persistence info + sample posts. `success` reflects the crawl outcome.
+/// Shared payload for the three crawl endpoints: summary + optional
+/// persistence info + sample posts. A failed crawl carries an `error` field.
 fn crawl_response(result: &CrawlResult, save: bool, name_hint: &str) -> AppResult<Value> {
     let mut resp = json!({
-        "success": result.success,
         "platform": result.platform,
         "query": result.query,
         "posts_count": result.posts.len(),
@@ -61,7 +60,7 @@ struct TelegramReq {
     save_result: bool,
 }
 
-async fn crawl_telegram(Json(req): Json<TelegramReq>) -> AppResult<Envelope<Value>> {
+async fn crawl_telegram(Json(req): Json<TelegramReq>) -> AppResult<Success<Value>> {
     let channel = req
         .channel
         .filter(|c| !c.trim().is_empty())
@@ -69,7 +68,7 @@ async fn crawl_telegram(Json(req): Json<TelegramReq>) -> AppResult<Envelope<Valu
     let result = telegram::crawl_channel(&channel, req.max_posts).await;
     let mut resp = crawl_response(&result, req.save_result, &channel)?;
     resp["channel"] = json!(channel);
-    Ok(Envelope(resp))
+    Ok(Success(resp))
 }
 
 #[derive(Deserialize)]
@@ -82,7 +81,7 @@ struct TwitterReq {
     save_result: bool,
 }
 
-async fn crawl_twitter(Json(req): Json<TwitterReq>) -> AppResult<Envelope<Value>> {
+async fn crawl_twitter(Json(req): Json<TwitterReq>) -> AppResult<Success<Value>> {
     let (result, hint) = if let Some(username) = req.username.filter(|u| !u.trim().is_empty()) {
         (twitter::crawl_user(&username, req.max_posts).await, username)
     } else if let Some(query) = req.query.filter(|q| !q.trim().is_empty()) {
@@ -90,7 +89,7 @@ async fn crawl_twitter(Json(req): Json<TwitterReq>) -> AppResult<Envelope<Value>
     } else {
         return Err(AppError::BadRequest("query or username is required".into()));
     };
-    Ok(Envelope(crawl_response(&result, req.save_result, &hint)?))
+    Ok(Success(crawl_response(&result, req.save_result, &hint)?))
 }
 
 #[derive(Deserialize)]
@@ -102,7 +101,7 @@ struct FacebookReq {
     save_result: bool,
 }
 
-async fn crawl_facebook(Json(req): Json<FacebookReq>) -> AppResult<Envelope<Value>> {
+async fn crawl_facebook(Json(req): Json<FacebookReq>) -> AppResult<Success<Value>> {
     let page = req
         .page
         .filter(|p| !p.trim().is_empty())
@@ -110,7 +109,7 @@ async fn crawl_facebook(Json(req): Json<FacebookReq>) -> AppResult<Envelope<Valu
     let result = facebook::crawl_page(&page, req.max_posts).await;
     let mut resp = crawl_response(&result, req.save_result, &page)?;
     resp["page"] = json!(page);
-    Ok(Envelope(resp))
+    Ok(Success(resp))
 }
 
 #[derive(Deserialize)]
@@ -123,15 +122,15 @@ fn d20() -> usize {
     20
 }
 
-async fn list_results(Query(q): Query<ListQuery>) -> AppResult<Envelope<Value>> {
+async fn list_results(Query(q): Query<ListQuery>) -> AppResult<Success<Value>> {
     let results = storage::list(&storage::default_dir(), q.platform.as_deref(), q.limit)?;
-    Ok(Envelope(json!({
+    Ok(Success(json!({
         "count": results.len(),
         "results": results,
     })))
 }
 
-async fn get_result(Path(filename): Path<String>) -> AppResult<Envelope<CrawlResult>> {
+async fn get_result(Path(filename): Path<String>) -> AppResult<Success<CrawlResult>> {
     if !storage::valid_filename(&filename) {
         return Err(AppError::BadRequest("invalid filename".into()));
     }
@@ -139,7 +138,7 @@ async fn get_result(Path(filename): Path<String>) -> AppResult<Envelope<CrawlRes
     if !storage::exists(&dir, &filename) {
         return Err(AppError::NotFound("File not found".into()));
     }
-    Ok(Envelope(storage::load(&dir, &filename)?))
+    Ok(Success(storage::load(&dir, &filename)?))
 }
 
 #[derive(Deserialize)]
@@ -157,7 +156,7 @@ fn d100() -> usize {
     100
 }
 
-async fn bridge_to_simulation(Json(req): Json<BridgeReq>) -> AppResult<Envelope<Value>> {
+async fn bridge_to_simulation(Json(req): Json<BridgeReq>) -> AppResult<Success<Value>> {
     let filename = req
         .filename
         .or_else(|| {
@@ -178,8 +177,7 @@ async fn bridge_to_simulation(Json(req): Json<BridgeReq>) -> AppResult<Envelope<
     let result = storage::load(&dir, &filename)?;
     let seed = bridge::create_seed(&result, req.anonymize, req.max_profiles);
 
-    Ok(Envelope(json!({
-        "success": true,
+    Ok(Success(json!({
         "platform": seed.platform,
         "profiles_count": seed.profiles.len(),
         "initial_posts_count": seed.initial_posts.len(),
