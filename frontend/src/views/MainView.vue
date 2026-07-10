@@ -188,28 +188,47 @@ const initProject = async () => {
 
 const handleNewProject = async () => {
   const pending = getPendingUpload()
-  if (!pending.isPending || pending.files.length === 0) {
-    error.value = 'No pending files found.'
-    addLog('Error: No pending files found for new project.')
+  if (!pending.isPending || (pending.files.length === 0 && !pending.telegramChannel)) {
+    error.value = 'No reality seeds found (files or Telegram channel).'
+    addLog('Error: No pending reality seeds found for new project.')
     return
   }
-  
+
   try {
     loading.value = true
     currentPhase.value = 0
-    ontologyProgress.value = { message: 'Uploading and analyzing docs...' }
-    addLog('Starting ontology generation: Uploading files...')
-    
+    const crawling = pending.telegramChannel
+      ? ` Crawling ${pending.telegramChannel}…`
+      : ''
+    ontologyProgress.value = { message: `Uploading and analyzing sources...${crawling}` }
+    addLog(`Starting ontology generation: uploading files...${crawling}`)
+
     const formData = new FormData()
     pending.files.forEach(f => formData.append('files', f))
     formData.append('simulation_requirement', pending.simulationRequirement)
-    
+    if (pending.telegramChannel) {
+      formData.append('telegram_channel', pending.telegramChannel)
+      formData.append('telegram_max_posts', String(pending.telegramMaxPosts || 50))
+    }
+
     const res = await generateOntology(formData)
     if (res.success) {
       clearPendingUpload()
       currentProjectId.value = res.data.project_id
       projectData.value = res.data
-      
+
+      const crawl = res.data.crawl
+      if (crawl) {
+        if (crawl.posts_count > 0) {
+          addLog(`Crawled ${crawl.posts_count} posts from @${crawl.channel}`)
+        } else {
+          addLog(`Telegram crawl of @${crawl.channel} failed: ${crawl.error || 'no posts found'} — building from remaining sources`)
+        }
+      }
+      if (res.data.sources?.length) {
+        addLog(`Reality seeds: ${res.data.sources.join(' + ')}`)
+      }
+
       router.replace({ name: 'Process', params: { projectId: res.data.project_id } })
       ontologyProgress.value = null
       addLog(`Ontology generated successfully for project ${res.data.project_id}`)
@@ -219,8 +238,8 @@ const handleNewProject = async () => {
       addLog(`Error generating ontology: ${error.value}`)
     }
   } catch (err) {
-    error.value = err.message
-    addLog(`Exception in handleNewProject: ${err.message}`)
+    error.value = err.response?.data?.error || err.message
+    addLog(`Exception in handleNewProject: ${error.value}`)
   } finally {
     loading.value = false
   }

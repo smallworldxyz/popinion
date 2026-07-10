@@ -73,6 +73,14 @@
             </div>
           </div>
 
+          <!-- Reality sources: what the graph is actually grounded in -->
+          <div v-if="projectData?.sources?.length" class="tags-container" :class="{ 'dimmed': selectedOntologyItem }">
+            <span class="tag-label">REALITY SOURCES</span>
+            <div class="tags-list">
+              <span v-for="src in projectData.sources" :key="src" class="entity-tag">{{ src }}</span>
+            </div>
+          </div>
+
           <!-- Generated Entity Tags -->
           <div v-if="projectData?.ontology?.entity_types" class="tags-container" :class="{ 'dimmed': selectedOntologyItem }">
             <span class="tag-label">GENERATED ENTITY TYPES</span>

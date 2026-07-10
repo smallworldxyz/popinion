@@ -41,6 +41,24 @@ e.g. How will the public react to phasing out the national fuel subsidy over 12 
             </div>
           </div>
 
+          <!-- Telegram channel as a reality seed: crawled server-side at build time -->
+          <div v-if="showTelegram || telegramChannel" class="telegram-row">
+            <span class="tg-icon">📡</span>
+            <input
+              v-model="telegramChannel"
+              class="tg-input"
+              placeholder="@channel or t.me link — recent public posts ground the sim"
+              :disabled="loading"
+            />
+            <select v-model.number="telegramMaxPosts" class="tg-count" :disabled="loading">
+              <option :value="25">25 posts</option>
+              <option :value="50">50 posts</option>
+              <option :value="100">100 posts</option>
+              <option :value="200">200 posts</option>
+            </select>
+            <button class="chip-x" @click="clearTelegram" :disabled="loading">×</button>
+          </div>
+
           <!-- First-run model gate: no working model → guide to Settings. -->
           <div v-if="modelStatus === null" class="model-note checking">Checking model…</div>
           <div v-else-if="!modelStatus.ready" class="model-note missing">
@@ -53,9 +71,10 @@ e.g. How will the public react to phasing out the national fuel subsidy over 12 
             <button class="attach-btn" @click="triggerFileInput" :disabled="loading">
               📎 Reality seeds
             </button>
-            <span class="attach-hint">
-              {{ files.length ? files.length + ' attached — real data grounds the simulation' : 'Attach PDF · MD · TXT to ground the sim in real data' }}
-            </span>
+            <button class="attach-btn" @click="showTelegram = !showTelegram" :disabled="loading">
+              📡 Telegram
+            </button>
+            <span class="attach-hint">{{ seedHint }}</span>
             <button
               class="start-engine-btn"
               @click="startSimulation"
@@ -208,6 +227,16 @@ const formData = ref({
 // File list
 const files = ref([])
 
+// Telegram channel seed
+const showTelegram = ref(false)
+const telegramChannel = ref('')
+const telegramMaxPosts = ref(50)
+
+const clearTelegram = () => {
+  telegramChannel.value = ''
+  showTelegram.value = false
+}
+
 // Status
 const loading = ref(false)
 const error = ref('')
@@ -216,11 +245,20 @@ const isDragOver = ref(false)
 // File input reference
 const fileInput = ref(null)
 
-// Computed attributes: canSubmit
+// Computed attributes: canSubmit — at least one reality seed (file or channel)
 const canSubmit = computed(() => {
   return formData.value.simulationRequirement.trim() !== '' &&
-    files.value.length > 0 &&
+    (files.value.length > 0 || telegramChannel.value.trim() !== '') &&
     modelStatus.value?.ready === true
+})
+
+const seedHint = computed(() => {
+  const parts = []
+  if (files.value.length) parts.push(`${files.value.length} file${files.value.length > 1 ? 's' : ''}`)
+  if (telegramChannel.value.trim()) parts.push(`Telegram ${telegramChannel.value.trim()}`)
+  return parts.length
+    ? parts.join(' + ') + ' — real data grounds the simulation'
+    : 'Attach PDF · MD · TXT or a Telegram channel to ground the sim in real data'
 })
 
 // Trigger file selection
@@ -283,8 +321,13 @@ const startSimulation = () => {
   
   // Store pending upload data
   import('../store/pendingUpload.js').then(({ setPendingUpload }) => {
-    setPendingUpload(files.value, formData.value.simulationRequirement)
-    
+    const channel = telegramChannel.value.trim()
+    setPendingUpload(
+      files.value,
+      formData.value.simulationRequirement,
+      channel ? { channel, maxPosts: telegramMaxPosts.value } : null
+    )
+
     // Jump immediately to Process page (use special flag for new items)
     router.push({
       name: 'Process',
@@ -427,6 +470,36 @@ const startSimulation = () => {
 .chip-name { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chip-x { border: none; background: none; cursor: pointer; font-size: 1rem; color: #9ca3af; line-height: 1; }
 .chip-x:hover { color: #dc2626; }
+.telegram-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 4px;
+  padding: 6px 10px;
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+}
+.tg-icon { font-size: 0.9rem; }
+.tg-input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: var(--black);
+}
+.tg-input::placeholder { color: #9ca3af; }
+.tg-count {
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  padding: 3px 6px;
+  color: #374151;
+}
 .chat-toolbar {
   display: flex;
   align-items: center;

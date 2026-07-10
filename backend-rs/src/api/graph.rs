@@ -1,6 +1,8 @@
 //! Knowledge-graph endpoints (port of backend/app/api/graph.py).
 
 use crate::error::{AppError, AppResult, Success};
+use crate::models::CrawlResult;
+use crate::services::crawler::{self, telegram};
 use crate::services::graph::{builder, db, file_parser, ontology, projects, tasks};
 use crate::state::AppState;
 use axum::extract::{DefaultBodyLimit, Multipart, Path, State};
@@ -35,6 +37,8 @@ async fn generate_ontology(
     let mut simulation_requirement = String::new();
     let mut additional_context = String::new();
     let mut project_name = "Unnamed Project".to_string();
+    let mut telegram_channel = String::new();
+    let mut telegram_max_posts: usize = 50;
 
     while let Some(field) = multipart
         .next_field()
@@ -66,6 +70,14 @@ async fn generate_ontology(
             }
             "simulation_requirement" => simulation_requirement = read_text(field).await?,
             "additional_context" => additional_context = read_text(field).await?,
+            "telegram_channel" => {
+                telegram_channel = telegram::normalize_channel(&read_text(field).await?);
+            }
+            "telegram_max_posts" => {
+                if let Ok(n) = read_text(field).await?.trim().parse::<usize>() {
+                    telegram_max_posts = n.clamp(1, 200);
+                }
+            }
             "project_name" => {
                 let v = read_text(field).await?;
                 if !v.trim().is_empty() {
@@ -77,12 +89,16 @@ async fn generate_ontology(
     }
 
     let simulation_requirement = simulation_requirement.trim().to_string();
-    if files.is_empty() {
-        return Err(AppError::BadRequest("At least one file required".into()));
+    if files.is_empty() && telegram_channel.is_empty() {
+        return Err(AppError::BadRequest(
+            "At least one file or a Telegram channel is required".into(),
+        ));
     }
     if simulation_requirement.is_empty() {
         return Err(AppError::BadRequest("Simulation requirement is required".into()));
     }
+
+    let mut sources: Vec<String> = files.iter().map(|(name, _)| name.clone()).collect();
 
     // PDF parsing is CPU-bound; keep it off the async runtime.
     let document_texts: Vec<String> = tokio::task::spawn_blocking(move || {
@@ -97,12 +113,39 @@ async fn generate_ontology(
     .await
     .map_err(|e| AppError::Other(anyhow::anyhow!("file parsing task panicked: {e}")))??;
 
-    let document_texts: Vec<String> =
+    let mut document_texts: Vec<String> =
         document_texts.into_iter().filter(|t| !t.trim().is_empty()).collect();
+
+    // Crawl the Telegram channel (if any) with the existing crawler and fold
+    // its posts into the same corpus the uploaded files feed. A failed crawl
+    // doesn't sink the build as long as other sources yielded text — the
+    // outcome is reported honestly in the `crawl` field either way.
+    let mut crawl_info: Option<Value> = None;
+    if !telegram_channel.is_empty() {
+        let result = telegram::crawl_channel(&telegram_channel, telegram_max_posts).await;
+        let (doc, info) = crawl_to_source(&result, &telegram_channel);
+        if let Some((text, label)) = doc {
+            document_texts.push(text);
+            sources.push(label);
+        }
+        crawl_info = Some(info);
+    }
+
     if document_texts.is_empty() {
-        return Err(AppError::BadRequest(
-            "No valid text extracted from uploaded files".into(),
-        ));
+        let crawl_err = crawl_info
+            .as_ref()
+            .and_then(|c| c["error"].as_str())
+            .unwrap_or("no text posts found");
+        return Err(AppError::BadRequest(if telegram_channel.is_empty() {
+            "No valid text extracted from uploaded files".to_string()
+        } else if sources.is_empty() {
+            format!("Telegram crawl of @{telegram_channel} failed: {crawl_err}")
+        } else {
+            format!(
+                "No valid text extracted from uploaded files, and the Telegram \
+                 crawl of @{telegram_channel} failed: {crawl_err}"
+            )
+        }));
     }
 
     let additional_context = additional_context.trim().to_string();
@@ -110,6 +153,7 @@ async fn generate_ontology(
     project.simulation_requirement = Some(simulation_requirement.clone());
     project.additional_context =
         (!additional_context.is_empty()).then(|| additional_context.clone());
+    project.sources = sources;
 
     let all_text = document_texts.join("\n\n");
     project.total_text_length = Some(all_text.chars().count());
@@ -136,7 +180,35 @@ async fn generate_ontology(
         "ontology": project.ontology,
         "analysis_summary": project.analysis_summary,
         "total_text_length": project.total_text_length,
+        "sources": project.sources,
+        "crawl": crawl_info,
     })))
+}
+
+/// Fold a crawl result into the build corpus: the document + source label to
+/// append (None when the channel yielded no text posts), plus honest status
+/// for the response. Pure, so the merge is testable without a live crawl.
+fn crawl_to_source(result: &CrawlResult, channel: &str) -> (Option<(String, String)>, Value) {
+    let text_posts = result
+        .posts
+        .iter()
+        .filter(|p| !p.content.trim().is_empty())
+        .count();
+    let error = result.error.clone().or_else(|| {
+        (text_posts == 0).then(|| format!("channel @{channel} yielded no text posts"))
+    });
+    let info = json!({
+        "channel": channel,
+        "posts_count": text_posts,
+        "error": error,
+    });
+    let doc = (text_posts > 0).then(|| {
+        (
+            crawler::corpus_document(result),
+            format!("Telegram: @{channel} ({text_posts} posts)"),
+        )
+    });
+    (doc, info)
 }
 
 async fn read_text(field: axum::extract::multipart::Field<'_>) -> AppResult<String> {
@@ -245,4 +317,66 @@ async fn delete_project(Path(project_id): Path<String>) -> AppResult<Success<Val
         return Err(AppError::NotFound(format!("Project does not exist: {project_id}")));
     }
     Ok(Success(json!({ "message": "Project deleted successfully" })))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::ScrapedPost;
+
+    fn fake_result(posts: Vec<&str>, error: Option<&str>) -> CrawlResult {
+        CrawlResult {
+            platform: "telegram".into(),
+            query: Some("chan".into()),
+            posts: posts
+                .into_iter()
+                .enumerate()
+                .map(|(i, content)| ScrapedPost {
+                    platform: "telegram".into(),
+                    post_id: i.to_string(),
+                    content: content.into(),
+                    author_id: "chan".into(),
+                    author_name: "chan".into(),
+                    timestamp: chrono::Utc::now(),
+                    url: None,
+                    likes: 0,
+                    shares: 0,
+                    comments: 0,
+                    views: 0,
+                    media_urls: vec![],
+                    hashtags: vec![],
+                    mentions: vec![],
+                })
+                .collect(),
+            users: vec![],
+            crawled_at: chrono::Utc::now(),
+            success: error.is_none(),
+            error: error.map(String::from),
+        }
+    }
+
+    #[test]
+    fn crawled_posts_become_a_corpus_document_with_source_label() {
+        let result = fake_result(vec!["Subsidy ends", "Prices up 12%"], None);
+        let (doc, info) = crawl_to_source(&result, "chan");
+        let (text, label) = doc.expect("posts should yield a document");
+        assert!(text.contains("Subsidy ends"));
+        assert!(text.contains("Prices up 12%"));
+        assert_eq!(label, "Telegram: @chan (2 posts)");
+        assert_eq!(info["posts_count"], 2);
+        assert!(info["error"].is_null());
+    }
+
+    #[test]
+    fn failed_or_empty_crawl_yields_no_document_but_honest_status() {
+        let (doc, info) = crawl_to_source(&fake_result(vec![], Some("fetch failed: 404")), "chan");
+        assert!(doc.is_none());
+        assert_eq!(info["error"], "fetch failed: 404");
+
+        // Media-only posts (no text) must not silently ground a graph.
+        let (doc, info) = crawl_to_source(&fake_result(vec!["  ", ""], None), "chan");
+        assert!(doc.is_none());
+        assert_eq!(info["posts_count"], 0);
+        assert!(info["error"].as_str().unwrap().contains("no text posts"));
+    }
 }

@@ -12,10 +12,22 @@ fn sel(css: &str) -> Selector {
     Selector::parse(css).expect("static selector")
 }
 
+/// Normalize user input into a bare channel handle: accepts `@name`,
+/// `t.me/name`, `https://t.me/s/name`, or plain `name`.
+pub fn normalize_channel(input: &str) -> String {
+    let trimmed = input.trim();
+    trimmed
+        .rsplit('/')
+        .find(|s| !s.is_empty())
+        .unwrap_or(trimmed)
+        .trim_start_matches('@')
+        .to_string()
+}
+
 /// Crawl a public Telegram channel. Errors are folded into the result
 /// (`success=false` + `error`), mirroring the Python BaseCrawler.crawl().
 pub async fn crawl_channel(channel: &str, limit: usize) -> CrawlResult {
-    let channel = channel.trim().trim_start_matches('@').to_string();
+    let channel = normalize_channel(channel);
     let mut result = CrawlResult {
         platform: "telegram".into(),
         query: Some(channel.clone()),
@@ -227,6 +239,15 @@ mod tests {
         </a>
       </div>
     </body></html>"#;
+
+    #[test]
+    fn normalize_channel_accepts_handles_and_urls() {
+        assert_eq!(normalize_channel("durov"), "durov");
+        assert_eq!(normalize_channel(" @durov "), "durov");
+        assert_eq!(normalize_channel("t.me/durov"), "durov");
+        assert_eq!(normalize_channel("https://t.me/s/durov"), "durov");
+        assert_eq!(normalize_channel("https://t.me/durov/"), "durov");
+    }
 
     #[test]
     fn parses_posts_and_channel_info() {

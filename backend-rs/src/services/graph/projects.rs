@@ -44,6 +44,10 @@ pub struct Project {
     pub simulation_config: Option<serde_json::Value>,
     #[serde(default)]
     pub files: Vec<serde_json::Value>,
+    /// Human-readable reality-seed labels, e.g. "report.pdf" or
+    /// "Telegram: @channel (143 posts)".
+    #[serde(default)]
+    pub sources: Vec<String>,
 }
 
 fn project_dir(project_id: &str) -> PathBuf {
@@ -77,6 +81,7 @@ pub fn create(name: &str) -> Result<Project> {
         simulation_id: None,
         simulation_config: None,
         files: vec![],
+        sources: vec![],
     };
     save(&project)?;
     Ok(project)
