@@ -16,11 +16,17 @@
 }
 
 #app {
-  font-family: 'JetBrains Mono', 'Space Grotesk', monospace;
+  /* Publication (editorial) typography — a warm, readable system serif stack,
+     no external fonts so it works offline and in the desktop shell. */
+  font-family: 'Iowan Old Style', 'Palatino Linotype', 'Palatino', 'Book Antiqua',
+    Georgia, Cambria, 'Times New Roman', Times, serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  color: #000000;
+  color: #111111;
   background-color: #ffffff;
+  font-size: 16px;
+  line-height: 1.6;
+  letter-spacing: 0.005em;
 }
 
 /* Scrollbar styles */
