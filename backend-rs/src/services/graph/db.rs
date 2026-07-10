@@ -34,8 +34,8 @@ CREATE TABLE IF NOT EXISTS graph_node (
     graph_id   TEXT NOT NULL,
     name       TEXT NOT NULL,
     uuid       TEXT,
-    labels     TEXT,        -- JSON array of entity-type labels
-    properties TEXT,        -- JSON object: summary + extracted attributes
+    entity_types TEXT,      -- JSON array of entity types
+    properties   TEXT,      -- JSON object: summary + extracted attributes
     created_at TEXT,
     PRIMARY KEY (graph_id, name)
 );
@@ -43,11 +43,11 @@ CREATE TABLE IF NOT EXISTS graph_edge (
     graph_id    TEXT NOT NULL,
     source_name TEXT NOT NULL,
     target_name TEXT NOT NULL,
-    rel_type    TEXT NOT NULL,
-    uuid        TEXT,
-    properties  TEXT,       -- JSON object: fact + attributes
-    created_at  TEXT,
-    PRIMARY KEY (graph_id, source_name, target_name, rel_type)
+    relation_type TEXT NOT NULL,
+    uuid          TEXT,
+    properties    TEXT,     -- JSON object: fact + attributes
+    created_at    TEXT,
+    PRIMARY KEY (graph_id, source_name, target_name, relation_type)
 );
 CREATE INDEX IF NOT EXISTS idx_node_graph ON graph_node(graph_id);
 CREATE INDEX IF NOT EXISTS idx_edge_graph ON graph_edge(graph_id);
@@ -61,12 +61,18 @@ impl GraphDb {
         let conn = Connection::open(path)?;
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA busy_timeout=5000;")?;
         conn.execute_batch(SCHEMA)?;
+        // Vocabulary migration for databases created before the rename:
+        // labels -> entity_types, rel_type -> relation_type. No-ops (ignored
+        // errors) on fresh databases where the new names already exist.
+        conn.execute("ALTER TABLE graph_node RENAME COLUMN labels TO entity_types", []).ok();
+        conn.execute("ALTER TABLE graph_edge RENAME COLUMN rel_type TO relation_type", []).ok();
         Ok(GraphDb { conn: Arc::new(Mutex::new(conn)) })
     }
 }
 
-/// Labels and relationship types come from the LLM; normalize them to identifier
-/// characters (kept from the Neo4j layer so stored labels/rel-types are stable).
+/// Entity types and relation types come from the LLM; normalize them to
+/// identifier characters (rule kept from the Neo4j layer so stored values stay
+/// stable across the migration).
 pub fn sanitize_identifier(raw: &str) -> Option<String> {
     let cleaned: String = raw
         .trim()
@@ -111,54 +117,54 @@ pub async fn set_ontology(db: &GraphDb, graph_id: &str, ontology: &Value) -> Res
     Ok(())
 }
 
-/// Upsert one entity by (graph_id, name); merges properties and unions labels
-/// across chunks, matching the old Neo4j MERGE + `n += props` semantics.
+/// Upsert one entity by (graph_id, name); merges attributes and unions entity
+/// types across chunks, matching the old Neo4j MERGE + `n += props` semantics.
 pub async fn upsert_entity(
     db: &GraphDb,
     graph_id: &str,
     name: &str,
-    labels: &[String],
-    properties: &Map<String, Value>,
+    entity_types: &[String],
+    attributes: &Map<String, Value>,
 ) -> Result<()> {
-    let safe_labels: Vec<String> = labels.iter().filter_map(|l| sanitize_identifier(l)).collect();
-    let mut props = properties.clone();
+    let safe_types: Vec<String> = entity_types.iter().filter_map(|l| sanitize_identifier(l)).collect();
+    let mut props = attributes.clone();
     props.remove("uuid");
 
     let c = db.conn.lock().unwrap();
     let existing: Option<(String, String)> = c
         .query_row(
-            "SELECT labels, properties FROM graph_node WHERE graph_id = ?1 AND name = ?2",
+            "SELECT entity_types, properties FROM graph_node WHERE graph_id = ?1 AND name = ?2",
             params![graph_id, name],
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .optional()?;
 
     match existing {
-        Some((old_labels, old_props)) => {
-            let mut merged_props: Map<String, Value> =
-                serde_json::from_str(&old_props).unwrap_or_default();
-            merged_props.extend(props);
-            let mut merged_labels: Vec<String> =
-                serde_json::from_str(&old_labels).unwrap_or_default();
-            for l in safe_labels {
-                if !merged_labels.contains(&l) {
-                    merged_labels.push(l);
+        Some((old_types, old_attrs)) => {
+            let mut merged_attrs: Map<String, Value> =
+                serde_json::from_str(&old_attrs).unwrap_or_default();
+            merged_attrs.extend(props);
+            let mut merged_types: Vec<String> =
+                serde_json::from_str(&old_types).unwrap_or_default();
+            for l in safe_types {
+                if !merged_types.contains(&l) {
+                    merged_types.push(l);
                 }
             }
             c.execute(
-                "UPDATE graph_node SET labels = ?1, properties = ?2 WHERE graph_id = ?3 AND name = ?4",
-                params![json!(merged_labels).to_string(), Value::Object(merged_props).to_string(), graph_id, name],
+                "UPDATE graph_node SET entity_types = ?1, properties = ?2 WHERE graph_id = ?3 AND name = ?4",
+                params![json!(merged_types).to_string(), Value::Object(merged_attrs).to_string(), graph_id, name],
             )?;
         }
         None => {
             c.execute(
-                "INSERT INTO graph_node (graph_id, name, uuid, labels, properties, created_at)
+                "INSERT INTO graph_node (graph_id, name, uuid, entity_types, properties, created_at)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                 params![
                     graph_id,
                     name,
                     uuid::Uuid::new_v4().to_string(),
-                    json!(safe_labels).to_string(),
+                    json!(safe_types).to_string(),
                     Value::Object(props).to_string(),
                     now()
                 ],
@@ -174,11 +180,11 @@ pub async fn upsert_relationship(
     graph_id: &str,
     source_name: &str,
     target_name: &str,
-    rel_type: &str,
-    properties: &Map<String, Value>,
+    relation_type: &str,
+    attributes: &Map<String, Value>,
 ) -> Result<()> {
-    let rel_type = sanitize_identifier(rel_type).unwrap_or_else(|| "RELATED_TO".to_string());
-    let mut props = properties.clone();
+    let relation_type = sanitize_identifier(relation_type).unwrap_or_else(|| "RELATED_TO".to_string());
+    let mut props = attributes.clone();
     // valid_at marks the fact as currently valid for downstream memory queries.
     props.insert("valid_at".into(), json!(now()));
 
@@ -186,8 +192,8 @@ pub async fn upsert_relationship(
     let existing: Option<String> = c
         .query_row(
             "SELECT properties FROM graph_edge
-             WHERE graph_id = ?1 AND source_name = ?2 AND target_name = ?3 AND rel_type = ?4",
-            params![graph_id, source_name, target_name, rel_type],
+             WHERE graph_id = ?1 AND source_name = ?2 AND target_name = ?3 AND relation_type = ?4",
+            params![graph_id, source_name, target_name, relation_type],
             |r| r.get(0),
         )
         .optional()?;
@@ -198,19 +204,19 @@ pub async fn upsert_relationship(
             merged.extend(props);
             c.execute(
                 "UPDATE graph_edge SET properties = ?1
-                 WHERE graph_id = ?2 AND source_name = ?3 AND target_name = ?4 AND rel_type = ?5",
-                params![Value::Object(merged).to_string(), graph_id, source_name, target_name, rel_type],
+                 WHERE graph_id = ?2 AND source_name = ?3 AND target_name = ?4 AND relation_type = ?5",
+                params![Value::Object(merged).to_string(), graph_id, source_name, target_name, relation_type],
             )?;
         }
         None => {
             c.execute(
-                "INSERT INTO graph_edge (graph_id, source_name, target_name, rel_type, uuid, properties, created_at)
+                "INSERT INTO graph_edge (graph_id, source_name, target_name, relation_type, uuid, properties, created_at)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                 params![
                     graph_id,
                     source_name,
                     target_name,
-                    rel_type,
+                    relation_type,
                     uuid::Uuid::new_v4().to_string(),
                     Value::Object(props).to_string(),
                     now()
@@ -235,7 +241,7 @@ pub async fn graph_info(db: &GraphDb, graph_id: &str) -> Result<GraphInfo> {
         c.query_row("SELECT COUNT(*) FROM graph_edge WHERE graph_id = ?1", params![graph_id], |r| r.get(0))?;
 
     let mut stmt = c.prepare(
-        "SELECT DISTINCT je.value FROM graph_node n, json_each(n.labels) je WHERE n.graph_id = ?1",
+        "SELECT DISTINCT je.value FROM graph_node n, json_each(n.entity_types) je WHERE n.graph_id = ?1",
     )?;
     let entity_types = stmt
         .query_map(params![graph_id], |r| r.get::<_, String>(0))?
@@ -251,20 +257,20 @@ pub async fn get_graph_data(db: &GraphDb, graph_id: &str) -> Result<Value> {
 
     let mut nodes = Vec::new();
     let mut stmt = c.prepare(
-        "SELECT uuid, name, labels, properties, created_at FROM graph_node WHERE graph_id = ?1",
+        "SELECT uuid, name, entity_types, properties, created_at FROM graph_node WHERE graph_id = ?1",
     )?;
     let mut rows = stmt.query(params![graph_id])?;
     while let Some(row) = rows.next()? {
         let uuid: String = row.get(0)?;
         let name: String = row.get(1)?;
-        let labels: Vec<String> = serde_json::from_str(&row.get::<_, String>(2)?).unwrap_or_default();
+        let entity_types: Vec<String> = serde_json::from_str(&row.get::<_, String>(2)?).unwrap_or_default();
         let props: Map<String, Value> =
             serde_json::from_str(&row.get::<_, String>(3)?).unwrap_or_default();
         let created_at: Option<String> = row.get(4)?;
         nodes.push(json!({
             "uuid": uuid,
             "name": name,
-            "labels": labels,
+            "entity_types": entity_types,
             "summary": props.get("summary").cloned().unwrap_or(json!("")),
             "attributes": props,
             "created_at": created_at,
@@ -273,7 +279,7 @@ pub async fn get_graph_data(db: &GraphDb, graph_id: &str) -> Result<Value> {
 
     let mut edges = Vec::new();
     let mut stmt = c.prepare(
-        "SELECT e.uuid, e.rel_type, e.properties, e.created_at,
+        "SELECT e.uuid, e.relation_type, e.properties, e.created_at,
                 sn.uuid AS source_uuid, tn.uuid AS target_uuid, e.source_name, e.target_name
          FROM graph_edge e
          LEFT JOIN graph_node sn ON sn.graph_id = e.graph_id AND sn.name = e.source_name
@@ -283,15 +289,17 @@ pub async fn get_graph_data(db: &GraphDb, graph_id: &str) -> Result<Value> {
     let mut rows = stmt.query(params![graph_id])?;
     while let Some(row) = rows.next()? {
         let uuid: String = row.get(0)?;
-        let rel_type: String = row.get(1)?;
+        let relation_type: String = row.get(1)?;
         let props: Map<String, Value> =
             serde_json::from_str(&row.get::<_, String>(2)?).unwrap_or_default();
         let created_at: Option<String> = row.get(3)?;
+        // The relation type is deliberately emitted under BOTH legacy keys
+        // ("name" and "fact_type") until consumers move to a typed shape.
         edges.push(json!({
             "uuid": uuid,
-            "name": rel_type,
+            "name": relation_type,
             "fact": props.get("fact").cloned().unwrap_or(json!("")),
-            "fact_type": rel_type,
+            "fact_type": relation_type,
             "source_node_uuid": row.get::<_, Option<String>>(4)?.unwrap_or_default(),
             "target_node_uuid": row.get::<_, Option<String>>(5)?.unwrap_or_default(),
             "source_node_name": row.get::<_, String>(6)?,
@@ -369,7 +377,7 @@ mod tests {
         assert_eq!(alice_node["summary"], "A tester");
         assert_eq!(alice_node["attributes"]["role"], "qa");
         assert_eq!(alice_node["attributes"]["location"], "Phnom Penh"); // merged across chunks
-        assert_eq!(alice_node["labels"].as_array().unwrap().len(), 2); // Person + Student
+        assert_eq!(alice_node["entity_types"].as_array().unwrap().len(), 2); // Person + Student
 
         let edges = data["edges"].as_array().unwrap();
         assert_eq!(edges.len(), 1);

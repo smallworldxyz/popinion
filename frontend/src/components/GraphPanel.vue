@@ -91,10 +91,10 @@
             </div>
             
             <!-- Labels -->
-            <div class="detail-section" v-if="selectedItem.data.labels && selectedItem.data.labels.length > 0">
+            <div class="detail-section" v-if="selectedItem.data.entity_types && selectedItem.data.entity_types.length > 0">
               <div class="section-title">Labels:</div>
               <div class="labels-list">
-                <span v-for="label in selectedItem.data.labels" :key="label" class="label-tag">
+                <span v-for="label in selectedItem.data.entity_types" :key="label" class="label-tag">
                   {{ label }}
                 </span>
               </div>
@@ -289,7 +289,7 @@ const entityTypes = computed(() => {
   const colors = ['#FF6B35', '#004E89', '#7B2D8E', '#1A936F', '#C5283D', '#E9724C', '#3498db', '#9b59b6', '#27ae60', '#f39c12']
   
   props.graphData.nodes.forEach(node => {
-    const type = node.labels?.find(l => l !== 'Entity') || 'Entity'
+    const type = node.entity_types?.find(l => l !== 'Entity') || 'Entity'
     if (!typeMap[type]) {
       typeMap[type] = { name: type, count: 0, color: colors[Object.keys(typeMap).length % colors.length] }
     }
@@ -356,7 +356,7 @@ const renderGraph = () => {
   const nodes = nodesData.map(n => ({
     id: n.uuid,
     name: n.name || 'Unnamed',
-    type: n.labels?.find(l => l !== 'Entity') || 'Entity',
+    type: n.entity_types?.find(l => l !== 'Entity') || 'Entity',
     rawData: n
   }))
   

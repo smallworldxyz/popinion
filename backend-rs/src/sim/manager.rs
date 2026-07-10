@@ -1,4 +1,4 @@
-use super::agent::AgentProfile;
+use super::agent::Persona;
 use super::config::SimConfig;
 use super::engine::Engine;
 use super::store::Store;
@@ -52,7 +52,7 @@ impl Manager {
     pub fn create(
         &self,
         name: &str,
-        profiles: Vec<AgentProfile>,
+        profiles: Vec<Persona>,
         config: SimConfig,
         graph_id: Option<String>,
         project_id: Option<String>,
@@ -79,7 +79,7 @@ impl Manager {
     /// swaps the personas; bumps num_agents and marks it ready to start.
     /// `event`, when set, seeds the discussion with that post (the scenario the
     /// population reacts to) attributed to the first agent.
-    pub fn attach_profiles(&self, id: &str, profiles: Vec<AgentProfile>, event: Option<String>) -> Result<()> {
+    pub fn attach_profiles(&self, id: &str, profiles: Vec<Persona>, event: Option<String>) -> Result<()> {
         let dir = self.dir(id);
         if !dir.exists() {
             anyhow::bail!("simulation {id} not found");
@@ -105,7 +105,7 @@ impl Manager {
         Ok(())
     }
 
-    fn write_profiles_and_config(&self, id: &str, profiles: &[AgentProfile], mut config: SimConfig) -> Result<()> {
+    fn write_profiles_and_config(&self, id: &str, profiles: &[Persona], mut config: SimConfig) -> Result<()> {
         let dir = self.dir(id);
         config.simulation_id = id.to_string();
         // Default one agent-config row per profile if none supplied.
@@ -167,7 +167,7 @@ impl Manager {
             anyhow::bail!("simulation {id} already running");
         }
         let dir = self.dir(id);
-        let profiles: Vec<AgentProfile> =
+        let profiles: Vec<Persona> =
             serde_json::from_slice(&std::fs::read(dir.join("profiles.json"))?)?;
         let mut config: SimConfig = serde_json::from_slice(&std::fs::read(dir.join("config.json"))?)?;
         if seed.is_some() {

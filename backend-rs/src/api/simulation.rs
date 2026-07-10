@@ -1,9 +1,7 @@
 use crate::error::{AppError, AppResult};
 use crate::models::Success;
-use crate::services::report::{
-    self, AgentInterviewer, PanelChatOptions, Panelist,
-};
-use crate::sim::agent::AgentProfile;
+use crate::services::report::{self, AgentInterviewer, PanelChatOptions};
+use crate::sim::agent::Persona;
 use crate::sim::config::SimConfig;
 use crate::sim::SimHandle;
 use crate::state::AppState;
@@ -26,15 +24,15 @@ impl AgentInterviewer for LiveInterviewer {
     }
 }
 
-/// Panelists default to the first N personas of the sim when the request omits them.
-fn default_panelists(st: &AppState, sim_id: &str, n: usize) -> AppResult<Vec<Panelist>> {
+/// Personas default to the first N in the sim's roster when the request omits them.
+fn default_personas(st: &AppState, sim_id: &str, n: usize) -> AppResult<Vec<report::Persona>> {
     let path = std::path::Path::new(&st.cfg.sim_data_dir).join(sim_id).join("profiles.json");
     let raw = std::fs::read(path).map_err(|_| AppError::NotFound(format!("profiles for {sim_id}")))?;
-    let profiles: Vec<AgentProfile> = serde_json::from_slice(&raw).map_err(|e| AppError::Other(e.into()))?;
+    let profiles: Vec<Persona> = serde_json::from_slice(&raw).map_err(|e| AppError::Other(e.into()))?;
     Ok(profiles
         .into_iter()
         .take(n)
-        .map(|p| Panelist { agent_id: p.user_id, name: p.name, faction: String::new(), platform: String::new() })
+        .map(|p| report::Persona { agent_id: p.user_id, name: p.name, faction: String::new(), platform: String::new() })
         .collect())
 }
 
@@ -79,7 +77,7 @@ struct CreateReq {
     #[serde(default = "default_name")]
     name: String,
     #[serde(default)]
-    profiles: Vec<AgentProfile>,
+    profiles: Vec<Persona>,
     #[serde(default)]
     config: Option<SimConfig>,
     #[serde(default)]
@@ -246,7 +244,7 @@ async fn run_prepare(
     let total = chosen.len();
     let mut profiles = Vec::with_capacity(total);
     for (i, b) in chosen.into_iter().enumerate() {
-        let mut p = persona::to_profile(b, i as i64);
+        let mut p = persona::to_persona(b, i as i64);
         if use_llm {
             p.persona = persona::synthesize_persona(llm, b).await;
         }
@@ -537,7 +535,7 @@ async fn stance(State(st): State<AppState>, Path(id): Path<String>) -> AppResult
 }
 
 /// (grounded, synthetic) split of a persona roster.
-fn persona_counts(profiles: &[AgentProfile]) -> (usize, usize) {
+fn persona_counts(profiles: &[Persona]) -> (usize, usize) {
     let synthetic = profiles.iter().filter(|p| p.synthetic).count();
     (profiles.len() - synthetic, synthetic)
 }
@@ -548,7 +546,7 @@ fn persona_counts(profiles: &[AgentProfile]) -> (usize, usize) {
 async fn credibility(State(st): State<AppState>, Path(id): Path<String>) -> AppResult<Success<Value>> {
     let path = std::path::Path::new(&st.cfg.sim_data_dir).join(&id).join("profiles.json");
     let raw = std::fs::read(path).map_err(|_| AppError::NotFound(format!("profiles for {id}")))?;
-    let profiles: Vec<AgentProfile> = serde_json::from_slice(&raw).map_err(|e| AppError::Other(e.into()))?;
+    let profiles: Vec<Persona> = serde_json::from_slice(&raw).map_err(|e| AppError::Other(e.into()))?;
     let (grounded, synthetic) = persona_counts(&profiles);
     let store = st.sim_manager().store(&id).map_err(|e| AppError::NotFound(e.to_string()))?;
     Ok(Success(json!({
@@ -600,7 +598,7 @@ struct PanelChatReq {
     simulation_id: String,
     question: String,
     #[serde(default)]
-    panelists: Vec<Panelist>,
+    personas: Vec<report::Persona>,
     #[serde(default)]
     rounds: Option<u32>,
 }
@@ -610,14 +608,14 @@ async fn panel_chat_h(State(st): State<AppState>, Json(req): Json<PanelChatReq>)
         .sims
         .get(&req.simulation_id)
         .ok_or_else(|| AppError::BadRequest("simulation not running (panel chat needs a live env)".into()))?;
-    let panelists = if req.panelists.is_empty() {
-        default_panelists(&st, &req.simulation_id, 12)?
+    let personas = if req.personas.is_empty() {
+        default_personas(&st, &req.simulation_id, 12)?
     } else {
-        req.panelists
+        req.personas
     };
     let opts = PanelChatOptions { rounds: req.rounds.unwrap_or(1), ..Default::default() };
     let interviewer = LiveInterviewer(handle);
-    let result = report::panel_chat(&st.llm(), &interviewer, &req.question, &panelists, &opts)
+    let result = report::panel_chat(&st.llm(), &interviewer, &req.question, &personas, &opts)
         .await
         .map_err(AppError::Other)?;
     Ok(Success(json!({ "result": result })))
@@ -641,7 +639,7 @@ struct SurveyDeployReq {
     simulation_id: String,
     survey_id: String,
     #[serde(default)]
-    respondents: Vec<Panelist>,
+    personas: Vec<report::Persona>,
 }
 
 async fn survey_deploy_h(State(st): State<AppState>, Json(req): Json<SurveyDeployReq>) -> AppResult<Success<Value>> {
@@ -649,13 +647,13 @@ async fn survey_deploy_h(State(st): State<AppState>, Json(req): Json<SurveyDeplo
         .sims
         .get(&req.simulation_id)
         .ok_or_else(|| AppError::BadRequest("simulation not running (survey needs a live env)".into()))?;
-    let respondents = if req.respondents.is_empty() {
-        default_panelists(&st, &req.simulation_id, 50)?
+    let personas = if req.personas.is_empty() {
+        default_personas(&st, &req.simulation_id, 50)?
     } else {
-        req.respondents
+        req.personas
     };
     let interviewer = LiveInterviewer(handle);
-    let result = report::survey_deploy(&interviewer, &req.survey_id, &respondents)
+    let result = report::survey_deploy(&interviewer, &req.survey_id, &personas)
         .await
         .map_err(AppError::Other)?;
     Ok(Success(json!({ "result": result })))
@@ -679,7 +677,7 @@ mod tests {
     fn persona_counts_split_grounded_and_synthetic() {
         // Legacy profiles omit `synthetic`; serde defaults it to false, so
         // they count as grounded — the count follows the stored flag exactly.
-        let profiles: Vec<AgentProfile> = serde_json::from_value(json!([
+        let profiles: Vec<Persona> = serde_json::from_value(json!([
             { "user_id": 0, "user_name": "a", "synthetic": false },
             { "user_id": 1, "user_name": "b", "synthetic": true },
             { "user_id": 2, "user_name": "c", "synthetic": true },

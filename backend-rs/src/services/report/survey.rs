@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
 use super::interview::AgentInterviewer;
-use super::panel_chat::Panelist;
+use super::panel_chat::Persona;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -130,19 +130,19 @@ pub fn survey_list() -> Vec<SurveyTemplate> {
     surveys
 }
 
-/// Deploy a survey: interview every respondent, parse and aggregate answers.
+/// Deploy a survey: interview every persona, parse and aggregate answers.
 pub async fn survey_deploy(
     interviewer: &dyn AgentInterviewer,
     survey_id: &str,
-    respondents: &[Panelist],
+    personas: &[Persona],
 ) -> anyhow::Result<SurveyResult> {
     let template = survey_get(survey_id).ok_or_else(|| anyhow::anyhow!("Survey not found: {survey_id}"))?;
-    if respondents.is_empty() {
-        anyhow::bail!("at least one respondent is required");
+    if personas.is_empty() {
+        anyhow::bail!("at least one persona is required");
     }
 
     let prompt = build_survey_prompt(&template);
-    let futures = respondents.iter().map(|p| {
+    let futures = personas.iter().map(|p| {
         let prompt = prompt.clone();
         async move { (p, interviewer.interview(p.agent_id, &prompt).await) }
     });
@@ -421,18 +421,18 @@ mod tests {
             (1, "q1: Agree\nq2: 4".to_string()),
             (2, "q1: Neutral\nq2: 3".to_string()),
         ]));
-        let respondents = vec![
-            Panelist { agent_id: 1, name: "Alice".into(), faction: "Student".into(), platform: String::new() },
-            Panelist { agent_id: 2, name: "Bob".into(), faction: String::new(), platform: String::new() },
-            Panelist { agent_id: 3, name: "Ghost".into(), faction: String::new(), platform: String::new() },
+        let personas = vec![
+            Persona { agent_id: 1, name: "Alice".into(), faction: "Student".into(), platform: String::new() },
+            Persona { agent_id: 2, name: "Bob".into(), faction: String::new(), platform: String::new() },
+            Persona { agent_id: 3, name: "Ghost".into(), faction: String::new(), platform: String::new() },
         ];
-        let result = survey_deploy(&interviewer, &t.survey_id, &respondents).await.unwrap();
+        let result = survey_deploy(&interviewer, &t.survey_id, &personas).await.unwrap();
         assert_eq!(result.total_respondents, 2); // agent 3 failed and was skipped
         assert_eq!(result.aggregated["q1"]["counts"]["Agree"], 1);
         assert_eq!(result.aggregated["q2"]["average"], 3.5);
         assert_eq!(result.by_faction["unknown"].len(), 1);
 
-        assert!(survey_deploy(&interviewer, "survey_missing", &respondents).await.is_err());
+        assert!(survey_deploy(&interviewer, "survey_missing", &personas).await.is_err());
         assert!(survey_deploy(&interviewer, &t.survey_id, &[]).await.is_err());
     }
 }

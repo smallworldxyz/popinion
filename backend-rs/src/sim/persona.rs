@@ -7,7 +7,7 @@
 //! landscape) actually reach the simulation.
 
 use crate::llm::{Llm, Msg};
-use crate::sim::agent::AgentProfile;
+use crate::sim::agent::Persona;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 
@@ -61,8 +61,9 @@ fn stance_polarity(rel: &str) -> Option<bool> {
 }
 
 /// Build one evidence bundle per entity from `db::get_graph_data` output
-/// (`{nodes:[{uuid,name,labels,summary,attributes}], edges:[{fact,name(rel),
-/// source_node_uuid,target_node_uuid,source_node_name,target_node_name}]}`).
+/// (`{nodes:[{uuid,name,entity_types,summary,attributes}], edges:[{fact,
+/// name(relation_type),source_node_uuid,target_node_uuid,source_node_name,
+/// target_node_name}]}`).
 pub fn build_bundles(graph_data: &Value) -> Vec<EvidenceBundle> {
     let empty = vec![];
     let nodes = graph_data["nodes"].as_array().unwrap_or(&empty);
@@ -75,7 +76,7 @@ pub fn build_bundles(graph_data: &Value) -> Vec<EvidenceBundle> {
         if uuid.is_empty() {
             continue;
         }
-        let entity_type = n["labels"]
+        let entity_type = n["entity_types"]
             .as_array()
             .and_then(|a| a.first())
             .and_then(Value::as_str)
@@ -155,13 +156,13 @@ fn selected_evidence(bundle: &EvidenceBundle) -> Vec<String> {
 
 /// Deterministic persona from evidence alone (no LLM, no fabrication).
 /// `user_id` is the sequential agent id assigned by the caller.
-pub fn to_profile(bundle: &EvidenceBundle, user_id: i64) -> AgentProfile {
+pub fn to_persona(bundle: &EvidenceBundle, user_id: i64) -> Persona {
     let persona = if bundle.summary.trim().is_empty() {
         format!("A real {} observed in the discussion.", bundle.entity_type)
     } else {
         format!("A real {}. {}", bundle.entity_type, bundle.summary.trim())
     };
-    AgentProfile {
+    Persona {
         user_id,
         user_name: sanitize_username(&bundle.name, user_id),
         name: bundle.name.clone(),
@@ -184,7 +185,7 @@ pub fn to_profile(bundle: &EvidenceBundle, user_id: i64) -> AgentProfile {
 /// Optional grounded synthesis: ask the model to write a richer first-person
 /// persona + initial stance using ONLY the evidence. Falls back to the
 /// deterministic persona on any failure. The evidence/provenance fields are set
-/// by the caller (via `to_profile`); this only enriches the prose.
+/// by the caller (via `to_persona`); this only enriches the prose.
 pub async fn synthesize_persona(llm: &Llm, bundle: &EvidenceBundle) -> String {
     let facts = if bundle.facts.is_empty() {
         "(no relationship facts recorded)".to_string()
@@ -222,7 +223,7 @@ pub async fn synthesize_persona(llm: &Llm, bundle: &EvidenceBundle) -> String {
 // ponytail: factions split by polarity (single-issue assumption) and weighted
 // equally. Weight by observed audience size (followers/subscribers) and split by
 // target when the graph carries multiple issues.
-pub fn synthesize_audience(graph_data: &Value, per_faction: usize, start_id: i64) -> Vec<AgentProfile> {
+pub fn synthesize_audience(graph_data: &Value, per_faction: usize, start_id: i64) -> Vec<Persona> {
     if per_faction == 0 {
         return vec![];
     }
@@ -261,7 +262,7 @@ pub fn synthesize_audience(graph_data: &Value, per_faction: usize, start_id: i64
                  official or an organization. Views common in your camp: {}",
                 sample.join(" | ")
             );
-            out.push(AgentProfile {
+            out.push(Persona {
                 user_id: id,
                 user_name: format!("{verb}er_{id}"),
                 name: format!("{label} {}", i + 1),
@@ -353,9 +354,9 @@ mod tests {
     fn fixture() -> Value {
         json!({
             "nodes": [
-                {"uuid": "u1", "name": "Labor Union", "labels": ["Organization"], "summary": "Represents factory workers."},
-                {"uuid": "u2", "name": "Minister X", "labels": ["Politician"], "summary": "Proposed the policy."},
-                {"uuid": "u3", "name": "Bare Node", "labels": ["Person"], "summary": ""}
+                {"uuid": "u1", "name": "Labor Union", "entity_types": ["Organization"], "summary": "Represents factory workers."},
+                {"uuid": "u2", "name": "Minister X", "entity_types": ["Politician"], "summary": "Proposed the policy."},
+                {"uuid": "u3", "name": "Bare Node", "entity_types": ["Person"], "summary": ""}
             ],
             "edges": [
                 {"name": "OPPOSES", "fact": "The union opposes the policy on wage grounds.",
@@ -391,7 +392,7 @@ mod tests {
     fn profile_is_grounded_and_not_synthetic() {
         let bundles = build_bundles(&fixture());
         let union = bundles.iter().find(|b| b.uuid == "u1").unwrap();
-        let p = to_profile(union, 0);
+        let p = to_persona(union, 0);
         assert!(!p.synthetic);
         assert_eq!(p.source_entity_uuid.as_deref(), Some("u1"));
         assert_eq!(p.source_entity_type.as_deref(), Some("Organization"));
@@ -406,16 +407,16 @@ mod tests {
         let bundles = build_bundles(&fixture());
         let union = bundles.iter().find(|b| b.uuid == "u1").unwrap();
         assert_eq!(union.faction(), Some("con"), "sources an OPPOSES edge");
-        assert_eq!(to_profile(union, 0).faction.as_deref(), Some("con"));
+        assert_eq!(to_persona(union, 0).faction.as_deref(), Some("con"));
         let minister = bundles.iter().find(|b| b.uuid == "u2").unwrap();
         assert_eq!(minister.faction(), None, "target of stances, source of none -> neutral");
-        assert!(to_profile(minister, 1).faction.is_none());
+        assert!(to_persona(minister, 1).faction.is_none());
     }
 
     #[test]
     fn faction_neutral_when_stances_mixed() {
         let g = json!({
-            "nodes": [{"uuid": "u1", "name": "Fence Sitter", "labels": ["Person"], "summary": "s"}],
+            "nodes": [{"uuid": "u1", "name": "Fence Sitter", "entity_types": ["Person"], "summary": "s"}],
             "edges": [
                 {"name": "SUPPORTS", "fact": "backs part A", "source_node_uuid": "u1", "target_node_uuid": "x",
                  "source_node_name": "Fence Sitter", "target_node_name": "A"},

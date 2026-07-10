@@ -1,9 +1,9 @@
 use serde::{Deserialize, Serialize};
 
-/// A simulated persona. Lenient deserialization so it loads both our own
+/// A grounded persona record. Lenient deserialization so it loads both our own
 /// generated profiles and the legacy OASIS `reddit_profiles.json` shape.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct AgentProfile {
+pub struct Persona {
     pub user_id: i64,
     #[serde(alias = "username")]
     pub user_name: String,
@@ -46,7 +46,7 @@ pub struct AgentProfile {
     pub faction: Option<String>,
 }
 
-impl AgentProfile {
+impl Persona {
     /// A compact persona block for prompting.
     pub fn persona_prompt(&self) -> String {
         let mut s = format!("You are {} (@{}).", self.name, self.user_name);
@@ -86,10 +86,10 @@ impl AgentProfile {
     }
 }
 
-/// Runtime agent: profile + per-agent activity schedule.
+/// Runtime agent: a Persona plus per-agent activity schedule.
 #[derive(Clone, Debug)]
 pub struct Agent {
-    pub profile: AgentProfile,
+    pub profile: Persona,
     pub activity_level: f64,
     pub active_hours: Vec<u32>,
 }

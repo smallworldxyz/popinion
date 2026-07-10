@@ -1,7 +1,7 @@
 //! Panel chat: a facilitated multi-round discussion among simulated personas.
 //! Ports panel_chat_service.py (stance classification, faction grouping,
 //! distribution stats, summary) and adds optional multi-round turns where
-//! panelists react to each other; the full transcript is returned.
+//! personas react to each other; the full transcript is returned.
 
 use crate::llm::{Llm, Msg};
 use serde::{Deserialize, Serialize};
@@ -16,7 +16,7 @@ const RESPONSE_TRUNCATE_LEN: usize = 300;
 const EXCERPTS_PER_ROUND: usize = 6;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Panelist {
+pub struct Persona {
     pub agent_id: i64,
     pub name: String,
     #[serde(default)]
@@ -84,20 +84,20 @@ fn preview(s: &str, max: usize) -> String {
     }
 }
 
-/// Run a panel discussion: interview every panelist (multi-round when
+/// Run a panel discussion: interview every persona (multi-round when
 /// `opts.rounds > 1`), classify final stances, group and summarize.
 pub async fn panel_chat(
     llm: &Llm,
     interviewer: &dyn AgentInterviewer,
     question: &str,
-    panelists: &[Panelist],
+    personas: &[Persona],
     opts: &PanelChatOptions,
 ) -> anyhow::Result<PanelChatResult> {
     if question.trim().is_empty() {
         anyhow::bail!("question must not be empty");
     }
-    if panelists.is_empty() {
-        anyhow::bail!("at least one panelist is required");
+    if personas.is_empty() {
+        anyhow::bail!("at least one persona is required");
     }
 
     let rounds = opts.rounds.max(1);
@@ -105,7 +105,7 @@ pub async fn panel_chat(
     let mut latest: HashMap<i64, String> = HashMap::new();
 
     for round in 1..=rounds {
-        let futures = panelists.iter().map(|p| {
+        let futures = personas.iter().map(|p| {
             let prompt = if round == 1 {
                 question.to_string()
             } else {
@@ -127,7 +127,7 @@ pub async fn panel_chat(
         for (agent_id, result) in futures::future::join_all(futures).await {
             match result {
                 Ok(answer) if !answer.trim().is_empty() => {
-                    let name = panelists
+                    let name = personas
                         .iter()
                         .find(|p| p.agent_id == agent_id)
                         .map(|p| p.name.clone())
@@ -146,7 +146,7 @@ pub async fn panel_chat(
         }
     }
 
-    let mut responses: Vec<PanelResponse> = panelists
+    let mut responses: Vec<PanelResponse> = personas
         .iter()
         .filter_map(|p| {
             latest.get(&p.agent_id).map(|answer| PanelResponse {
@@ -361,11 +361,11 @@ mod tests {
         Llm::new("", "http://127.0.0.1:1", "test")
     }
 
-    fn panelists() -> Vec<Panelist> {
+    fn personas() -> Vec<Persona> {
         vec![
-            Panelist { agent_id: 1, name: "Alice".into(), faction: "Student".into(), platform: "reddit".into() },
-            Panelist { agent_id: 2, name: "Bob".into(), faction: "Official".into(), platform: "reddit".into() },
-            Panelist { agent_id: 3, name: "Cara".into(), faction: "Student".into(), platform: String::new() },
+            Persona { agent_id: 1, name: "Alice".into(), faction: "Student".into(), platform: "reddit".into() },
+            Persona { agent_id: 2, name: "Bob".into(), faction: "Official".into(), platform: "reddit".into() },
+            Persona { agent_id: 3, name: "Cara".into(), faction: "Student".into(), platform: String::new() },
         ]
     }
 
@@ -383,7 +383,7 @@ mod tests {
             &offline_llm(),
             &scripted(),
             "Do you support the new policy?",
-            &panelists(),
+            &personas(),
             &PanelChatOptions::default(),
         )
         .await
@@ -405,7 +405,7 @@ mod tests {
     #[tokio::test]
     async fn multi_round_builds_transcript() {
         let opts = PanelChatOptions { rounds: 2, classify_stance: false, generate_summary: false };
-        let result = panel_chat(&offline_llm(), &scripted(), "Topic?", &panelists(), &opts)
+        let result = panel_chat(&offline_llm(), &scripted(), "Topic?", &personas(), &opts)
             .await
             .unwrap();
         assert_eq!(result.rounds, 2);
@@ -422,14 +422,14 @@ mod tests {
             "I approve, this is necessary.".to_string(),
         )]));
         let opts = PanelChatOptions { rounds: 1, classify_stance: true, generate_summary: false };
-        let result = panel_chat(&offline_llm(), &only_one, "Q?", &panelists(), &opts).await.unwrap();
+        let result = panel_chat(&offline_llm(), &only_one, "Q?", &personas(), &opts).await.unwrap();
         assert_eq!(result.total_agents, 1);
         assert_eq!(result.responses[0].stance, "support");
     }
 
     #[tokio::test]
     async fn rejects_empty_inputs() {
-        assert!(panel_chat(&offline_llm(), &scripted(), "", &panelists(), &Default::default()).await.is_err());
+        assert!(panel_chat(&offline_llm(), &scripted(), "", &personas(), &Default::default()).await.is_err());
         assert!(panel_chat(&offline_llm(), &scripted(), "Q?", &[], &Default::default()).await.is_err());
     }
 

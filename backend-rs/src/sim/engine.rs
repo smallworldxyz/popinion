@@ -1,5 +1,5 @@
 use super::action::{ActionType, Decision};
-use super::agent::{Agent, AgentProfile};
+use super::agent::{Agent, Persona};
 use super::config::SimConfig;
 use super::store::Store;
 use super::{Command, SimHandle};
@@ -29,7 +29,7 @@ pub struct Engine {
 }
 
 impl Engine {
-    pub fn new(store: Arc<Store>, profiles: Vec<AgentProfile>, config: SimConfig, llm: Llm) -> Self {
+    pub fn new(store: Arc<Store>, profiles: Vec<Persona>, config: SimConfig, llm: Llm) -> Self {
         // Join profiles with per-agent activity config (by user_id == agent_id).
         let cfg_by_id: HashMap<i64, &super::config::AgentConfig> =
             config.agent_configs.iter().map(|a| (a.agent_id, a)).collect();
@@ -47,7 +47,7 @@ impl Engine {
         // Ablation: swap personas among agents while keeping each agent's id and
         // activity schedule, so only the persona→identity mapping changes.
         if config.permute_personas && agents.len() > 1 {
-            let personas: Vec<AgentProfile> = agents.iter().map(|a| a.profile.clone()).collect();
+            let personas: Vec<Persona> = agents.iter().map(|a| a.profile.clone()).collect();
             let n = personas.len();
             for (i, a) in agents.iter_mut().enumerate() {
                 let uid = a.profile.user_id;
@@ -545,8 +545,8 @@ impl Rng {
 mod tests {
     use super::*;
 
-    fn profile(id: i64) -> AgentProfile {
-        AgentProfile {
+    fn profile(id: i64) -> Persona {
+        Persona {
             user_id: id,
             user_name: format!("u{id}"),
             name: format!("User {id}"),

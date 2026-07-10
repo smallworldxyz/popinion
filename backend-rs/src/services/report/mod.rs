@@ -25,7 +25,7 @@ pub mod survey;
 #[allow(unused_imports)]
 pub use interview::{AgentInterviewer, MockInterviewer};
 #[allow(unused_imports)]
-pub use panel_chat::{panel_chat, PanelChatOptions, PanelChatResult, Panelist};
+pub use panel_chat::{panel_chat, PanelChatOptions, PanelChatResult, Persona};
 #[allow(unused_imports)]
 pub use survey::{
     survey_create, survey_deploy, survey_get, survey_list, SurveyResult, SurveyTemplate,

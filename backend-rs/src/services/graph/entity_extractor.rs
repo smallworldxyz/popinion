@@ -91,11 +91,11 @@ Extract ALL entities and relationships from the text below.
 1. Find ALL entities matching the defined types in the text
 2. For EACH entity, extract:
    - name: The entity's proper name
-   - labels: The entity type(s) from the schema
+   - entity_types: The entity type(s) from the schema
    - summary: A 2-3 sentence description of the entity based on the text
-   - properties: Extract ALL attributes defined in the schema above!
+   - attributes: Extract ALL attributes defined in the schema above!
 3. Extract ALL relationships between entities
-4. For relationships, include a "fact" property describing the relationship
+4. For relationships, include a "fact" attribute describing the relationship
 
 **Text to Analyze:**
 {text}
@@ -105,17 +105,17 @@ Extract ALL entities and relationships from the text below.
   "entities": [
     {{
       "name": "Entity Name",
-      "labels": ["EntityType"],
+      "entity_types": ["EntityType"],
       "summary": "2-3 sentence description",
-      "properties": {{"attribute1": "value1"}}
+      "attributes": {{"attribute1": "value1"}}
     }}
   ],
   "relationships": [
     {{
       "source_name": "Entity1 Name",
       "target_name": "Entity2 Name",
-      "type": "RELATIONSHIP_TYPE",
-      "properties": {{"fact": "Descriptive sentence about this relationship"}}
+      "relation_type": "RELATIONSHIP_TYPE",
+      "attributes": {{"fact": "Descriptive sentence about this relationship"}}
     }}
   ]
 }}
@@ -125,9 +125,9 @@ Return ONLY valid JSON, no explanations.
     )
 }
 
-/// Normalize a raw LLM extraction: drop malformed items, coerce label strings
-/// to lists, fold `summary` into properties, dedupe entities by name and
-/// relationships by (source, type, target).
+/// Normalize a raw LLM extraction: drop malformed items, coerce entity-type
+/// strings to lists, fold `summary` into attributes, dedupe entities by name
+/// and relationships by (source, relation_type, target).
 pub fn normalize(raw: Value) -> Value {
     let mut entities = Vec::new();
     let mut seen_names = HashSet::new();
@@ -137,27 +137,27 @@ pub fn normalize(raw: Value) -> Value {
         if name.is_empty() {
             continue;
         }
-        let labels: Vec<String> = match obj.get("labels") {
+        let entity_types: Vec<String> = match obj.get("entity_types") {
             Some(Value::String(s)) if !s.is_empty() => vec![s.clone()],
             Some(Value::Array(a)) => a.iter().filter_map(Value::as_str).map(String::from).collect(),
             _ => vec![],
         };
-        if labels.is_empty() || !seen_names.insert(name.to_lowercase()) {
+        if entity_types.is_empty() || !seen_names.insert(name.to_lowercase()) {
             continue;
         }
-        let mut properties = match obj.get("properties") {
+        let mut attributes = match obj.get("attributes") {
             Some(Value::Object(m)) => m.clone(),
             _ => Map::new(),
         };
         if let Some(summary) = obj.get("summary").and_then(Value::as_str) {
-            if !summary.is_empty() && !properties.contains_key("summary") {
-                properties.insert("summary".into(), json!(summary));
+            if !summary.is_empty() && !attributes.contains_key("summary") {
+                attributes.insert("summary".into(), json!(summary));
             }
         }
         entities.push(json!({
             "name": name,
-            "labels": labels,
-            "properties": sanitize_properties(properties),
+            "entity_types": entity_types,
+            "attributes": sanitize_properties(attributes),
         }));
     }
 
@@ -167,31 +167,32 @@ pub fn normalize(raw: Value) -> Value {
         let Some(obj) = rel.as_object() else { continue };
         let source = obj.get("source_name").and_then(Value::as_str).unwrap_or("").trim().to_string();
         let target = obj.get("target_name").and_then(Value::as_str).unwrap_or("").trim().to_string();
-        let rel_type = obj.get("type").and_then(Value::as_str).unwrap_or("").trim().to_string();
-        if source.is_empty() || target.is_empty() || rel_type.is_empty() {
+        let relation_type = obj.get("relation_type").and_then(Value::as_str).unwrap_or("").trim().to_string();
+        if source.is_empty() || target.is_empty() || relation_type.is_empty() {
             continue;
         }
-        let key = format!("{}|{}|{}", source.to_lowercase(), rel_type, target.to_lowercase());
+        let key = format!("{}|{}|{}", source.to_lowercase(), relation_type, target.to_lowercase());
         if !seen_rels.insert(key) {
             continue;
         }
-        let properties = match obj.get("properties") {
+        let attributes = match obj.get("attributes") {
             Some(Value::Object(m)) => m.clone(),
             _ => Map::new(),
         };
         relationships.push(json!({
             "source_name": source,
             "target_name": target,
-            "type": rel_type,
-            "properties": sanitize_properties(properties),
+            "relation_type": relation_type,
+            "attributes": sanitize_properties(attributes),
         }));
     }
 
     json!({ "entities": entities, "relationships": relationships })
 }
 
-/// Neo4j property values must be primitives or arrays of primitives; the LLM
-/// sometimes emits nested objects. Stringify anything else, drop nulls.
+/// Attribute values must be primitives or arrays of primitives (a rule kept
+/// from the Neo4j layer so stored shapes stay stable); the LLM sometimes emits
+/// nested objects. Stringify anything else, drop nulls.
 fn sanitize_properties(props: Map<String, Value>) -> Map<String, Value> {
     props
         .into_iter()
@@ -211,21 +212,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn normalizes_labels_string_to_list() {
+    fn normalizes_entity_type_string_to_list() {
         let out = normalize(json!({
-            "entities": [{"name": "Alice", "labels": "Person"}],
+            "entities": [{"name": "Alice", "entity_types": "Person"}],
             "relationships": []
         }));
-        assert_eq!(out["entities"][0]["labels"], json!(["Person"]));
+        assert_eq!(out["entities"][0]["entity_types"], json!(["Person"]));
     }
 
     #[test]
-    fn drops_entities_without_name_or_labels() {
+    fn drops_entities_without_name_or_entity_types() {
         let out = normalize(json!({
             "entities": [
-                {"name": "", "labels": ["Person"]},
-                {"name": "NoLabels", "labels": []},
-                {"name": "Good", "labels": ["Person"]},
+                {"name": "", "entity_types": ["Person"]},
+                {"name": "NoTypes", "entity_types": []},
+                {"name": "Good", "entity_types": ["Person"]},
                 "not an object"
             ],
             "relationships": []
@@ -238,8 +239,8 @@ mod tests {
     fn dedupes_entities_case_insensitively() {
         let out = normalize(json!({
             "entities": [
-                {"name": "Alice", "labels": ["Person"]},
-                {"name": "alice", "labels": ["Student"]}
+                {"name": "Alice", "entity_types": ["Person"]},
+                {"name": "alice", "entity_types": ["Student"]}
             ],
             "relationships": []
         }));
@@ -247,12 +248,12 @@ mod tests {
     }
 
     #[test]
-    fn folds_summary_into_properties() {
+    fn folds_summary_into_attributes() {
         let out = normalize(json!({
-            "entities": [{"name": "A", "labels": ["Person"], "summary": "the summary"}],
+            "entities": [{"name": "A", "entity_types": ["Person"], "summary": "the summary"}],
             "relationships": []
         }));
-        assert_eq!(out["entities"][0]["properties"]["summary"], "the summary");
+        assert_eq!(out["entities"][0]["attributes"]["summary"], "the summary");
     }
 
     #[test]
@@ -260,22 +261,22 @@ mod tests {
         let out = normalize(json!({
             "entities": [],
             "relationships": [
-                {"source_name": "A", "target_name": "B", "type": "KNOWS"},
-                {"source_name": "a", "target_name": "b", "type": "KNOWS"},
-                {"source_name": "A", "target_name": "", "type": "KNOWS"},
-                {"source_name": "A", "target_name": "B", "type": ""}
+                {"source_name": "A", "target_name": "B", "relation_type": "KNOWS"},
+                {"source_name": "a", "target_name": "b", "relation_type": "KNOWS"},
+                {"source_name": "A", "target_name": "", "relation_type": "KNOWS"},
+                {"source_name": "A", "target_name": "B", "relation_type": ""}
             ]
         }));
         assert_eq!(out["relationships"].as_array().unwrap().len(), 1);
     }
 
     #[test]
-    fn sanitizes_nested_property_objects() {
+    fn sanitizes_nested_attribute_objects() {
         let out = normalize(json!({
             "entities": [{
                 "name": "A",
-                "labels": ["Person"],
-                "properties": {
+                "entity_types": ["Person"],
+                "attributes": {
                     "ok": "text",
                     "num": 3,
                     "list": ["a", "b"],
@@ -285,7 +286,7 @@ mod tests {
             }],
             "relationships": []
         }));
-        let props = &out["entities"][0]["properties"];
+        let props = &out["entities"][0]["attributes"];
         assert_eq!(props["ok"], "text");
         assert_eq!(props["num"], 3);
         assert_eq!(props["list"], json!(["a", "b"]));

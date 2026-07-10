@@ -49,11 +49,11 @@ async fn run_build(
 ) -> anyhow::Result<()> {
     tasks::update(task_id, 5, "Starting graph build...");
 
-    // 1. Create graph metadata + constraints.
+    // 1. Create the graph's metadata row.
     let graph_id = db::create_graph(graph, &params.graph_name).await?;
     tasks::update(task_id, 10, format!("Graph created: {graph_id}"));
 
-    // 2. Store ontology on the metadata node.
+    // 2. Store the ontology on the metadata row.
     db::set_ontology(graph, &graph_id, &params.ontology).await?;
     tasks::update(task_id, 15, "Ontology set");
 
@@ -136,26 +136,26 @@ async fn write_extraction(
     let empty = vec![];
     for entity in extraction["entities"].as_array().unwrap_or(&empty) {
         let name = entity["name"].as_str().unwrap_or_default();
-        let labels: Vec<String> = entity["labels"]
+        let entity_types: Vec<String> = entity["entity_types"]
             .as_array()
             .map(|a| a.iter().filter_map(Value::as_str).map(String::from).collect())
             .unwrap_or_default();
-        let props = entity["properties"].as_object().cloned().unwrap_or_default();
-        if name.is_empty() || labels.is_empty() {
+        let attrs = entity["attributes"].as_object().cloned().unwrap_or_default();
+        if name.is_empty() || entity_types.is_empty() {
             continue;
         }
-        db::upsert_entity(graph, graph_id, name, &labels, &props).await?;
+        db::upsert_entity(graph, graph_id, name, &entity_types, &attrs).await?;
     }
 
     for rel in extraction["relationships"].as_array().unwrap_or(&empty) {
         let source = rel["source_name"].as_str().unwrap_or_default();
         let target = rel["target_name"].as_str().unwrap_or_default();
-        let rel_type = rel["type"].as_str().unwrap_or("RELATED_TO");
-        let props = rel["properties"].as_object().cloned().unwrap_or_default();
+        let relation_type = rel["relation_type"].as_str().unwrap_or("RELATED_TO");
+        let attrs = rel["attributes"].as_object().cloned().unwrap_or_default();
         if source.is_empty() || target.is_empty() {
             continue;
         }
-        db::upsert_relationship(graph, graph_id, source, target, rel_type, &props).await?;
+        db::upsert_relationship(graph, graph_id, source, target, relation_type, &attrs).await?;
     }
     Ok(())
 }
