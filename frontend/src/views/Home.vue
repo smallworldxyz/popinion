@@ -3,93 +3,72 @@
     <!-- Top navigation bar -->
     <nav class="navbar">
       <div class="nav-brand">POPINION</div>
+      <div class="nav-desc">Public Opinion Analysis</div>
       <div class="nav-links">
-        <a href="https://github.com/rithythul/pubop" target="_blank" class="github-link">
-          Visit our GitHub <span class="arrow">↗</span>
+        <router-link to="/settings" class="nav-btn">⚙ Models</router-link>
+        <a href="https://github.com/rithythul/pubop" target="_blank" class="nav-btn">
+          GitHub <span class="arrow">↗</span>
         </a>
       </div>
     </nav>
 
     <div class="main-content">
-      <!-- Hero section: Interaction console -->
+      <!-- Hero: chat-native simulation prompt with reality-seed attachments -->
       <section class="hero-section">
-        <div class="console-box">
-          <!-- Upload area -->
-          <div class="console-section">
-            <div class="console-header">
-              <span class="console-label">01 / Reality Seeds</span>
-              <span class="console-meta">Supported formats: PDF, MD, TXT (Context for AI Planner)</span>
-            </div>
-            
-            <div 
-              class="upload-zone"
-              :class="{ 'drag-over': isDragOver, 'has-files': files.length > 0 }"
-              @dragover.prevent="handleDragOver"
-              @dragleave.prevent="handleDragLeave"
-              @drop.prevent="handleDrop"
-              @click="triggerFileInput"
-            >
-              <input
-                ref="fileInput"
-                type="file"
-                multiple
-                accept=".pdf,.md,.txt"
-                @change="handleFileSelect"
-                style="display: none"
-                :disabled="loading"
-              />
-              
-              <div v-if="files.length === 0" class="upload-placeholder">
-                <div class="upload-icon">↑</div>
-                <div class="upload-title">Drag & Drop Files</div>
-                <div class="upload-hint">or click to browse</div>
-              </div>
-              
-              <div v-else class="file-list">
-                <div v-for="(file, index) in files" :key="index" class="file-item">
-                  <span class="file-icon">📄</span>
-                  <span class="file-name">{{ file.name }}</span>
-                  <button @click.stop="removeFile(index)" class="remove-btn">×</button>
-                </div>
-              </div>
+        <div
+          class="chat-box"
+          :class="{ 'drag-over': isDragOver }"
+          @dragover.prevent="handleDragOver"
+          @dragleave.prevent="handleDragLeave"
+          @drop.prevent="handleDrop"
+        >
+          <div class="chat-label">>_ Sim Prompt</div>
+          <textarea
+            v-model="formData.simulationRequirement"
+            class="chat-input"
+            placeholder="Describe the scenario to simulate — a policy, a message, an event.
+e.g. How will the public react to phasing out the national fuel subsidy over 12 months?"
+            rows="5"
+            :disabled="loading"
+          ></textarea>
+
+          <!-- reality seeds attached to the prompt -->
+          <div v-if="files.length" class="seed-chips">
+            <div v-for="(file, index) in files" :key="index" class="seed-chip">
+              <span class="file-icon">📄</span>
+              <span class="chip-name">{{ file.name }}</span>
+              <button @click.stop="removeFile(index)" class="chip-x">×</button>
             </div>
           </div>
 
-          <!-- divider -->
-          <div class="console-divider">
-            <span>Input Parameters</span>
-          </div>
-
-          <!-- input area -->
-          <div class="console-section">
-            <div class="console-header">
-              <span class="console-label">>_ 02 / Simulation Prompt</span>
-            </div>
-            <div class="input-wrapper">
-              <textarea
-                v-model="formData.simulationRequirement"
-                class="code-input"
-                placeholder="// Describe your simulation scenario.
-// Tip: Use keywords like 'news', 'video reactions', 'scandal', or 'public opinion' to trigger targeted smart scraping."
-                rows="6"
-                :disabled="loading"
-              ></textarea>
-              <div class="model-badge">Engine: Popinion-V1.0</div>
-            </div>
-          </div>
-
-          <!-- start button -->
-          <div class="console-section btn-section">
-            <button 
+          <div class="chat-toolbar">
+            <button class="attach-btn" @click="triggerFileInput" :disabled="loading">
+              📎 Reality seeds
+            </button>
+            <span class="attach-hint">
+              {{ files.length ? files.length + ' attached — real data grounds the simulation' : 'Attach PDF · MD · TXT to ground the sim in real data' }}
+            </span>
+            <button
               class="start-engine-btn"
               @click="startSimulation"
               :disabled="!canSubmit || loading"
             >
               <span v-if="!loading">Start Engine</span>
-              <span v-else>Initializing...</span>
+              <span v-else>Initializing…</span>
               <span class="btn-arrow">→</span>
             </button>
           </div>
+
+          <input
+            ref="fileInput"
+            type="file"
+            multiple
+            accept=".pdf,.md,.txt"
+            @change="handleFileSelect"
+            style="display: none"
+            :disabled="loading"
+          />
+          <div class="engine-badge">Engine: Popinion-V1.0</div>
         </div>
       </section>
 
@@ -341,6 +320,105 @@ const startSimulation = () => {
 
 .github-link:hover {
   opacity: 0.8;
+}
+
+.nav-desc {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  opacity: 0.55;
+}
+.nav-btn {
+  color: var(--white);
+  text-decoration: none;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+.nav-btn + .nav-btn { margin-left: 10px; }
+.nav-btn:hover { background: var(--white); color: var(--black); }
+
+/* Chat-native simulation prompt */
+.chat-box {
+  max-width: 780px;
+  margin: 40px auto 0;
+  background: var(--white);
+  border: 1px solid var(--black);
+  border-radius: 14px;
+  padding: 20px;
+  position: relative;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+}
+.chat-box.drag-over { border-style: dashed; background: #f6f8ff; }
+.chat-label {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  letter-spacing: 1px;
+  color: #6b7280;
+  margin-bottom: 10px;
+}
+.chat-input {
+  width: 100%;
+  border: none;
+  outline: none;
+  resize: vertical;
+  font-family: inherit;
+  font-size: 1.05rem;
+  line-height: 1.6;
+  color: var(--black);
+  background: transparent;
+  min-height: 120px;
+}
+.chat-input::placeholder { color: #9ca3af; }
+.seed-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 4px; }
+.seed-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 0.85rem;
+}
+.chip-name { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip-x { border: none; background: none; cursor: pointer; font-size: 1rem; color: #9ca3af; line-height: 1; }
+.chip-x:hover { color: #dc2626; }
+.chat-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid #eee;
+}
+.attach-btn {
+  font-family: inherit;
+  font-size: 0.9rem;
+  padding: 8px 14px;
+  border: 1px solid #d1d5db;
+  background: #fff;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.attach-btn:hover { background: #f9fafb; }
+.attach-hint { flex: 1; font-size: 0.82rem; color: #9ca3af; }
+.chat-toolbar .start-engine-btn { width: auto; margin: 0; }
+.engine-badge {
+  position: absolute;
+  top: 18px;
+  right: 20px;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: #9ca3af;
 }
 
 .arrow {

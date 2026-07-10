@@ -1,5 +1,5 @@
 <template>
-  <router-link v-if="$route.name !== 'Settings'" to="/settings" class="settings-fab" title="Model settings">⚙ Models</router-link>
+  <router-link v-if="!['Settings', 'Home'].includes($route.name)" to="/settings" class="settings-fab" title="Model settings">⚙ Models</router-link>
   <router-view />
 </template>
 
