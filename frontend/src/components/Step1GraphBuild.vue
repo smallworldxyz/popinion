@@ -122,7 +122,7 @@
         <div class="card-content">
           <p class="api-note">POST /api/graph/build</p>
           <p class="description">
-            Based on the generated ontology, documents are automatically chunked and Neo4j is used to build knowledge graph, extracting entities and relationships, forming temporal memory and community summaries
+            Based on the generated ontology, documents are automatically chunked and used to build the knowledge graph, extracting entities and relationships, forming temporal memory and community summaries
           </p>
           
           <!-- Stats Cards -->
