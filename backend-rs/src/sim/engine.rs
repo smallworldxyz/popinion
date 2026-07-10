@@ -15,10 +15,11 @@ use tokio::sync::{mpsc, oneshot};
 const MAX_CONCURRENCY: usize = 30;
 /// How many recent posts an agent sees in its feed.
 const FEED_SIZE: i64 = 12;
-/// Simulated wall-clock start hour. The default active window is 08:00–23:00, so
-/// starting at midnight left the first ~16 rounds with zero active agents (a
-/// short run did nothing but insert seed posts). Begin the day inside it.
-const START_HOUR: u32 = 8;
+/// Simulated wall-clock start hour. Starting at midnight left the first ~16
+/// rounds with zero active agents (a short run did nothing but insert seed
+/// posts), so the day begins at the default active window's first hour — tied
+/// to the same constant so they can't drift apart again.
+const START_HOUR: u32 = super::config::DEFAULT_ACTIVE_START_HOUR;
 
 pub struct Engine {
     store: Arc<Store>,
@@ -38,8 +39,10 @@ impl Engine {
             .map(|p| {
                 let ac = cfg_by_id.get(&p.user_id);
                 Agent {
-                    activity_level: ac.map(|a| a.activity_level).unwrap_or(0.5),
-                    active_hours: ac.map(|a| a.active_hours.clone()).unwrap_or_else(|| (8..23).collect()),
+                    activity_level: ac.map(|a| a.activity_level).unwrap_or(super::config::DEFAULT_ACTIVITY_LEVEL),
+                    active_hours: ac
+                        .map(|a| a.active_hours.clone())
+                        .unwrap_or_else(super::config::default_active_hours),
                     profile: p,
                 }
             })
@@ -152,7 +155,6 @@ impl Engine {
         for a in &self.agents {
             self.store.add_user(
                 a.profile.user_id,
-                a.profile.user_id,
                 &a.profile.name,
                 &a.profile.user_name,
                 &a.profile.bio,
@@ -201,7 +203,6 @@ impl Engine {
             .any(|p| p.poster_agent_id == super::config::EVENT_AUTHOR_ID)
         {
             self.store.add_user(
-                super::config::EVENT_AUTHOR_ID,
                 super::config::EVENT_AUTHOR_ID,
                 "Event",
                 "event",
@@ -326,7 +327,7 @@ impl Engine {
                     self.store.follow(user_id, tid)?;
                 }
             }
-            ActionType::DoNothing | ActionType::Interview => {}
+            ActionType::DoNothing => {}
         }
         self.store.trace(user_id, d.action_type().as_str(), &info, round)
     }
@@ -570,12 +571,16 @@ mod tests {
     fn reset_seeds_users_and_initial_posts() {
         let dir = std::env::temp_dir().join(format!("popinion-eng-{}", std::process::id()));
         let store = Arc::new(Store::open(&dir.join("s.db")).unwrap());
-        let mut cfg = SimConfig::default();
-        cfg.simulation_id = "t1".into();
-        cfg.event_config.initial_posts = vec![super::super::config::InitialPost {
-            poster_agent_id: 1,
-            content: "The policy is good".into(),
-        }];
+        let cfg = SimConfig {
+            simulation_id: "t1".into(),
+            event_config: super::super::config::EventConfig {
+                initial_posts: vec![super::super::config::InitialPost {
+                    poster_agent_id: 1,
+                    content: "The policy is good".into(),
+                }],
+            },
+            ..Default::default()
+        };
         let llm = Llm::new("", "http://localhost", "test");
         let mut eng = Engine::new(store.clone(), vec![profile(1), profile(2)], cfg, llm);
         eng.reset().unwrap();
@@ -634,8 +639,7 @@ mod tests {
     fn reset_seeds_influence_network_from_public_to_elites() {
         let dir = std::env::temp_dir().join(format!("popinion-net-{}", std::process::id()));
         let store = Arc::new(Store::open(&dir.join("s.db")).unwrap());
-        let mut cfg = SimConfig::default();
-        cfg.simulation_id = "net".into();
+        let cfg = SimConfig { simulation_id: "net".into(), ..Default::default() };
         let elite = profile(1); // synthetic = false
         let mut citizen = profile(2);
         citizen.synthetic = true;
@@ -654,8 +658,7 @@ mod tests {
     fn reset_seeds_homophilous_follows_by_faction() {
         let dir = std::env::temp_dir().join(format!("popinion-homo-{}", std::process::id()));
         let store = Arc::new(Store::open(&dir.join("s.db")).unwrap());
-        let mut cfg = SimConfig::default();
-        cfg.simulation_id = "homo".into();
+        let cfg = SimConfig { simulation_id: "homo".into(), ..Default::default() };
         let mut pro_elite = profile(1);
         pro_elite.faction = Some("pro".into());
         let mut con_elite = profile(2);
@@ -688,13 +691,15 @@ mod tests {
     fn active_agents_respects_hours() {
         let dir = std::env::temp_dir().join(format!("popinion-eng2-{}", std::process::id()));
         let store = Arc::new(Store::open(&dir.join("s.db")).unwrap());
-        let mut cfg = SimConfig::default();
-        cfg.simulation_id = "t2".into();
-        // both agents active only at hour 10, always post
-        cfg.agent_configs = vec![
-            super::super::config::AgentConfig { agent_id: 1, active_hours: vec![10], activity_level: 1.0 },
-            super::super::config::AgentConfig { agent_id: 2, active_hours: vec![10], activity_level: 1.0 },
-        ];
+        let cfg = SimConfig {
+            simulation_id: "t2".into(),
+            // both agents active only at hour 10, always post
+            agent_configs: vec![
+                super::super::config::AgentConfig { agent_id: 1, active_hours: vec![10], activity_level: 1.0 },
+                super::super::config::AgentConfig { agent_id: 2, active_hours: vec![10], activity_level: 1.0 },
+            ],
+            ..Default::default()
+        };
         let llm = Llm::new("", "http://localhost", "test");
         let mut eng = Engine::new(store.clone(), vec![profile(1), profile(2)], cfg, llm);
         assert!(eng.active_agents(3).is_empty(), "nobody active at 3am");

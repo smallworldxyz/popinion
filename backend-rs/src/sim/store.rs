@@ -19,7 +19,6 @@ pub struct Store {
 pub const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS user (
     user_id     INTEGER PRIMARY KEY,
-    agent_id    INTEGER,
     name        TEXT,
     user_name   TEXT,
     bio         TEXT DEFAULT '',
@@ -104,7 +103,6 @@ impl Store {
     pub fn add_user(
         &self,
         user_id: i64,
-        agent_id: i64,
         name: &str,
         user_name: &str,
         bio: &str,
@@ -112,9 +110,9 @@ impl Store {
     ) -> Result<()> {
         let c = self.conn.lock().unwrap();
         c.execute(
-            "INSERT OR REPLACE INTO user (user_id, agent_id, name, user_name, bio, persona, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![user_id, agent_id, name, user_name, bio, persona, now()],
+            "INSERT OR REPLACE INTO user (user_id, name, user_name, bio, persona, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![user_id, name, user_name, bio, persona, now()],
         )?;
         Ok(())
     }
@@ -398,35 +396,27 @@ impl Store {
     /// Agent-weighted stance distribution: one vote per agent, their most recent
     /// stance-bearing action (post or comment). This is the honest population
     /// metric — post-weighted counts let one hyperactive agent dominate.
+    /// The store only reads the raw acts; the math lives in sim::stance.
     pub fn agent_stance_distribution(&self) -> Result<Value> {
         let c = self.conn.lock().unwrap();
         let mut stmt = c.prepare(
-            // Order by created_at, not the id: post_id and comment_id are
-            // independent sequences, so comparing them mixes two id-spaces and
-            // an agent's post-then-comment in one round would tiebreak wrongly.
-            "WITH acts AS (
-                 SELECT user_id, stance, round, created_at FROM post
-                 WHERE stance IS NOT NULL AND stance != 'seed'
-                 UNION ALL
-                 SELECT user_id, stance, round, created_at FROM comment
-                 WHERE stance IS NOT NULL AND stance != 'seed'
-             ),
-             latest AS (
-                 SELECT user_id, stance,
-                        ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY round DESC, created_at DESC) rn
-                 FROM acts
-             )
-             SELECT stance, COUNT(*) FROM latest WHERE rn = 1 GROUP BY stance ORDER BY COUNT(*) DESC",
+            "SELECT user_id, stance, round, created_at FROM post
+             WHERE stance IS NOT NULL AND stance != 'seed'
+             UNION ALL
+             SELECT user_id, stance, round, created_at FROM comment
+             WHERE stance IS NOT NULL AND stance != 'seed'",
         )?;
-        let rows = stmt
+        let acts = stmt
             .query_map([], |r| {
-                Ok(json!({
-                    "stance": r.get::<_, String>(0)?,
-                    "count": r.get::<_, i64>(1)?,
-                }))
+                Ok(super::stance::StanceAct {
+                    user_id: r.get(0)?,
+                    stance: r.get(1)?,
+                    round: r.get(2)?,
+                    created_at: r.get::<_, Option<String>>(3)?.unwrap_or_default(),
+                })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
-        Ok(json!(rows))
+        Ok(super::stance::agent_distribution(&acts))
     }
 
     /// Aggregate stance distribution across posts — a first-class "better
@@ -504,49 +494,19 @@ impl Store {
 
     /// How often the agents' self-reported stance matched the independent label.
     /// Low agreement means the self-reports (and headline numbers) are unreliable.
+    /// The store only reads the raw labels; the math lives in sim::stance.
     pub fn stance_agreement(&self) -> Result<Value> {
         let c = self.conn.lock().unwrap();
-        let (n, agree): (i64, i64) = c.query_row(
-            "SELECT COUNT(*), COALESCE(SUM(CASE WHEN self_stance = ind_stance THEN 1 ELSE 0 END), 0)
-             FROM independent_stance WHERE self_stance IS NOT NULL",
-            [],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )?;
-        let mut stmt = c.prepare(
-            "SELECT COALESCE(self_stance,'none') s, ind_stance i, COUNT(*) n
-             FROM independent_stance GROUP BY s, i ORDER BY n DESC",
-        )?;
-        let confusion = stmt
+        let mut stmt = c.prepare("SELECT self_stance, ind_stance FROM independent_stance")?;
+        let labels = stmt
             .query_map([], |r| {
-                Ok(json!({
-                    "self": r.get::<_, String>(0)?,
-                    "independent": r.get::<_, String>(1)?,
-                    "count": r.get::<_, i64>(2)?,
-                }))
+                Ok(super::stance::IndependentLabel {
+                    self_stance: r.get(0)?,
+                    ind_stance: r.get(1)?,
+                })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
-        // Both marginals over the SAME labelled set (posts + comments), so the
-        // self-reported vs independent comparison is apples-to-apples.
-        let marginal = |col: &str| -> Result<Value> {
-            let mut s = c.prepare(&format!(
-                "SELECT {col}, COUNT(*) FROM independent_stance
-                 WHERE {col} IS NOT NULL GROUP BY {col} ORDER BY COUNT(*) DESC"
-            ))?;
-            let rows = s
-                .query_map([], |r| {
-                    Ok(json!({ "stance": r.get::<_, String>(0)?, "count": r.get::<_, i64>(1)? }))
-                })?
-                .collect::<rusqlite::Result<Vec<_>>>()?;
-            Ok(json!(rows))
-        };
-        Ok(json!({
-            "labelled": n,
-            "agree": agree,
-            "agreement_rate": if n > 0 { agree as f64 / n as f64 } else { 0.0 },
-            "self_distribution": marginal("self_stance")?,
-            "independent_distribution": marginal("ind_stance")?,
-            "confusion": confusion,
-        }))
+        Ok(super::stance::agreement(&labels))
     }
 }
 
@@ -563,7 +523,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("popinion-test-{}", std::process::id()));
         let path = dir.join("s.db");
         let s = Store::open(&path).unwrap();
-        s.add_user(1, 1, "Alice", "alice", "bio", "persona").unwrap();
+        s.add_user(1, "Alice", "alice", "bio", "persona").unwrap();
         let p = s.add_post(1, "I support the policy", 0, Some("support"), Some(0.8)).unwrap();
         s.add_comment(p, 1, "agreed", 0, Some("support"), Some(0.6)).unwrap();
         s.like_post(p, 1, false).unwrap();
@@ -583,7 +543,7 @@ mod tests {
     fn independent_labels_drive_distribution_and_agreement() {
         let dir = std::env::temp_dir().join(format!("popinion-indep-{}", std::process::id()));
         let s = Store::open(&dir.join("s.db")).unwrap();
-        s.add_user(1, 1, "u", "u", "", "").unwrap();
+        s.add_user(1, "u", "u", "", "").unwrap();
         let p1 = s.add_post(1, "I back the plan", 0, Some("support"), None).unwrap();
         let p2 = s.add_post(1, "actually this is terrible", 0, Some("support"), None).unwrap();
         // Independent classifier agrees on p1, disagrees on p2 (self=support, indep=oppose).
@@ -614,7 +574,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("popinion-feed-{}", std::process::id()));
         let s = Store::open(&dir.join("s.db")).unwrap();
         for id in 1..=3 {
-            s.add_user(id, id, "u", "u", "", "").unwrap();
+            s.add_user(id, "u", "u", "", "").unwrap();
         }
         let p_followee = s.add_post(2, "from someone I follow", 0, Some("support"), None).unwrap();
         let p_trending = s.add_post(3, "popular but not followed", 0, Some("oppose"), None).unwrap();
@@ -636,8 +596,8 @@ mod tests {
     fn agent_weighted_counts_one_vote_per_agent() {
         let dir = std::env::temp_dir().join(format!("popinion-agentw-{}", std::process::id()));
         let s = Store::open(&dir.join("s.db")).unwrap();
-        s.add_user(1, 1, "A", "a", "", "").unwrap();
-        s.add_user(2, 2, "B", "b", "", "").unwrap();
+        s.add_user(1, "A", "a", "", "").unwrap();
+        s.add_user(2, "B", "b", "", "").unwrap();
         // Agent 1 is hyperactive: 3 support posts. Agent 2: one oppose comment.
         for _ in 0..3 {
             s.add_post(1, "yes", 0, Some("support"), Some(0.5)).unwrap();

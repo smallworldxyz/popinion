@@ -495,8 +495,8 @@ mod tests {
         let path = dir.join("s.db");
         std::fs::remove_file(&path).ok();
         let s = Store::open(&path).unwrap();
-        s.add_user(1, 1, "Alice", "alice", "", "activist").unwrap();
-        s.add_user(2, 2, "Bob", "bob", "", "skeptic").unwrap();
+        s.add_user(1, "Alice", "alice", "", "activist").unwrap();
+        s.add_user(2, "Bob", "bob", "", "skeptic").unwrap();
         let p1 = s.add_post(1, "I fully support the new climate policy", 0, Some("support"), Some(0.8)).unwrap();
         s.add_post(2, "This climate policy will ruin the economy", 1, Some("oppose"), Some(-0.6)).unwrap();
         s.add_post(1, "Everyone should read the climate policy details", 2, Some("support"), Some(0.5)).unwrap();

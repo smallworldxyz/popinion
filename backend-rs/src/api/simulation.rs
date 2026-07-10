@@ -26,9 +26,10 @@ impl AgentInterviewer for LiveInterviewer {
 
 /// Personas default to the first N in the sim's roster when the request omits them.
 fn default_personas(st: &AppState, sim_id: &str, n: usize) -> AppResult<Vec<report::Persona>> {
-    let path = std::path::Path::new(&st.cfg.sim_data_dir).join(sim_id).join("profiles.json");
-    let raw = std::fs::read(path).map_err(|_| AppError::NotFound(format!("profiles for {sim_id}")))?;
-    let profiles: Vec<Persona> = serde_json::from_slice(&raw).map_err(|e| AppError::Other(e.into()))?;
+    let profiles = st
+        .sim_manager()
+        .load_personas(sim_id)
+        .map_err(|_| AppError::NotFound(format!("profiles for {sim_id}")))?;
     Ok(profiles
         .into_iter()
         .take(n)
@@ -441,15 +442,17 @@ async fn get_sim(State(st): State<AppState>, Path(id): Path<String>) -> AppResul
 }
 
 async fn get_config(State(st): State<AppState>, Path(id): Path<String>) -> AppResult<Success<Value>> {
-    let path = std::path::Path::new(&st.cfg.sim_data_dir).join(&id).join("config.json");
-    let raw = std::fs::read(path).map_err(|_| AppError::NotFound(format!("config for {id}")))?;
+    // Raw JSON passthrough (not a SimConfig round-trip) so the payload stays
+    // byte-for-byte what is on disk; only the path comes from the Manager.
+    let raw = std::fs::read(st.sim_manager().config_path(&id))
+        .map_err(|_| AppError::NotFound(format!("config for {id}")))?;
     let cfg: Value = serde_json::from_slice(&raw).map_err(|e| AppError::Other(e.into()))?;
     Ok(Success(json!({ "config": cfg })))
 }
 
 async fn get_profiles(State(st): State<AppState>, Path(id): Path<String>) -> AppResult<Success<Value>> {
-    let path = std::path::Path::new(&st.cfg.sim_data_dir).join(&id).join("profiles.json");
-    let raw = std::fs::read(path).map_err(|_| AppError::NotFound(format!("profiles for {id}")))?;
+    let raw = std::fs::read(st.sim_manager().profiles_path(&id))
+        .map_err(|_| AppError::NotFound(format!("profiles for {id}")))?;
     let profiles: Value = serde_json::from_slice(&raw).map_err(|e| AppError::Other(e.into()))?;
     Ok(Success(json!({ "profiles": profiles })))
 }
@@ -544,11 +547,12 @@ fn persona_counts(profiles: &[Persona]) -> (usize, usize) {
 /// provenance (grounded vs synthetic personas) plus both stance weightings so
 /// the reader can see when a hyperactive agent is skewing the post counts.
 async fn credibility(State(st): State<AppState>, Path(id): Path<String>) -> AppResult<Success<Value>> {
-    let path = std::path::Path::new(&st.cfg.sim_data_dir).join(&id).join("profiles.json");
-    let raw = std::fs::read(path).map_err(|_| AppError::NotFound(format!("profiles for {id}")))?;
-    let profiles: Vec<Persona> = serde_json::from_slice(&raw).map_err(|e| AppError::Other(e.into()))?;
+    let manager = st.sim_manager();
+    let profiles = manager
+        .load_personas(&id)
+        .map_err(|_| AppError::NotFound(format!("profiles for {id}")))?;
     let (grounded, synthetic) = persona_counts(&profiles);
-    let store = st.sim_manager().store(&id).map_err(|e| AppError::NotFound(e.to_string()))?;
+    let store = manager.store(&id).map_err(|e| AppError::NotFound(e.to_string()))?;
     Ok(Success(json!({
         "grounded": grounded,
         "synthetic": synthetic,

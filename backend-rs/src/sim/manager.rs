@@ -2,7 +2,7 @@ use super::agent::Persona;
 use super::config::SimConfig;
 use super::engine::Engine;
 use super::store::Store;
-use super::{SimHandle, SimRegistry};
+use super::SimRegistry;
 use crate::llm::Llm;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -43,8 +43,29 @@ impl Manager {
     fn dir(&self, id: &str) -> PathBuf {
         self.data_dir.join(id)
     }
-    fn db_path(&self, id: &str) -> PathBuf {
+
+    // The on-disk layout is known ONLY here; callers get paths or parsed
+    // contents from these accessors, never by joining sim_data_dir themselves.
+    pub fn db_path(&self, id: &str) -> PathBuf {
         self.dir(id).join("social.db")
+    }
+    pub fn profiles_path(&self, id: &str) -> PathBuf {
+        self.dir(id).join("profiles.json")
+    }
+    pub fn config_path(&self, id: &str) -> PathBuf {
+        self.dir(id).join("config.json")
+    }
+
+    pub fn load_personas(&self, id: &str) -> Result<Vec<Persona>> {
+        let raw = std::fs::read(self.profiles_path(id))
+            .with_context(|| format!("profiles for simulation {id} not found"))?;
+        Ok(serde_json::from_slice(&raw)?)
+    }
+
+    pub fn load_config(&self, id: &str) -> Result<SimConfig> {
+        let raw = std::fs::read(self.config_path(id))
+            .with_context(|| format!("config for simulation {id} not found"))?;
+        Ok(serde_json::from_slice(&raw)?)
     }
 
     /// Create a sim on disk. Personas may be empty when the sim is graph-linked
@@ -80,16 +101,12 @@ impl Manager {
     /// `event`, when set, seeds the discussion with that post (the scenario the
     /// population reacts to) attributed to the first agent.
     pub fn attach_profiles(&self, id: &str, profiles: Vec<Persona>, event: Option<String>) -> Result<()> {
-        let dir = self.dir(id);
-        if !dir.exists() {
+        if !self.dir(id).exists() {
             anyhow::bail!("simulation {id} not found");
         }
         // Keep the existing config; reset agent_configs so they regenerate for
         // the new persona set.
-        let mut config: SimConfig = match std::fs::read(dir.join("config.json")) {
-            Ok(raw) => serde_json::from_slice(&raw).unwrap_or_default(),
-            Err(_) => SimConfig::default(),
-        };
+        let mut config = self.load_config(id).unwrap_or_default();
         config.agent_configs.clear();
         if let Some(content) = event.filter(|e| !e.trim().is_empty()) {
             config.event_config.initial_posts = vec![super::config::InitialPost {
@@ -106,7 +123,6 @@ impl Manager {
     }
 
     fn write_profiles_and_config(&self, id: &str, profiles: &[Persona], mut config: SimConfig) -> Result<()> {
-        let dir = self.dir(id);
         config.simulation_id = id.to_string();
         // Default one agent-config row per profile if none supplied.
         if config.agent_configs.is_empty() {
@@ -114,13 +130,13 @@ impl Manager {
                 .iter()
                 .map(|p| super::config::AgentConfig {
                     agent_id: p.user_id,
-                    active_hours: (8..23).collect(),
-                    activity_level: 0.5,
+                    active_hours: super::config::default_active_hours(),
+                    activity_level: super::config::DEFAULT_ACTIVITY_LEVEL,
                 })
                 .collect();
         }
-        std::fs::write(dir.join("profiles.json"), serde_json::to_vec_pretty(profiles)?)?;
-        std::fs::write(dir.join("config.json"), serde_json::to_vec_pretty(&config)?)?;
+        std::fs::write(self.profiles_path(id), serde_json::to_vec_pretty(profiles)?)?;
+        std::fs::write(self.config_path(id), serde_json::to_vec_pretty(&config)?)?;
         Ok(())
     }
 
@@ -166,10 +182,8 @@ impl Manager {
         if self.registry.get(id).is_some() {
             anyhow::bail!("simulation {id} already running");
         }
-        let dir = self.dir(id);
-        let profiles: Vec<Persona> =
-            serde_json::from_slice(&std::fs::read(dir.join("profiles.json"))?)?;
-        let mut config: SimConfig = serde_json::from_slice(&std::fs::read(dir.join("config.json"))?)?;
+        let profiles = self.load_personas(id)?;
+        let mut config = self.load_config(id)?;
         if seed.is_some() {
             config.seed = seed;
         }
@@ -188,9 +202,5 @@ impl Manager {
             h.stop().await;
         }
         Ok(())
-    }
-
-    pub fn handle(&self, id: &str) -> Option<SimHandle> {
-        self.registry.get(id)
     }
 }

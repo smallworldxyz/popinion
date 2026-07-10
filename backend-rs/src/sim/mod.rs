@@ -5,6 +5,7 @@ pub mod engine;
 pub mod manager;
 pub mod classify;
 pub mod persona;
+pub mod stance;
 pub mod store;
 pub mod validate;
 

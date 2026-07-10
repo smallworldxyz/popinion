@@ -111,17 +111,25 @@ impl TimeConfig {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AgentConfig {
     pub agent_id: i64,
-    #[serde(default = "d_active_hours")]
+    #[serde(default = "default_active_hours")]
     pub active_hours: Vec<u32>,
     #[serde(default = "d_activity_level")]
     pub activity_level: f64,
 }
 
-fn d_active_hours() -> Vec<u32> {
-    (8..23).collect()
+/// Default activity schedule, defined ONCE: agents are active 08:00–23:00 at
+/// level 0.5. The engine's simulated day starts at the window's first hour —
+/// starting outside it once left short runs with zero active agents — so the
+/// start hour and the window must come from the same constant.
+pub const DEFAULT_ACTIVE_START_HOUR: u32 = 8;
+pub const DEFAULT_ACTIVE_END_HOUR: u32 = 23;
+pub const DEFAULT_ACTIVITY_LEVEL: f64 = 0.5;
+
+pub fn default_active_hours() -> Vec<u32> {
+    (DEFAULT_ACTIVE_START_HOUR..DEFAULT_ACTIVE_END_HOUR).collect()
 }
 fn d_activity_level() -> f64 {
-    0.5
+    DEFAULT_ACTIVITY_LEVEL
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]

@@ -12,7 +12,6 @@ pub enum ActionType {
     DislikePost,
     Follow,
     DoNothing,
-    Interview,
 }
 
 impl ActionType {
@@ -24,7 +23,6 @@ impl ActionType {
             ActionType::DislikePost => "dislike_post",
             ActionType::Follow => "follow",
             ActionType::DoNothing => "do_nothing",
-            ActionType::Interview => "interview",
         }
     }
 }
@@ -56,7 +54,6 @@ impl Decision {
             "like_post" | "like" => ActionType::LikePost,
             "dislike_post" | "dislike" => ActionType::DislikePost,
             "follow" => ActionType::Follow,
-            "interview" => ActionType::Interview,
             _ => ActionType::DoNothing,
         }
     }

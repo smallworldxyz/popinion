@@ -93,9 +93,3 @@ pub struct Agent {
     pub activity_level: f64,
     pub active_hours: Vec<u32>,
 }
-
-impl Agent {
-    pub fn user_id(&self) -> i64 {
-        self.profile.user_id
-    }
-}
