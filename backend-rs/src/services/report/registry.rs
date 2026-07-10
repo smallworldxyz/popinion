@@ -4,17 +4,8 @@
 
 use serde::Serialize;
 use serde_json::{json, Value};
-use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum ReportState {
-    Pending,
-    Generating,
-    Completed,
-    Failed,
-}
+use crate::services::registry::{JobStatus, Registry};
 
 #[derive(Clone, Debug, Serialize)]
 pub struct ReportSection {
@@ -27,7 +18,7 @@ pub struct ReportEntry {
     pub report_id: String,
     pub simulation_id: String,
     pub topic: String,
-    pub status: ReportState,
+    pub status: JobStatus,
     pub progress: i32,
     pub message: String,
     pub sections: Vec<ReportSection>,
@@ -51,7 +42,7 @@ impl ReportEntry {
             report_id,
             simulation_id,
             topic,
-            status: ReportState::Pending,
+            status: JobStatus::Pending,
             progress: 0,
             message: "Initializing report...".into(),
             sections: Vec::new(),
@@ -67,35 +58,29 @@ impl ReportEntry {
     }
 }
 
-fn registry() -> &'static Mutex<HashMap<String, ReportEntry>> {
-    static REPORTS: OnceLock<Mutex<HashMap<String, ReportEntry>>> = OnceLock::new();
-    REPORTS.get_or_init(|| Mutex::new(HashMap::new()))
-}
+static REPORTS: Registry<ReportEntry> = Registry::new();
 
 pub fn insert(entry: ReportEntry) {
-    registry().lock().unwrap().insert(entry.report_id.clone(), entry);
+    REPORTS.insert(entry.report_id.clone(), entry);
 }
 
 pub fn get(report_id: &str) -> Option<ReportEntry> {
-    registry().lock().unwrap().get(report_id).cloned()
+    REPORTS.get(report_id)
 }
 
 pub fn find_by_simulation(simulation_id: &str) -> Option<ReportEntry> {
-    registry()
-        .lock()
-        .unwrap()
+    REPORTS
         .values()
+        .into_iter()
         .filter(|e| e.simulation_id == simulation_id)
         .max_by(|a, b| a.created_at.cmp(&b.created_at))
-        .cloned()
 }
 
 pub fn list(simulation_id: Option<&str>, limit: usize) -> Vec<ReportEntry> {
-    let map = registry().lock().unwrap();
-    let mut entries: Vec<ReportEntry> = map
+    let mut entries: Vec<ReportEntry> = REPORTS
         .values()
+        .into_iter()
         .filter(|e| simulation_id.is_none_or(|s| e.simulation_id == s))
-        .cloned()
         .collect();
     entries.sort_by(|a, b| b.created_at.cmp(&a.created_at));
     entries.truncate(limit);
@@ -103,17 +88,10 @@ pub fn list(simulation_id: Option<&str>, limit: usize) -> Vec<ReportEntry> {
 }
 
 pub fn update<F: FnOnce(&mut ReportEntry)>(report_id: &str, f: F) -> bool {
-    let mut map = registry().lock().unwrap();
-    match map.get_mut(report_id) {
-        Some(entry) => {
-            f(entry);
-            true
-        }
-        None => false,
-    }
+    REPORTS.update(report_id, f)
 }
 
-pub fn set_progress(report_id: &str, status: ReportState, progress: i32, message: &str) {
+pub fn set_progress(report_id: &str, status: JobStatus, progress: i32, message: &str) {
     update(report_id, |e| {
         e.status = status;
         e.progress = progress;
@@ -153,11 +131,11 @@ mod tests {
         let entry = ReportEntry::new("report_test1".into(), "sim_a".into(), "/tmp/x.db".into(), "topic".into());
         insert(entry);
 
-        set_progress("report_test1", ReportState::Generating, 42, "working");
+        set_progress("report_test1", JobStatus::Running, 42, "working");
         agent_log("report_test1", "tool_call", "generating", json!({"tool": "statistics"}));
 
         let e = get("report_test1").unwrap();
-        assert_eq!(e.status, ReportState::Generating);
+        assert_eq!(e.status, JobStatus::Running);
         assert_eq!(e.progress, 42);
         assert_eq!(e.console_log.len(), 1);
         assert_eq!(e.agent_log.len(), 1);

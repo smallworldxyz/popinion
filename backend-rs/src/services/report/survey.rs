@@ -5,7 +5,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock};
+
+use crate::services::registry::Registry;
 
 use super::interview::AgentInterviewer;
 use super::panel_chat::Persona;
@@ -55,10 +56,7 @@ pub struct SurveyResult {
     pub timestamp: String,
 }
 
-fn registry() -> &'static Mutex<HashMap<String, SurveyTemplate>> {
-    static SURVEYS: OnceLock<Mutex<HashMap<String, SurveyTemplate>>> = OnceLock::new();
-    SURVEYS.get_or_init(|| Mutex::new(HashMap::new()))
-}
+static SURVEYS: Registry<SurveyTemplate> = Registry::new();
 
 fn default_options(question_type: SurveyType) -> Vec<String> {
     match question_type {
@@ -115,17 +113,17 @@ pub fn survey_create(title: &str, description: &str, questions: &[Value]) -> any
         questions: survey_questions,
         created_at: chrono::Utc::now().to_rfc3339(),
     };
-    registry().lock().unwrap().insert(template.survey_id.clone(), template.clone());
+    SURVEYS.insert(template.survey_id.clone(), template.clone());
     tracing::info!("created survey {} with {} questions", template.survey_id, template.questions.len());
     Ok(template)
 }
 
 pub fn survey_get(survey_id: &str) -> Option<SurveyTemplate> {
-    registry().lock().unwrap().get(survey_id).cloned()
+    SURVEYS.get(survey_id)
 }
 
 pub fn survey_list() -> Vec<SurveyTemplate> {
-    let mut surveys: Vec<SurveyTemplate> = registry().lock().unwrap().values().cloned().collect();
+    let mut surveys = SURVEYS.values();
     surveys.sort_by(|a, b| b.created_at.cmp(&a.created_at));
     surveys
 }

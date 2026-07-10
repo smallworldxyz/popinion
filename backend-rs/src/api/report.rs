@@ -1,5 +1,6 @@
 use crate::error::{AppError, AppResult};
-use crate::services::report::registry::{self, ReportState};
+use crate::services::registry::JobStatus;
+use crate::services::report::registry;
 use crate::services::report::agent;
 use crate::state::AppState;
 use axum::extract::{Path, Query, State};
@@ -48,7 +49,7 @@ async fn generate(
 
     if !req.force_regenerate && !simulation_id.is_empty() {
         if let Some(existing) = registry::find_by_simulation(&simulation_id) {
-            if existing.status == ReportState::Completed {
+            if existing.status == JobStatus::Completed {
                 return Ok(crate::models::Ok(json!({
                     "data": {
                         "simulation_id": simulation_id,
@@ -76,7 +77,7 @@ async fn generate(
         "data": {
             "simulation_id": simulation_id,
             "report_id": report_id,
-            "status": "generating",
+            "status": "running",
             "message": "Report generation task started, query progress via /api/report/generate/status",
             "already_generated": false,
         }
@@ -107,7 +108,7 @@ async fn generate_status(Json(req): Json<StatusReq>) -> AppResult<crate::models:
             "progress": entry.progress,
             "message": entry.message,
             "error": entry.error,
-            "already_completed": entry.status == ReportState::Completed,
+            "already_completed": entry.status == JobStatus::Completed,
         }
     })))
 }
@@ -143,7 +144,7 @@ async fn check_status(Path(simulation_id): Path<String>) -> AppResult<crate::mod
             "has_report": entry.is_some(),
             "report_status": entry.as_ref().map(|e| e.status),
             "report_id": entry.as_ref().map(|e| e.report_id.clone()),
-            "interview_unlocked": entry.is_some_and(|e| e.status == ReportState::Completed),
+            "interview_unlocked": entry.is_some_and(|e| e.status == JobStatus::Completed),
         }
     })))
 }

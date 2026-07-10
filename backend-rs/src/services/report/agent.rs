@@ -13,7 +13,8 @@ use crate::state::AppState;
 use serde_json::{json, Value};
 use std::path::Path;
 
-use super::registry::{self, ReportEntry, ReportSection, ReportState};
+use super::registry::{self, ReportEntry, ReportSection};
+use crate::services::registry::JobStatus;
 
 pub const SECTION_TITLES: [&str; 6] = [
     "Executive Summary",
@@ -218,7 +219,7 @@ pub fn start(st: &AppState, simulation_id: String, db_path: String, topic: Strin
         if let Err(e) = generate(&st, &id).await {
             tracing::error!("report {id} generation failed: {e:#}");
             registry::update(&id, |r| {
-                r.status = ReportState::Failed;
+                r.status = JobStatus::Failed;
                 r.progress = -1;
                 r.error = Some(format!("{e:#}"));
                 r.message = format!("Report generation failed: {e:#}");
@@ -235,7 +236,7 @@ async fn generate(st: &AppState, report_id: &str) -> anyhow::Result<()> {
     let store = Store::open(Path::new(&entry.db_path))?;
     let topic = entry.topic.clone();
 
-    registry::set_progress(report_id, ReportState::Generating, 5, "Gathering baseline statistics...");
+    registry::set_progress(report_id, JobStatus::Running, 5, "Gathering baseline statistics...");
 
     // Deterministic grounding: the model starts from real numbers, not guesses.
     let baseline = execute_tool(&store, "statistics", &json!({}))?;
@@ -263,7 +264,7 @@ async fn generate(st: &AppState, report_id: &str) -> anyhow::Result<()> {
     while calls_used < max_calls {
         registry::set_progress(
             report_id,
-            ReportState::Generating,
+            JobStatus::Running,
             10 + (40 * calls_used / max_calls.max(1)) as i32,
             &format!("Gathering evidence ({calls_used}/{max_calls} tool calls)"),
         );
@@ -317,7 +318,7 @@ async fn generate(st: &AppState, report_id: &str) -> anyhow::Result<()> {
     }
 
     // Phase 2: synthesis with the boost model.
-    registry::set_progress(report_id, ReportState::Generating, 60, "Writing report sections...");
+    registry::set_progress(report_id, JobStatus::Running, 60, "Writing report sections...");
     let evidence_text = trim(&evidence.join("\n\n"), EVIDENCE_LIMIT);
     let section_list = SECTION_TITLES
         .iter()
@@ -352,7 +353,7 @@ async fn generate(st: &AppState, report_id: &str) -> anyhow::Result<()> {
     for round in 0..st.cfg.report_max_reflection_rounds {
         registry::set_progress(
             report_id,
-            ReportState::Generating,
+            JobStatus::Running,
             75 + (15 * round / st.cfg.report_max_reflection_rounds.max(1)) as i32,
             &format!("Reflection pass {}/{}", round + 1, st.cfg.report_max_reflection_rounds),
         );
@@ -405,7 +406,7 @@ async fn generate(st: &AppState, report_id: &str) -> anyhow::Result<()> {
     registry::update(report_id, |r| {
         r.sections = sections;
         r.markdown_content = draft.clone();
-        r.status = ReportState::Completed;
+        r.status = JobStatus::Completed;
         r.progress = 100;
         r.message = "Report generation completed".into();
         r.completed_at = Some(chrono::Utc::now().to_rfc3339());
