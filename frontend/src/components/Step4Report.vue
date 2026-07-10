@@ -16,6 +16,10 @@
             <div class="header-divider"></div>
           </div>
 
+          <!-- Credibility & Limits: surfaced above the prose so the reader
+               calibrates trust before consuming conclusions -->
+          <CredibilityPanel v-if="simulationId" :simulation-id="simulationId" />
+
           <!-- Sections List -->
           <div class="sections-list">
             <div 
@@ -395,6 +399,7 @@
 import { ref, computed, watch, onMounted, onUnmounted, nextTick, h, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { getAgentLog, getConsoleLog } from '../api/report'
+import CredibilityPanel from './CredibilityPanel.vue'
 
 const router = useRouter()
 

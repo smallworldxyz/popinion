@@ -71,6 +71,7 @@ pub fn router() -> Router<AppState> {
         .route("/:id/agent-stats", get(agent_stats))
         .route("/:id/stance", get(stance))
         .route("/:id/classify-stance", post(classify_stance_h))
+        .route("/:id/credibility", get(credibility))
 }
 
 #[derive(Deserialize)]
@@ -535,6 +536,30 @@ async fn stance(State(st): State<AppState>, Path(id): Path<String>) -> AppResult
     Ok(Success(json!({ "stance_distribution": store.stance_distribution()? })))
 }
 
+/// (grounded, synthetic) split of a persona roster.
+fn persona_counts(profiles: &[AgentProfile]) -> (usize, usize) {
+    let synthetic = profiles.iter().filter(|p| p.synthetic).count();
+    (profiles.len() - synthetic, synthetic)
+}
+
+/// Cheap credibility snapshot for the report UI — no LLM calls. Population
+/// provenance (grounded vs synthetic personas) plus both stance weightings so
+/// the reader can see when a hyperactive agent is skewing the post counts.
+async fn credibility(State(st): State<AppState>, Path(id): Path<String>) -> AppResult<Success<Value>> {
+    let path = std::path::Path::new(&st.cfg.sim_data_dir).join(&id).join("profiles.json");
+    let raw = std::fs::read(path).map_err(|_| AppError::NotFound(format!("profiles for {id}")))?;
+    let profiles: Vec<AgentProfile> = serde_json::from_slice(&raw).map_err(|e| AppError::Other(e.into()))?;
+    let (grounded, synthetic) = persona_counts(&profiles);
+    let store = st.sim_manager().store(&id).map_err(|e| AppError::NotFound(e.to_string()))?;
+    Ok(Success(json!({
+        "grounded": grounded,
+        "synthetic": synthetic,
+        "total": grounded + synthetic,
+        "post_weighted": store.stance_distribution()?,
+        "agent_weighted": store.agent_stance_distribution()?,
+    })))
+}
+
 #[derive(Deserialize)]
 struct InterviewBatchReq {
     simulation_id: String,
@@ -644,4 +669,28 @@ async fn survey_get_h(Path(survey_id): Path<String>) -> AppResult<Success<Value>
     report::survey_get(&survey_id)
         .map(|s| Success(json!({ "survey": s })))
         .ok_or_else(|| AppError::NotFound(format!("survey {survey_id}")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn persona_counts_split_grounded_and_synthetic() {
+        // Legacy profiles omit `synthetic`; serde defaults it to false, so
+        // they count as grounded — the count follows the stored flag exactly.
+        let profiles: Vec<AgentProfile> = serde_json::from_value(json!([
+            { "user_id": 0, "user_name": "a", "synthetic": false },
+            { "user_id": 1, "user_name": "b", "synthetic": true },
+            { "user_id": 2, "user_name": "c", "synthetic": true },
+            { "user_id": 3, "user_name": "d" }
+        ]))
+        .unwrap();
+        assert_eq!(persona_counts(&profiles), (2, 2));
+    }
+
+    #[test]
+    fn persona_counts_empty_roster() {
+        assert_eq!(persona_counts(&[]), (0, 0));
+    }
 }

@@ -178,6 +178,24 @@ export const getEnvStatus = (data) => {
 }
 
 /**
+ * Get credibility snapshot (population provenance + both stance weightings)
+ * Cheap read, no LLM calls
+ * @param {string} simulationId
+ */
+export const getCredibility = (simulationId) => {
+  return service.get(`/api/simulation/${simulationId}/credibility`)
+}
+
+/**
+ * Run independent stance classification (real LLM calls, slow)
+ * @param {string} simulationId
+ * @param {Object} data - { topic? }
+ */
+export const classifyStance = (simulationId, data = {}) => {
+  return service.post(`/api/simulation/${simulationId}/classify-stance`, data)
+}
+
+/**
  * Batch interview Agents
  * @param {Object} data - { simulation_id, interviews: [{ agent_id, prompt }] }
  */
