@@ -20,6 +20,10 @@
                calibrates trust before consuming conclusions -->
           <CredibilityPanel v-if="simulationId" :simulation-id="simulationId" />
 
+          <!-- Scenario A/B rehearsal: run an alternative event against the same
+               population + seed and see if the delta beats the noise floor -->
+          <RehearsalPanel v-if="simulationId" :simulation-id="simulationId" />
+
           <!-- Sections List -->
           <div class="sections-list">
             <div 
@@ -400,6 +404,7 @@ import { ref, computed, watch, onMounted, onUnmounted, nextTick, h, reactive } f
 import { useRouter } from 'vue-router'
 import { getAgentLog, getConsoleLog } from '../api/report'
 import CredibilityPanel from './CredibilityPanel.vue'
+import RehearsalPanel from './RehearsalPanel.vue'
 
 const router = useRouter()
 

@@ -196,6 +196,29 @@ export const classifyStance = (simulationId, data = {}) => {
 }
 
 /**
+ * Duplicate a prepared simulation with a different event (scenario A/B rehearsal).
+ * Same personas, same seed — the event is the only variable.
+ * @param {string} simulationId - source simulation
+ * @param {Object} data - { event }
+ */
+export const duplicateSimulation = (simulationId, data) => {
+  return service.post(`/api/simulation/${simulationId}/duplicate`, data)
+}
+
+/**
+ * Compare two finished runs: stance distributions, total-variation distance,
+ * noise floor and whether the A→B delta is significant.
+ * @param {string} a - baseline simulation id
+ * @param {string} b - alternative simulation id
+ * @param {string[]} runs - optional rerun ids of A for the noise floor
+ */
+export const compareSimulations = (a, b, runs = []) => {
+  const params = { a, b }
+  if (runs.length > 0) params.runs = runs.join(',')
+  return service.get('/api/simulation/compare', { params })
+}
+
+/**
  * Batch interview Agents
  * @param {Object} data - { simulation_id, interviews: [{ agent_id, prompt }] }
  */

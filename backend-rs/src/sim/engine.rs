@@ -29,6 +29,16 @@ pub struct Engine {
     rng: Rng,
 }
 
+/// The seed a run falls back to when none is configured, derived from the sim
+/// id. Public so `Manager::duplicate` can pin the source's effective seed into
+/// an A/B copy — without this a duplicate would silently draw different
+/// randomness just by having a different id.
+pub fn derived_seed(simulation_id: &str) -> u64 {
+    simulation_id.bytes().fold(0x9e3779b97f4a7c15u64, |a, b| {
+        a.rotate_left(5) ^ (b as u64).wrapping_mul(0x100000001b3)
+    })
+}
+
 impl Engine {
     pub fn new(store: Arc<Store>, profiles: Vec<Persona>, config: SimConfig, llm: Llm) -> Self {
         // Join profiles with per-agent activity config (by user_id == agent_id).
@@ -58,11 +68,7 @@ impl Engine {
                 a.profile.user_id = uid;
             }
         }
-        let seed = config.seed.unwrap_or_else(|| {
-            config.simulation_id.bytes().fold(0x9e3779b97f4a7c15u64, |a, b| {
-                a.rotate_left(5) ^ (b as u64).wrapping_mul(0x100000001b3)
-            })
-        });
+        let seed = config.seed.unwrap_or_else(|| derived_seed(&config.simulation_id));
         Engine {
             store,
             agents,

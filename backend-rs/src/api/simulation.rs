@@ -46,6 +46,7 @@ pub fn router() -> Router<AppState> {
         .route("/prepare/preview", post(prepare_preview))
         .route("/prepare/status", post(prepare_status))
         .route("/validate", post(validate))
+        .route("/compare", get(compare))
         .route("/start", post(start))
         .route("/stop", post(stop))
         .route("/close-env", post(stop))
@@ -70,6 +71,7 @@ pub fn router() -> Router<AppState> {
         .route("/:id/stance", get(stance))
         .route("/:id/classify-stance", post(classify_stance_h))
         .route("/:id/credibility", get(credibility))
+        .route("/:id/duplicate", post(duplicate))
 }
 
 #[derive(Deserialize)]
@@ -383,7 +385,7 @@ async fn validate(State(st): State<AppState>, Json(req): Json<ValidateReq>) -> A
     });
     if let (Some(b), Some(p)) = (&req.baseline_id, &req.permuted_id) {
         let dist = crate::sim::validate::total_variation(&shares_of(b)?, &shares_of(p)?);
-        let threshold = if floor > 0.0 { floor * 1.5 } else { 0.05 };
+        let threshold = crate::sim::validate::noise_threshold(floor);
         out["persona_ablation"] = json!({
             "baseline_id": b,
             "permuted_id": p,
@@ -393,6 +395,80 @@ async fn validate(State(st): State<AppState>, Json(req): Json<ValidateReq>) -> A
         });
     }
     Ok(Success(out))
+}
+
+// ---- scenario A/B rehearsal: same population, same seed, different event ----
+
+#[derive(Deserialize)]
+struct DuplicateReq {
+    /// The alternative announcement/policy the copied population reacts to.
+    event: String,
+}
+
+/// Clone a prepared sim into a new one that differs ONLY in its event. The
+/// personas and effective seed are copied via `Manager::duplicate`, so running
+/// both and comparing isolates the event's effect.
+async fn duplicate(
+    Path(id): Path<String>,
+    State(st): State<AppState>,
+    Json(req): Json<DuplicateReq>,
+) -> AppResult<Success<Value>> {
+    let event = req.event.trim();
+    if event.is_empty() {
+        return Err(AppError::BadRequest("event required — the alternative scenario to rehearse".into()));
+    }
+    let new_id = st.sim_manager().duplicate(&id, event).map_err(AppError::Other)?;
+    Ok(Success(json!({ "simulation_id": new_id, "source_id": id })))
+}
+
+#[derive(Deserialize)]
+struct CompareQ {
+    a: String,
+    b: String,
+    /// Optional comma-separated rerun ids of A (same sim, different seeds) to
+    /// estimate the noise floor. Without them the verdict falls back to the
+    /// 0.05 absolute threshold.
+    #[serde(default)]
+    runs: Option<String>,
+}
+
+/// Compare two finished runs (agent-weighted, one vote per agent): each side's
+/// stance distribution, the total-variation distance between them, and whether
+/// that delta exceeds the simulation's noise floor — i.e. is the A→B shift a
+/// real difference or just seed noise?
+async fn compare(State(st): State<AppState>, Query(q): Query<CompareQ>) -> AppResult<Success<Value>> {
+    let manager = st.sim_manager();
+    let side = |id: &str| -> AppResult<(Value, std::collections::BTreeMap<String, f64>)> {
+        let store = manager.store(id).map_err(|_| AppError::NotFound(format!("simulation {id}")))?;
+        let dist = store.agent_stance_distribution().map_err(AppError::Other)?;
+        let shares = crate::sim::validate::stance_shares(&dist);
+        Ok((dist, shares))
+    };
+    let (dist_a, shares_a) = side(&q.a)?;
+    let (dist_b, shares_b) = side(&q.b)?;
+    let tv = crate::sim::validate::total_variation(&shares_a, &shares_b);
+
+    let mut rerun_shares = vec![shares_a.clone()];
+    for id in q.runs.as_deref().unwrap_or("").split(',').map(str::trim).filter(|s| !s.is_empty()) {
+        rerun_shares.push(side(id)?.1);
+    }
+    let floor = crate::sim::validate::noise_floor(&rerun_shares);
+    let threshold = crate::sim::validate::noise_threshold(floor);
+
+    // The scenario each side reacted to, for labelling the comparison.
+    let event_of = |id: &str| -> Option<String> {
+        manager.load_config(id).ok().and_then(|c| c.event_config.initial_posts.first().map(|p| p.content.clone()))
+    };
+
+    Ok(Success(json!({
+        "a": { "simulation_id": q.a, "event": event_of(&q.a), "stance_distribution": dist_a, "shares": shares_a },
+        "b": { "simulation_id": q.b, "event": event_of(&q.b), "stance_distribution": dist_b, "shares": shares_b },
+        "tv_distance": tv,
+        "noise_floor": floor,
+        "threshold": threshold,
+        "significant": tv > threshold,
+        "note": "significant = the A→B shift exceeds 1.5× the noise floor (or 0.05 absolute when no rerun data estimates the floor)",
+    })))
 }
 
 #[derive(Deserialize)]
@@ -408,10 +484,11 @@ struct StartReq {
     permute_personas: bool,
 }
 async fn start(State(st): State<AppState>, Json(req): Json<StartReq>) -> AppResult<Success<Value>> {
-    st.sim_manager()
+    let seed = st
+        .sim_manager()
         .start(&req.simulation_id, req.max_rounds, req.seed, req.permute_personas)
         .map_err(AppError::Other)?;
-    Ok(Success(json!({ "simulation_id": req.simulation_id, "status": "running" })))
+    Ok(Success(json!({ "simulation_id": req.simulation_id, "status": "running", "seed": seed })))
 }
 
 #[derive(Deserialize)]

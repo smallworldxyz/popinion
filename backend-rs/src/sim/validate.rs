@@ -43,6 +43,18 @@ pub fn total_variation(a: &BTreeMap<String, f64>, b: &BTreeMap<String, f64>) -> 
     sum / 2.0
 }
 
+/// Significance bar for a claimed effect: 1.5× the noise floor, or a 0.05
+/// absolute default when no rerun data exists to estimate the floor. Shared by
+/// /validate's ablation verdict and /compare's A/B verdict so "significant"
+/// means the same thing everywhere.
+pub fn noise_threshold(floor: f64) -> f64 {
+    if floor > 0.0 {
+        floor * 1.5
+    } else {
+        0.05
+    }
+}
+
 /// Mean pairwise total-variation distance across runs — the noise floor. 0 when
 /// fewer than two runs are supplied.
 pub fn noise_floor(runs: &[BTreeMap<String, f64>]) -> f64 {
@@ -88,6 +100,31 @@ mod tests {
         let d = total_variation(&a, &b);
         assert!((d - total_variation(&b, &a)).abs() < 1e-9, "symmetric");
         assert!(d > 0.0 && d < 1.0, "partial overlap");
+    }
+
+    #[test]
+    fn noise_threshold_defaults_without_rerun_data() {
+        assert!((noise_threshold(0.0) - 0.05).abs() < 1e-9);
+        assert!((noise_threshold(0.2) - 0.3).abs() < 1e-9);
+    }
+
+    #[test]
+    fn ab_verdict_from_hand_built_distributions() {
+        // The /compare pipeline on hand-built stance distributions:
+        // A 60/40 vs B 30/70 → TV = 0.3, above the no-rerun threshold (0.05).
+        let a = stance_shares(&json!([{"stance": "support", "count": 6}, {"stance": "oppose", "count": 4}]));
+        let b = stance_shares(&json!([{"stance": "support", "count": 3}, {"stance": "oppose", "count": 7}]));
+        let tv = total_variation(&a, &b);
+        assert!((tv - 0.3).abs() < 1e-9);
+        assert!(tv > noise_threshold(0.0), "a 30-point swing is a real difference");
+
+        // Identical distributions → TV 0 → within noise, never significant.
+        let tv_same = total_variation(&a, &a);
+        assert!(tv_same <= noise_threshold(0.0), "no swing is within noise");
+
+        // A noisy sim raises the bar: floor 0.25 → threshold 0.375 swallows the
+        // same 0.3 swing.
+        assert!(tv <= noise_threshold(0.25), "noise floor can absorb the delta");
     }
 
     #[test]
