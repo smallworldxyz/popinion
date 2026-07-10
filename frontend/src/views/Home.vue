@@ -89,7 +89,7 @@ e.g. How will the public react to phasing out the national fuel subsidy over 12 
           
           <h2 class="section-title">Ready</h2>
           <p class="section-desc">
-            Prediction engine standing by. Upload multiple unstructured data files to initialize simulation sequence.
+            Prediction engine standing by. Describe a scenario above to run a simulation — attach reality seeds to ground it in real data.
           </p>
           
           <!-- Metric cards -->
