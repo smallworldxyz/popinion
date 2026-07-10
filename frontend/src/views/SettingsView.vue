@@ -9,6 +9,10 @@
         no key.
       </p>
       <router-link class="back" to="/">← Back</router-link>
+      <div v-if="ready" class="ready-line" :class="ready.ready ? 'ready-ok' : 'ready-warn'">
+        <template v-if="ready.ready">Model ready ✓ — {{ ready.model }}</template>
+        <template v-else>Not ready — {{ ready.reason }}</template>
+      </div>
     </header>
 
     <div class="cards">
@@ -74,7 +78,7 @@
 <script setup>
 import { reactive, ref, onMounted } from 'vue'
 import {
-  getLlmSettings, updateLlmSettings, testLlm, getProviders,
+  getLlmSettings, getLlmStatus, updateLlmSettings, testLlm, getProviders,
   lmsModels, lmsLoad, lmsUnload, lmsDownload, lmsDownloadStatus,
 } from '../api/settings'
 
@@ -88,6 +92,12 @@ const providers = reactive({ detected: [], presets: [] })
 const status = reactive({ bulk: null, boost: null })
 const saving = ref(false)
 const savedMsg = ref('')
+
+// Readiness of the saved bulk slot (what Start Engine uses); null while probing.
+const ready = ref(null)
+async function refreshReady() {
+  try { ready.value = await getLlmStatus() } catch (e) { ready.value = null }
+}
 
 function pickProvider(state, e) {
   const p = [...providers.detected, ...providers.presets].find(x => x.id === e.target.value)
@@ -114,11 +124,11 @@ async function loadModel(id) {
   try {
     const r = await lmsLoad(id)
     if (!r.ok) dlStatus.value = { err: true, msg: r.error || 'load failed' }
-  } finally { busy[id] = false; await refreshLms() }
+  } finally { busy[id] = false; await refreshLms(); refreshReady() }
 }
 async function unloadModel(id) {
   busy[id] = true
-  try { await lmsUnload(id) } finally { busy[id] = false; await refreshLms() }
+  try { await lmsUnload(id) } finally { busy[id] = false; await refreshLms(); refreshReady() }
 }
 async function downloadModel() {
   const id = dlModel.value.trim()
@@ -163,6 +173,7 @@ onMounted(async () => {
   Object.assign(bulk, cur.bulk, { key: '' })
   Object.assign(boost, cur.boost, { key: '' })
   refreshLms() // best-effort; only shown when a slot uses LM Studio
+  refreshReady()
 })
 
 async function testSlot(which) {
@@ -194,6 +205,7 @@ async function save() {
     Object.assign(bulk, r.bulk, { key: '' })
     Object.assign(boost, r.boost, { key: '' })
     savedMsg.value = 'Saved — new provider is live.'
+    refreshReady()
   } catch (e) {
     savedMsg.value = 'Save failed: ' + (e.message || 'error')
   } finally {
@@ -207,6 +219,9 @@ async function save() {
 .head h1 { margin: 0 0 8px; }
 .sub { color: #555; line-height: 1.5; max-width: 720px; }
 .back { display: inline-block; margin-top: 8px; color: #2563eb; text-decoration: none; }
+.ready-line { margin-top: 10px; font-size: 13px; padding: 6px 10px; border-radius: 8px; display: inline-block; }
+.ready-ok { color: #065f46; background: #d1fae5; }
+.ready-warn { color: #92400e; background: #fef3c7; }
 .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 24px 0; }
 @media (max-width: 720px) { .cards { grid-template-columns: 1fr; } }
 .card { border: 1px solid #e5e7eb; border-radius: 12px; padding: 18px; background: #fff; }

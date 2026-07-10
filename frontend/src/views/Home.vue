@@ -41,6 +41,14 @@ e.g. How will the public react to phasing out the national fuel subsidy over 12 
             </div>
           </div>
 
+          <!-- First-run model gate: no working model → guide to Settings. -->
+          <div v-if="modelStatus === null" class="model-note checking">Checking model…</div>
+          <div v-else-if="!modelStatus.ready" class="model-note missing">
+            <div class="model-note-title">No working model yet — Popinion needs a model to run.</div>
+            <div class="model-note-reason">{{ modelStatus.reason }}</div>
+            <router-link to="/settings" class="model-note-link">Set up a model →</router-link>
+          </div>
+
           <div class="chat-toolbar">
             <button class="attach-btn" @click="triggerFileInput" :disabled="loading">
               📎 Reality seeds
@@ -162,10 +170,35 @@ e.g. How will the public react to phasing out the national fuel subsidy over 12 
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { getLlmStatus } from '../api/settings'
 
 const router = useRouter()
+
+// Model readiness gate: Start Engine calls the LLM on the bulk slot, so on a
+// fresh install (no local model, no key) we guide to Settings instead of
+// letting the pipeline fail cryptically mid-build. null = still checking.
+const modelStatus = ref(null)
+
+const checkModel = async () => {
+  try {
+    modelStatus.value = await getLlmStatus()
+  } catch (e) {
+    modelStatus.value = { ready: false, reason: 'Cannot reach the Popinion backend.' }
+  }
+}
+
+const onFocus = () => {
+  // Re-check when the window regains focus (e.g. after loading a model in LM Studio).
+  if (modelStatus.value && !modelStatus.value.ready) checkModel()
+}
+
+onMounted(() => {
+  checkModel()
+  window.addEventListener('focus', onFocus)
+})
+onUnmounted(() => window.removeEventListener('focus', onFocus))
 
 // formdata
 const formData = ref({
@@ -185,7 +218,9 @@ const fileInput = ref(null)
 
 // Computed attributes: canSubmit
 const canSubmit = computed(() => {
-  return formData.value.simulationRequirement.trim() !== '' && files.value.length > 0
+  return formData.value.simulationRequirement.trim() !== '' &&
+    files.value.length > 0 &&
+    modelStatus.value?.ready === true
 })
 
 // Trigger file selection
@@ -412,6 +447,36 @@ const startSimulation = () => {
 .attach-btn:hover { background: #f9fafb; }
 .attach-hint { flex: 1; font-size: 0.82rem; color: #9ca3af; }
 .chat-toolbar .start-engine-btn { width: auto; margin: 0; }
+/* First-run model gate */
+.model-note {
+  margin-top: 12px;
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+.model-note.checking {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: #9ca3af;
+}
+.model-note.missing {
+  border: 1px solid #f0dcc0;
+  border-left: 3px solid #d97706;
+  background: #fdf8f0;
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+.model-note-title { font-weight: 600; color: #78350f; }
+.model-note-reason { color: #92672a; margin-top: 2px; }
+.model-note-link {
+  display: inline-block;
+  margin-top: 6px;
+  color: #000;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.model-note-link:hover { color: #d97706; }
+
 .engine-badge {
   position: absolute;
   top: 18px;

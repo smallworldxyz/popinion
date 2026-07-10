@@ -17,6 +17,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/llm", get(get_llm).put(put_llm))
         .route("/llm/test", post(test_llm))
+        .route("/llm/status", get(llm_status))
         .route("/llm/providers", get(providers))
         // LM Studio local model management (list / load / unload / download).
         .route("/lmstudio/models", get(lms_models))
@@ -94,6 +95,101 @@ async fn test_llm(Json(req): Json<TestReq>) -> AppResult<Success<Value>> {
     match llm.chat(&[Msg::user("Reply with the single word: ok")], 0.0, 8).await {
         Ok(reply) => Ok(Success(json!({ "ok": true, "reply": reply.chars().take(80).collect::<String>() }))),
         Err(e) => Ok(Success(json!({ "ok": false, "error": format!("{e}") }))),
+    }
+}
+
+/// Readiness of the CURRENTLY-CONFIGURED bulk slot — the one Start Engine uses.
+/// A deliberate fast probe: one 1-token chat with a short timeout and NO retries,
+/// unlike `Llm::chat` (300s timeout, 10 retries with backoff) which would hang
+/// the landing page on a dead endpoint.
+async fn llm_status(State(st): State<AppState>) -> AppResult<Success<Value>> {
+    let slot = st.llm_settings.read().unwrap().bulk.clone();
+    let reason = probe_slot(&slot).await;
+    Ok(Success(json!({
+        "ready": reason.is_none(),
+        "model": slot.model,
+        "base_url": slot.base_url,
+        "reason": reason.unwrap_or_default(),
+    })))
+}
+
+/// None = ready; Some(reason) = human-readable why-not. Fails within ~5s.
+async fn probe_slot(slot: &LlmSlot) -> Option<String> {
+    if let Some(r) = unconfigured_reason(&slot.base_url, &slot.model) {
+        return Some(r);
+    }
+    // Dead endpoints fail at connect (≤3s) or instantly on refusal; the wider
+    // total timeout is headroom for a slow local model producing its 1 token.
+    let http = reqwest::Client::builder()
+        .timeout(Duration::from_secs(8))
+        .connect_timeout(Duration::from_secs(3))
+        .build()
+        .ok()?; // client build never fails in practice; treat as ready-unknown
+    let url = format!("{}/chat/completions", slot.base_url.trim_end_matches('/'));
+    let body = json!({
+        "model": slot.model,
+        "messages": [{ "role": "user", "content": "ok" }],
+        "temperature": 0.0,
+        "max_tokens": 1,
+    });
+    let mut req = http.post(&url).json(&body);
+    if !slot.api_key.is_empty() {
+        req = req.bearer_auth(&slot.api_key);
+    }
+    match req.send().await {
+        Ok(r) if r.status().is_success() => None,
+        Ok(r) => {
+            let status = r.status().as_u16();
+            let text = r.text().await.unwrap_or_default();
+            Some(http_error_reason(status, &text, &slot.model, !slot.api_key.is_empty()))
+        }
+        Err(e) => Some(unreachable_reason(&slot.base_url, e.is_timeout())),
+    }
+}
+
+fn unconfigured_reason(base_url: &str, model: &str) -> Option<String> {
+    if base_url.trim().is_empty() {
+        Some("No provider configured — pick one in Settings.".into())
+    } else if model.trim().is_empty() {
+        Some("No model configured — pick one in Settings.".into())
+    } else {
+        None
+    }
+}
+
+/// Friendly name for a known local server, keyed off its default port.
+fn local_server_name(base_url: &str) -> Option<&'static str> {
+    if base_url.contains(":11434") {
+        Some("Ollama")
+    } else if base_url.contains(":1234") {
+        Some("LM Studio")
+    } else {
+        None
+    }
+}
+
+fn unreachable_reason(base_url: &str, timed_out: bool) -> String {
+    match (local_server_name(base_url), timed_out) {
+        (Some(name), false) => format!("{name} is not reachable — is it running?"),
+        (Some(name), true) => format!("{name} did not answer in time — is the model loaded?"),
+        (None, false) => format!("{base_url} is not reachable."),
+        (None, true) => format!("{base_url} did not respond in time."),
+    }
+}
+
+fn http_error_reason(status: u16, body: &str, model: &str, has_key: bool) -> String {
+    let lower = body.to_lowercase();
+    match status {
+        401 | 403 if !has_key => "This provider requires an API key — none is set.".into(),
+        401 | 403 => "API key rejected by the provider.".into(),
+        404 | 400 if lower.contains("load") || lower.contains("not found") || lower.contains("no such") => {
+            format!("Model \"{model}\" is not available on the server — is it loaded?")
+        }
+        429 => "Provider is rate-limiting requests right now.".into(),
+        _ => {
+            let snippet: String = body.chars().take(120).collect();
+            format!("Provider returned error {status}: {snippet}")
+        }
     }
 }
 
@@ -247,4 +343,35 @@ async fn lms_download_status(Json(req): Json<TaskIdReq>) -> AppResult<Success<Va
     let task = crate::services::graph::tasks::get(&req.task_id)
         .ok_or_else(|| AppError::NotFound(format!("task {}", req.task_id)))?;
     Ok(Success(serde_json::to_value(task).map_err(|e| AppError::Other(e.into()))?))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unconfigured_slot_reasons() {
+        assert!(unconfigured_reason("", "gpt-4o").unwrap().contains("No provider"));
+        assert!(unconfigured_reason("https://api.openai.com/v1", " ").unwrap().contains("No model"));
+        assert!(unconfigured_reason("https://api.openai.com/v1", "gpt-4o").is_none());
+    }
+
+    #[test]
+    fn unreachable_names_known_local_servers() {
+        assert_eq!(unreachable_reason("http://127.0.0.1:11434/v1", false), "Ollama is not reachable — is it running?");
+        assert_eq!(unreachable_reason("http://127.0.0.1:1234/v1", true), "LM Studio did not answer in time — is the model loaded?");
+        assert!(unreachable_reason("https://api.example.com/v1", true).contains("did not respond"));
+        assert!(unreachable_reason("https://api.example.com/v1", false).contains("not reachable"));
+    }
+
+    #[test]
+    fn http_errors_classify_auth_and_missing_model() {
+        assert_eq!(http_error_reason(401, "", "m", false), "This provider requires an API key — none is set.");
+        assert_eq!(http_error_reason(401, "", "m", true), "API key rejected by the provider.");
+        // LM Studio with nothing loaded / Ollama with an unknown model.
+        assert!(http_error_reason(404, r#"{"error":"No models loaded"}"#, "qwen2.5:7b", false).contains("is it loaded?"));
+        assert!(http_error_reason(404, r#"{"error":"model 'x' not found"}"#, "x", false).contains("not available"));
+        assert!(http_error_reason(429, "slow down", "m", true).contains("rate-limiting"));
+        assert!(http_error_reason(500, "boom", "m", true).contains("error 500"));
+    }
 }
