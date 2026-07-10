@@ -127,35 +127,84 @@ async fn run_build(
     Ok(())
 }
 
-/// Write one normalized extraction into the graph store.
+/// Write one normalized extraction into the graph store. `normalize` already
+/// guarantees non-empty names/types, so this is a straight typed write.
 async fn write_extraction(
     graph: &db::GraphDb,
     graph_id: &str,
-    extraction: &Value,
+    extraction: &entity_extractor::Extraction,
 ) -> anyhow::Result<()> {
-    let empty = vec![];
-    for entity in extraction["entities"].as_array().unwrap_or(&empty) {
-        let name = entity["name"].as_str().unwrap_or_default();
-        let entity_types: Vec<String> = entity["entity_types"]
-            .as_array()
-            .map(|a| a.iter().filter_map(Value::as_str).map(String::from).collect())
-            .unwrap_or_default();
-        let attrs = entity["attributes"].as_object().cloned().unwrap_or_default();
-        if name.is_empty() || entity_types.is_empty() {
-            continue;
-        }
-        db::upsert_entity(graph, graph_id, name, &entity_types, &attrs).await?;
+    for entity in &extraction.entities {
+        db::upsert_entity(graph, graph_id, &entity.name, &entity.entity_types, &entity.attributes).await?;
     }
-
-    for rel in extraction["relationships"].as_array().unwrap_or(&empty) {
-        let source = rel["source_name"].as_str().unwrap_or_default();
-        let target = rel["target_name"].as_str().unwrap_or_default();
-        let relation_type = rel["relation_type"].as_str().unwrap_or("RELATED_TO");
-        let attrs = rel["attributes"].as_object().cloned().unwrap_or_default();
-        if source.is_empty() || target.is_empty() {
-            continue;
-        }
-        db::upsert_relationship(graph, graph_id, source, target, relation_type, &attrs).await?;
+    for rel in &extraction.relationships {
+        db::upsert_relationship(
+            graph,
+            graph_id,
+            &rel.source_name,
+            &rel.target_name,
+            &rel.relation_type,
+            &rel.attributes,
+        )
+        .await?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Regression guard for the extractor→builder→db glue: a representative
+    /// LLM extraction (including the quirks `normalize` must absorb — a bare
+    /// string `entity_types`, a top-level `summary`, malformed items) flows
+    /// through normalize → write_extraction → get_graph_data and lands with
+    /// the right entity_type / relation_type / attributes.
+    #[tokio::test]
+    async fn extraction_glue_roundtrips_into_graph() {
+        let dir = std::env::temp_dir()
+            .join(format!("popinion-glue-{}", uuid::Uuid::new_v4().simple()));
+        let graph = db::GraphDb::open(&dir.join("g.db")).unwrap();
+        let graph_id = db::create_graph(&graph, "glue test").await.unwrap();
+
+        let raw = json!({
+            "entities": [
+                {"name": "Minister X", "entity_types": ["Politician"],
+                 "summary": "Proposed the policy.", "attributes": {"role": "minister"}},
+                {"name": "Labor Union", "entity_types": "Organization",
+                 "summary": "Represents factory workers."},
+                {"name": "", "entity_types": ["Ghost"]}
+            ],
+            "relationships": [
+                {"source_name": "Labor Union", "target_name": "Minister X",
+                 "relation_type": "OPPOSES",
+                 "attributes": {"fact": "The union opposes the policy."}},
+                {"source_name": "Nobody", "target_name": "", "relation_type": "KNOWS"}
+            ]
+        });
+
+        let extraction = entity_extractor::normalize(raw);
+        write_extraction(&graph, &graph_id, &extraction).await.unwrap();
+
+        let data = db::get_graph_data(&graph, &graph_id).await.unwrap();
+        assert_eq!(data.nodes.len(), 2, "empty-name entity dropped");
+        let minister = data.nodes.iter().find(|n| n.name == "Minister X").unwrap();
+        assert_eq!(minister.entity_types, vec!["Politician".to_string()]);
+        assert_eq!(minister.attributes["role"], "minister");
+        assert_eq!(minister.summary, "Proposed the policy.");
+        let union = data.nodes.iter().find(|n| n.name == "Labor Union").unwrap();
+        assert_eq!(
+            union.entity_types,
+            vec!["Organization".to_string()],
+            "string entity_types coerced to list"
+        );
+
+        assert_eq!(data.edges.len(), 1, "relationship without target dropped");
+        let e = &data.edges[0];
+        assert_eq!(e.relation_type, "OPPOSES");
+        assert_eq!(e.fact, "The union opposes the policy.");
+        assert_eq!(e.source_node_name, "Labor Union");
+        assert_eq!(e.target_node_name, "Minister X");
+        assert!(!e.source_node_uuid.is_empty() && !e.target_node_uuid.is_empty());
+    }
 }

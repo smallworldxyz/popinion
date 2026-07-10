@@ -7,6 +7,7 @@
 //! landscape) actually reach the simulation.
 
 use crate::llm::{Llm, Msg};
+use crate::services::graph::db::GraphData;
 use crate::sim::agent::Persona;
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -60,36 +61,25 @@ fn stance_polarity(rel: &str) -> Option<bool> {
     }
 }
 
-/// Build one evidence bundle per entity from `db::get_graph_data` output
-/// (`{nodes:[{uuid,name,entity_types,summary,attributes}], edges:[{fact,
-/// name(relation_type),source_node_uuid,target_node_uuid,source_node_name,
-/// target_node_name}]}`).
-pub fn build_bundles(graph_data: &Value) -> Vec<EvidenceBundle> {
-    let empty = vec![];
-    let nodes = graph_data["nodes"].as_array().unwrap_or(&empty);
-    let edges = graph_data["edges"].as_array().unwrap_or(&empty);
-
+/// Build one evidence bundle per entity from `db::get_graph_data`'s typed
+/// `GraphData` (one struct shared with the producer — a renamed field breaks
+/// the build here instead of silently yielding empty facts).
+pub fn build_bundles(graph_data: &GraphData) -> Vec<EvidenceBundle> {
     let mut bundles: HashMap<String, EvidenceBundle> = HashMap::new();
     let mut order: Vec<String> = Vec::new();
-    for n in nodes {
-        let uuid = n["uuid"].as_str().unwrap_or("").to_string();
-        if uuid.is_empty() {
+    for n in &graph_data.nodes {
+        if n.uuid.is_empty() {
             continue;
         }
-        let entity_type = n["entity_types"]
-            .as_array()
-            .and_then(|a| a.first())
-            .and_then(Value::as_str)
-            .unwrap_or("Entity")
-            .to_string();
-        order.push(uuid.clone());
+        let entity_type = n.entity_types.first().cloned().unwrap_or_else(|| "Entity".to_string());
+        order.push(n.uuid.clone());
         bundles.insert(
-            uuid.clone(),
+            n.uuid.clone(),
             EvidenceBundle {
-                uuid,
-                name: n["name"].as_str().unwrap_or("").to_string(),
+                uuid: n.uuid.clone(),
+                name: n.name.clone(),
                 entity_type,
-                summary: n["summary"].as_str().unwrap_or("").to_string(),
+                summary: n.summary.clone(),
                 facts: Vec::new(),
                 stance_facts: Vec::new(),
                 sourced_support: false,
@@ -98,15 +88,10 @@ pub fn build_bundles(graph_data: &Value) -> Vec<EvidenceBundle> {
         );
     }
 
-    for e in edges {
-        let rel = e["name"].as_str().or_else(|| e["fact_type"].as_str()).unwrap_or("RELATED_TO");
-        let src_name = e["source_node_name"].as_str().unwrap_or("");
-        let tgt_name = e["target_node_name"].as_str().unwrap_or("");
-        let fact_text = e["fact"].as_str().filter(|s| !s.is_empty()).map(String::from).unwrap_or_else(|| {
-            format!("{src_name} {} {tgt_name}", rel.replace('_', " ").to_lowercase())
-        });
-        let stance = stance_polarity(rel);
-        for uuid_key in [e["source_node_uuid"].as_str(), e["target_node_uuid"].as_str()].into_iter().flatten() {
+    for e in &graph_data.edges {
+        let fact_text = edge_fact_text(e);
+        let stance = stance_polarity(&e.relation_type);
+        for uuid_key in [&e.source_node_uuid, &e.target_node_uuid] {
             if let Some(b) = bundles.get_mut(uuid_key) {
                 b.facts.push(fact_text.clone());
                 if stance.is_some() {
@@ -115,9 +100,7 @@ pub fn build_bundles(graph_data: &Value) -> Vec<EvidenceBundle> {
             }
         }
         // Only the SOURCE authored the stance; record it for faction derivation.
-        if let (Some(supports), Some(b)) =
-            (stance, e["source_node_uuid"].as_str().and_then(|u| bundles.get_mut(u)))
-        {
+        if let (Some(supports), Some(b)) = (stance, bundles.get_mut(&e.source_node_uuid)) {
             if supports {
                 b.sourced_support = true;
             } else {
@@ -127,6 +110,20 @@ pub fn build_bundles(graph_data: &Value) -> Vec<EvidenceBundle> {
     }
 
     order.into_iter().filter_map(|u| bundles.remove(&u)).collect()
+}
+
+/// An edge's fact sentence, falling back to "<source> <relation> <target>".
+fn edge_fact_text(e: &crate::services::graph::db::GraphEdge) -> String {
+    if e.fact.is_empty() {
+        format!(
+            "{} {} {}",
+            e.source_node_name,
+            e.relation_type.replace('_', " ").to_lowercase(),
+            e.target_node_name
+        )
+    } else {
+        e.fact.clone()
+    }
 }
 
 /// Does this entity clear the minimum-evidence bar to become a named agent?
@@ -223,22 +220,14 @@ pub async fn synthesize_persona(llm: &Llm, bundle: &EvidenceBundle) -> String {
 // ponytail: factions split by polarity (single-issue assumption) and weighted
 // equally. Weight by observed audience size (followers/subscribers) and split by
 // target when the graph carries multiple issues.
-pub fn synthesize_audience(graph_data: &Value, per_faction: usize, start_id: i64) -> Vec<Persona> {
+pub fn synthesize_audience(graph_data: &GraphData, per_faction: usize, start_id: i64) -> Vec<Persona> {
     if per_faction == 0 {
         return vec![];
     }
-    let empty = vec![];
     let (mut pro, mut con): (Vec<String>, Vec<String>) = (Vec::new(), Vec::new());
-    for e in graph_data["edges"].as_array().unwrap_or(&empty) {
-        let rel = e["name"].as_str().or_else(|| e["fact_type"].as_str()).unwrap_or("");
-        let Some(supports) = stance_polarity(rel) else { continue };
-        let src = e["source_node_name"].as_str().unwrap_or("");
-        let tgt = e["target_node_name"].as_str().unwrap_or("");
-        let fact = e["fact"]
-            .as_str()
-            .filter(|s| !s.is_empty())
-            .map(String::from)
-            .unwrap_or_else(|| format!("{src} {} {tgt}", rel.replace('_', " ").to_lowercase()));
+    for e in &graph_data.edges {
+        let Some(supports) = stance_polarity(&e.relation_type) else { continue };
+        let fact = edge_fact_text(e);
         if supports {
             pro.push(fact);
         } else {
@@ -287,7 +276,7 @@ pub fn synthesize_audience(graph_data: &Value, per_faction: usize, start_id: i64
 }
 
 /// Entities grouped by type with evidence scores, for the /prepare/preview picker.
-pub fn preview(graph_data: &Value, min_evidence: usize) -> Value {
+pub fn preview(graph_data: &GraphData, min_evidence: usize) -> Value {
     let bundles = build_bundles(graph_data);
     let mut groups: HashMap<String, Vec<Value>> = HashMap::new();
     let mut group_order: Vec<String> = Vec::new();
@@ -350,23 +339,51 @@ fn sanitize_username(name: &str, user_id: i64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::services::graph::db::{GraphEdge, GraphNode};
 
-    fn fixture() -> Value {
-        json!({
-            "nodes": [
-                {"uuid": "u1", "name": "Labor Union", "entity_types": ["Organization"], "summary": "Represents factory workers."},
-                {"uuid": "u2", "name": "Minister X", "entity_types": ["Politician"], "summary": "Proposed the policy."},
-                {"uuid": "u3", "name": "Bare Node", "entity_types": ["Person"], "summary": ""}
+    fn node(uuid: &str, name: &str, entity_type: &str, summary: &str) -> GraphNode {
+        GraphNode {
+            uuid: uuid.into(),
+            name: name.into(),
+            entity_types: vec![entity_type.into()],
+            summary: summary.into(),
+            ..Default::default()
+        }
+    }
+
+    fn edge(rel: &str, fact: &str, src: (&str, &str), tgt: (&str, &str)) -> GraphEdge {
+        GraphEdge {
+            relation_type: rel.into(),
+            fact: fact.into(),
+            source_node_uuid: src.0.into(),
+            source_node_name: src.1.into(),
+            target_node_uuid: tgt.0.into(),
+            target_node_name: tgt.1.into(),
+            ..Default::default()
+        }
+    }
+
+    fn graph(nodes: Vec<GraphNode>, edges: Vec<GraphEdge>) -> GraphData {
+        GraphData { nodes, edges, ..Default::default() }
+    }
+
+    fn fixture() -> GraphData {
+        graph(
+            vec![
+                node("u1", "Labor Union", "Organization", "Represents factory workers."),
+                node("u2", "Minister X", "Politician", "Proposed the policy."),
+                node("u3", "Bare Node", "Person", ""),
             ],
-            "edges": [
-                {"name": "OPPOSES", "fact": "The union opposes the policy on wage grounds.",
-                 "source_node_uuid": "u1", "target_node_uuid": "u2",
-                 "source_node_name": "Labor Union", "target_node_name": "Minister X"},
-                {"name": "PROPOSED", "fact": "Minister X proposed the policy.",
-                 "source_node_uuid": "u2", "target_node_uuid": "u2",
-                 "source_node_name": "Minister X", "target_node_name": "Policy"}
-            ]
-        })
+            vec![
+                edge(
+                    "OPPOSES",
+                    "The union opposes the policy on wage grounds.",
+                    ("u1", "Labor Union"),
+                    ("u2", "Minister X"),
+                ),
+                edge("PROPOSED", "Minister X proposed the policy.", ("u2", "Minister X"), ("u2", "Policy")),
+            ],
+        )
     }
 
     #[test]
@@ -415,26 +432,27 @@ mod tests {
 
     #[test]
     fn faction_neutral_when_stances_mixed() {
-        let g = json!({
-            "nodes": [{"uuid": "u1", "name": "Fence Sitter", "entity_types": ["Person"], "summary": "s"}],
-            "edges": [
-                {"name": "SUPPORTS", "fact": "backs part A", "source_node_uuid": "u1", "target_node_uuid": "x",
-                 "source_node_name": "Fence Sitter", "target_node_name": "A"},
-                {"name": "OPPOSES", "fact": "rejects part B", "source_node_uuid": "u1", "target_node_uuid": "y",
-                 "source_node_name": "Fence Sitter", "target_node_name": "B"}
-            ]
-        });
+        let g = graph(
+            vec![node("u1", "Fence Sitter", "Person", "s")],
+            vec![
+                edge("SUPPORTS", "backs part A", ("u1", "Fence Sitter"), ("x", "A")),
+                edge("OPPOSES", "rejects part B", ("u1", "Fence Sitter"), ("y", "B")),
+            ],
+        );
         let bundles = build_bundles(&g);
         assert_eq!(bundles[0].faction(), None, "both camps -> no single faction");
     }
 
     #[test]
     fn audience_synthesizes_both_factions_marked_synthetic() {
-        let g = json!({"nodes": [], "edges": [
-            {"name": "SUPPORTS", "fact": "A backs the plan on cost grounds.", "source_node_name": "A", "target_node_name": "P"},
-            {"name": "OPPOSES", "fact": "B rejects the plan over job losses.", "source_node_name": "B", "target_node_name": "P"},
-            {"name": "AFFILIATED_WITH", "fact": "C works for P.", "source_node_name": "C", "target_node_name": "P"}
-        ]});
+        let g = graph(
+            vec![],
+            vec![
+                edge("SUPPORTS", "A backs the plan on cost grounds.", ("", "A"), ("", "P")),
+                edge("OPPOSES", "B rejects the plan over job losses.", ("", "B"), ("", "P")),
+                edge("AFFILIATED_WITH", "C works for P.", ("", "C"), ("", "P")),
+            ],
+        );
         let a = synthesize_audience(&g, 2, 100);
         assert_eq!(a.len(), 4, "2 per faction × 2 factions; non-stance edge ignored");
         assert!(a.iter().all(|p| p.synthetic && p.source_entity_uuid.is_none()));
@@ -451,7 +469,7 @@ mod tests {
 
     #[test]
     fn audience_empty_when_no_stance_edges_or_zero_count() {
-        let g = json!({"nodes": [], "edges": [{"name": "AFFILIATED_WITH", "source_node_name": "A", "target_node_name": "B"}]});
+        let g = graph(vec![], vec![edge("AFFILIATED_WITH", "", ("", "A"), ("", "B"))]);
         assert!(synthesize_audience(&g, 5, 0).is_empty());
         assert!(synthesize_audience(&fixture(), 0, 0).is_empty());
     }

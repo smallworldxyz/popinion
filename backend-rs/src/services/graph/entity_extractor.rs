@@ -7,8 +7,30 @@ use anyhow::Result;
 use serde_json::{json, Map, Value};
 use std::collections::HashSet;
 
+/// A normalized extraction — the typed contract between the extractor and
+/// `builder::write_extraction`. `normalize` guarantees every entity has a
+/// non-empty name and at least one entity type, and every relationship has
+/// non-empty source, target and relation_type.
+pub struct Extraction {
+    pub entities: Vec<ExtractedEntity>,
+    pub relationships: Vec<ExtractedRelationship>,
+}
+
+pub struct ExtractedEntity {
+    pub name: String,
+    pub entity_types: Vec<String>,
+    pub attributes: Map<String, Value>,
+}
+
+pub struct ExtractedRelationship {
+    pub source_name: String,
+    pub target_name: String,
+    pub relation_type: String,
+    pub attributes: Map<String, Value>,
+}
+
 /// Extract entities and relationships from a text chunk, guided by the ontology.
-pub async fn extract(llm: &Llm, text: &str, ontology: &Value) -> Result<Value> {
+pub async fn extract(llm: &Llm, text: &str, ontology: &Value) -> Result<Extraction> {
     let prompt = build_prompt(text, ontology);
     let messages = [
         Msg::system(
@@ -125,10 +147,10 @@ Return ONLY valid JSON, no explanations.
     )
 }
 
-/// Normalize a raw LLM extraction: drop malformed items, coerce entity-type
-/// strings to lists, fold `summary` into attributes, dedupe entities by name
-/// and relationships by (source, relation_type, target).
-pub fn normalize(raw: Value) -> Value {
+/// Normalize a raw LLM extraction into a typed `Extraction`: drop malformed
+/// items, coerce entity-type strings to lists, fold `summary` into attributes,
+/// dedupe entities by name and relationships by (source, relation_type, target).
+pub fn normalize(raw: Value) -> Extraction {
     let mut entities = Vec::new();
     let mut seen_names = HashSet::new();
     for entity in raw["entities"].as_array().cloned().unwrap_or_default() {
@@ -154,11 +176,7 @@ pub fn normalize(raw: Value) -> Value {
                 attributes.insert("summary".into(), json!(summary));
             }
         }
-        entities.push(json!({
-            "name": name,
-            "entity_types": entity_types,
-            "attributes": sanitize_properties(attributes),
-        }));
+        entities.push(ExtractedEntity { name, entity_types, attributes: sanitize_properties(attributes) });
     }
 
     let mut relationships = Vec::new();
@@ -179,15 +197,15 @@ pub fn normalize(raw: Value) -> Value {
             Some(Value::Object(m)) => m.clone(),
             _ => Map::new(),
         };
-        relationships.push(json!({
-            "source_name": source,
-            "target_name": target,
-            "relation_type": relation_type,
-            "attributes": sanitize_properties(attributes),
-        }));
+        relationships.push(ExtractedRelationship {
+            source_name: source,
+            target_name: target,
+            relation_type,
+            attributes: sanitize_properties(attributes),
+        });
     }
 
-    json!({ "entities": entities, "relationships": relationships })
+    Extraction { entities, relationships }
 }
 
 /// Attribute values must be primitives or arrays of primitives (a rule kept
@@ -217,7 +235,7 @@ mod tests {
             "entities": [{"name": "Alice", "entity_types": "Person"}],
             "relationships": []
         }));
-        assert_eq!(out["entities"][0]["entity_types"], json!(["Person"]));
+        assert_eq!(out.entities[0].entity_types, vec!["Person".to_string()]);
     }
 
     #[test]
@@ -231,8 +249,8 @@ mod tests {
             ],
             "relationships": []
         }));
-        assert_eq!(out["entities"].as_array().unwrap().len(), 1);
-        assert_eq!(out["entities"][0]["name"], "Good");
+        assert_eq!(out.entities.len(), 1);
+        assert_eq!(out.entities[0].name, "Good");
     }
 
     #[test]
@@ -244,7 +262,7 @@ mod tests {
             ],
             "relationships": []
         }));
-        assert_eq!(out["entities"].as_array().unwrap().len(), 1);
+        assert_eq!(out.entities.len(), 1);
     }
 
     #[test]
@@ -253,7 +271,7 @@ mod tests {
             "entities": [{"name": "A", "entity_types": ["Person"], "summary": "the summary"}],
             "relationships": []
         }));
-        assert_eq!(out["entities"][0]["attributes"]["summary"], "the summary");
+        assert_eq!(out.entities[0].attributes["summary"], "the summary");
     }
 
     #[test]
@@ -267,7 +285,7 @@ mod tests {
                 {"source_name": "A", "target_name": "B", "relation_type": ""}
             ]
         }));
-        assert_eq!(out["relationships"].as_array().unwrap().len(), 1);
+        assert_eq!(out.relationships.len(), 1);
     }
 
     #[test]
@@ -286,7 +304,7 @@ mod tests {
             }],
             "relationships": []
         }));
-        let props = &out["entities"][0]["attributes"];
+        let props = &out.entities[0].attributes;
         assert_eq!(props["ok"], "text");
         assert_eq!(props["num"], 3);
         assert_eq!(props["list"], json!(["a", "b"]));
@@ -297,7 +315,7 @@ mod tests {
     #[test]
     fn handles_missing_arrays() {
         let out = normalize(json!({"unexpected": true}));
-        assert_eq!(out["entities"], json!([]));
-        assert_eq!(out["relationships"], json!([]));
+        assert!(out.entities.is_empty());
+        assert!(out.relationships.is_empty());
     }
 }

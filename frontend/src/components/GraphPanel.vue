@@ -122,7 +122,7 @@
                     @click="toggleSelfLoop(loop.uuid || idx)"
                   >
                     <span class="self-loop-index">#{{ idx + 1 }}</span>
-                    <span class="self-loop-name">{{ loop.name || loop.fact_type || 'RELATED' }}</span>
+                    <span class="self-loop-name">{{ loop.relation_type || 'RELATED' }}</span>
                     <span class="self-loop-toggle">{{ expandedSelfLoops.has(loop.uuid || idx) ? '−' : '+' }}</span>
                   </div>
                   
@@ -135,9 +135,9 @@
                       <span class="detail-label">Fact:</span>
                       <span class="detail-value fact-text">{{ loop.fact }}</span>
                     </div>
-                    <div class="detail-row" v-if="loop.fact_type">
+                    <div class="detail-row" v-if="loop.relation_type">
                       <span class="detail-label">Type:</span>
-                      <span class="detail-value">{{ loop.fact_type }}</span>
+                      <span class="detail-value">{{ loop.relation_type }}</span>
                     </div>
                     <div class="detail-row" v-if="loop.created_at">
                       <span class="detail-label">Created:</span>
@@ -157,7 +157,7 @@
             <!-- Normal Edge Details -->
             <template v-else>
               <div class="edge-relation-header">
-                {{ selectedItem.data.source_name }} → {{ selectedItem.data.name || 'RELATED_TO' }} → {{ selectedItem.data.target_name }}
+                {{ selectedItem.data.source_name }} → {{ selectedItem.data.relation_type || 'RELATED_TO' }} → {{ selectedItem.data.target_name }}
               </div>
               
               <div class="detail-row">
@@ -165,12 +165,8 @@
                 <span class="detail-value uuid-text">{{ selectedItem.data.uuid }}</span>
               </div>
               <div class="detail-row">
-                <span class="detail-label">Label:</span>
-                <span class="detail-value">{{ selectedItem.data.name || 'RELATED_TO' }}</span>
-              </div>
-              <div class="detail-row">
                 <span class="detail-label">Type:</span>
-                <span class="detail-value">{{ selectedItem.data.fact_type || 'Unknown' }}</span>
+                <span class="detail-value">{{ selectedItem.data.relation_type || 'RELATED_TO' }}</span>
               </div>
               <div class="detail-row" v-if="selectedItem.data.fact">
                 <span class="detail-label">Fact:</span>
@@ -449,8 +445,8 @@ const renderGraph = () => {
     edges.push({
       source: e.source_node_uuid,
       target: e.target_node_uuid,
-      type: e.fact_type || e.name || 'RELATED',
-      name: e.name || e.fact_type || 'RELATED',
+      type: e.relation_type || 'RELATED',
+      name: e.relation_type || 'RELATED',
       curvature,
       isSelfLoop: false,
       pairIndex: currentIndex,

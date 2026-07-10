@@ -110,7 +110,7 @@
                 <div class="edge-relation">
                   <span class="edge-source">{{ selectedItem.data.source_name || selectedItem.data.source_node_name }}</span>
                   <span class="edge-arrow">→</span>
-                  <span class="edge-type">{{ selectedItem.data.name || selectedItem.data.fact_type || 'RELATED_TO' }}</span>
+                  <span class="edge-type">{{ selectedItem.data.relation_type || 'RELATED_TO' }}</span>
                   <span class="edge-arrow">→</span>
                   <span class="edge-target">{{ selectedItem.data.target_name || selectedItem.data.target_node_name }}</span>
                 </div>
@@ -122,12 +122,8 @@
                   <span class="detail-value uuid">{{ selectedItem.data.uuid }}</span>
                 </div>
                 <div class="detail-row">
-                  <span class="detail-label">Label:</span>
-                  <span class="detail-value">{{ selectedItem.data.name || selectedItem.data.fact_type || 'RELATED_TO' }}</span>
-                </div>
-                <div class="detail-row" v-if="selectedItem.data.fact_type">
                   <span class="detail-label">Type:</span>
-                  <span class="detail-value">{{ selectedItem.data.fact_type }}</span>
+                  <span class="detail-value">{{ selectedItem.data.relation_type || 'RELATED_TO' }}</span>
                 </div>
                 
                 <!-- Fact -->
@@ -930,7 +926,7 @@ const renderGraph = () => {
     .map(e => ({
       source: e.source_node_uuid,
       target: e.target_node_uuid,
-      type: e.fact_type || e.name || 'RELATED_TO',
+      type: e.relation_type || 'RELATED_TO',
       rawData: {
         ...e,
         source_name: nodeMap[e.source_node_uuid]?.name || 'Unknown',

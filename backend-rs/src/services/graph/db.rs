@@ -11,9 +11,48 @@
 
 use anyhow::Result;
 use rusqlite::{params, Connection, OptionalExtension};
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
+
+/// The graph wire shape. THE one definition shared by the producer
+/// (`get_graph_data`) and every consumer (the API handlers that serialize it
+/// for the frontend viz, and `sim::persona`'s bundle compiler) — a renamed
+/// field is a compile error, not silent data loss.
+#[derive(Default, Serialize, Deserialize)]
+pub struct GraphData {
+    pub graph_id: String,
+    pub node_count: usize,
+    pub edge_count: usize,
+    pub nodes: Vec<GraphNode>,
+    pub edges: Vec<GraphEdge>,
+}
+
+#[derive(Default, Serialize, Deserialize)]
+pub struct GraphNode {
+    pub uuid: String,
+    pub name: String,
+    pub entity_types: Vec<String>,
+    /// Convenience copy of `attributes["summary"]` (empty when absent).
+    pub summary: String,
+    pub attributes: Map<String, Value>,
+    pub created_at: Option<String>,
+}
+
+#[derive(Default, Serialize, Deserialize)]
+pub struct GraphEdge {
+    pub uuid: String,
+    pub relation_type: String,
+    /// Convenience copy of `attributes["fact"]` (empty when absent).
+    pub fact: String,
+    pub source_node_uuid: String,
+    pub target_node_uuid: String,
+    pub source_node_name: String,
+    pub target_node_name: String,
+    pub attributes: Map<String, Value>,
+    pub created_at: Option<String>,
+}
 
 /// Cheap-to-clone handle to the graph database (the spawned build task holds a clone).
 #[derive(Clone)]
@@ -250,9 +289,9 @@ pub async fn graph_info(db: &GraphDb, graph_id: &str) -> Result<GraphInfo> {
     Ok(GraphInfo { node_count, edge_count, entity_types })
 }
 
-/// Read the whole graph back as `{nodes, edges}` — same JSON shape the frontend
+/// Read the whole graph back as typed `GraphData` — the shape the frontend
 /// d3 viz and `sim::persona::build_bundles` consume.
-pub async fn get_graph_data(db: &GraphDb, graph_id: &str) -> Result<Value> {
+pub async fn get_graph_data(db: &GraphDb, graph_id: &str) -> Result<GraphData> {
     let c = db.conn.lock().unwrap();
 
     let mut nodes = Vec::new();
@@ -261,20 +300,16 @@ pub async fn get_graph_data(db: &GraphDb, graph_id: &str) -> Result<Value> {
     )?;
     let mut rows = stmt.query(params![graph_id])?;
     while let Some(row) = rows.next()? {
-        let uuid: String = row.get(0)?;
-        let name: String = row.get(1)?;
-        let entity_types: Vec<String> = serde_json::from_str(&row.get::<_, String>(2)?).unwrap_or_default();
         let props: Map<String, Value> =
             serde_json::from_str(&row.get::<_, String>(3)?).unwrap_or_default();
-        let created_at: Option<String> = row.get(4)?;
-        nodes.push(json!({
-            "uuid": uuid,
-            "name": name,
-            "entity_types": entity_types,
-            "summary": props.get("summary").cloned().unwrap_or(json!("")),
-            "attributes": props,
-            "created_at": created_at,
-        }));
+        nodes.push(GraphNode {
+            uuid: row.get(0)?,
+            name: row.get(1)?,
+            entity_types: serde_json::from_str(&row.get::<_, String>(2)?).unwrap_or_default(),
+            summary: props.get("summary").and_then(Value::as_str).unwrap_or_default().to_string(),
+            attributes: props,
+            created_at: row.get(4)?,
+        });
     }
 
     let mut edges = Vec::new();
@@ -288,34 +323,28 @@ pub async fn get_graph_data(db: &GraphDb, graph_id: &str) -> Result<Value> {
     )?;
     let mut rows = stmt.query(params![graph_id])?;
     while let Some(row) = rows.next()? {
-        let uuid: String = row.get(0)?;
-        let relation_type: String = row.get(1)?;
         let props: Map<String, Value> =
             serde_json::from_str(&row.get::<_, String>(2)?).unwrap_or_default();
-        let created_at: Option<String> = row.get(3)?;
-        // The relation type is deliberately emitted under BOTH legacy keys
-        // ("name" and "fact_type") until consumers move to a typed shape.
-        edges.push(json!({
-            "uuid": uuid,
-            "name": relation_type,
-            "fact": props.get("fact").cloned().unwrap_or(json!("")),
-            "fact_type": relation_type,
-            "source_node_uuid": row.get::<_, Option<String>>(4)?.unwrap_or_default(),
-            "target_node_uuid": row.get::<_, Option<String>>(5)?.unwrap_or_default(),
-            "source_node_name": row.get::<_, String>(6)?,
-            "target_node_name": row.get::<_, String>(7)?,
-            "attributes": props,
-            "created_at": created_at,
-        }));
+        edges.push(GraphEdge {
+            uuid: row.get(0)?,
+            relation_type: row.get(1)?,
+            fact: props.get("fact").and_then(Value::as_str).unwrap_or_default().to_string(),
+            source_node_uuid: row.get::<_, Option<String>>(4)?.unwrap_or_default(),
+            target_node_uuid: row.get::<_, Option<String>>(5)?.unwrap_or_default(),
+            source_node_name: row.get(6)?,
+            target_node_name: row.get(7)?,
+            attributes: props,
+            created_at: row.get(3)?,
+        });
     }
 
-    Ok(json!({
-        "graph_id": graph_id,
-        "node_count": nodes.len(),
-        "edge_count": edges.len(),
-        "nodes": nodes,
-        "edges": edges,
-    }))
+    Ok(GraphData {
+        graph_id: graph_id.to_string(),
+        node_count: nodes.len(),
+        edge_count: edges.len(),
+        nodes,
+        edges,
+    })
 }
 
 /// Delete a graph's nodes, edges and metadata row.
@@ -371,19 +400,17 @@ mod tests {
         assert!(info.entity_types.contains(&"Student".to_string()));
 
         let data = get_graph_data(&db, &gid).await.unwrap();
-        let nodes = data["nodes"].as_array().unwrap();
-        assert_eq!(nodes.len(), 2);
-        let alice_node = nodes.iter().find(|n| n["name"] == "Alice").unwrap();
-        assert_eq!(alice_node["summary"], "A tester");
-        assert_eq!(alice_node["attributes"]["role"], "qa");
-        assert_eq!(alice_node["attributes"]["location"], "Phnom Penh"); // merged across chunks
-        assert_eq!(alice_node["entity_types"].as_array().unwrap().len(), 2); // Person + Student
+        assert_eq!(data.nodes.len(), 2);
+        let alice_node = data.nodes.iter().find(|n| n.name == "Alice").unwrap();
+        assert_eq!(alice_node.summary, "A tester");
+        assert_eq!(alice_node.attributes["role"], "qa");
+        assert_eq!(alice_node.attributes["location"], "Phnom Penh"); // merged across chunks
+        assert_eq!(alice_node.entity_types.len(), 2); // Person + Student
 
-        let edges = data["edges"].as_array().unwrap();
-        assert_eq!(edges.len(), 1);
-        assert_eq!(edges[0]["fact"], "Alice works for Acme");
-        assert_eq!(edges[0]["name"], "WORKS_FOR");
-        assert!(!edges[0]["source_node_uuid"].as_str().unwrap().is_empty());
+        assert_eq!(data.edges.len(), 1);
+        assert_eq!(data.edges[0].fact, "Alice works for Acme");
+        assert_eq!(data.edges[0].relation_type, "WORKS_FOR");
+        assert!(!data.edges[0].source_node_uuid.is_empty());
 
         delete_graph(&db, &gid).await.unwrap();
         let info = graph_info(&db, &gid).await.unwrap();
