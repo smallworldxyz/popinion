@@ -241,6 +241,15 @@ export const compareSimulations = (a, b, runs = []) => {
 }
 
 /**
+ * Honesty tests over completed runs: sibling reruns → noise floor, and an
+ * optional baseline-vs-permuted pair → persona ablation verdict.
+ * @param {Object} data - { simulation_ids?, baseline_id?, permuted_id? }
+ */
+export const validateSimulation = (data) => {
+  return service.post('/api/simulation/validate', data)
+}
+
+/**
  * Batch interview Agents
  * @param {Object} data - { simulation_id, interviews: [{ agent_id, prompt }] }
  */

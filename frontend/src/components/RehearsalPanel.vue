@@ -183,9 +183,19 @@ const poll = async () => {
   } catch { /* transient */ }
 }
 
+// Rerun ids the Trust-checks panel measured the noise floor from; passing them
+// makes the verdict use the measured floor instead of the default 5-point bar.
+const measuredReruns = () => {
+  try {
+    return JSON.parse(sessionStorage.getItem(`trust:reruns:${props.simulationId}`)) || []
+  } catch {
+    return []
+  }
+}
+
 const loadComparison = async () => {
   try {
-    const res = await compareSimulations(props.simulationId, altId.value)
+    const res = await compareSimulations(props.simulationId, altId.value, measuredReruns())
     cmp.value = res.data
     phase.value = 'done'
   } catch (err) {

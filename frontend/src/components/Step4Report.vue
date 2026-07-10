@@ -24,6 +24,10 @@
                population + seed and see if the delta beats the noise floor -->
           <RehearsalPanel v-if="simulationId" :simulation-id="simulationId" />
 
+          <!-- Trust checks: measure the sim's own noise floor (rerun variance)
+               and whether the grounded personas drive the result (ablation) -->
+          <TrustChecksPanel v-if="simulationId" :simulation-id="simulationId" />
+
           <!-- Sections List -->
           <div class="sections-list">
             <div 
@@ -405,6 +409,7 @@ import { useRouter } from 'vue-router'
 import { getAgentLog, getConsoleLog } from '../api/report'
 import CredibilityPanel from './CredibilityPanel.vue'
 import RehearsalPanel from './RehearsalPanel.vue'
+import TrustChecksPanel from './TrustChecksPanel.vue'
 
 const router = useRouter()
 
