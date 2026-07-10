@@ -117,7 +117,7 @@ async fn generate_ontology(
     projects::save_extracted_text(&project.project_id, &all_text)?;
 
     let generated = ontology::generate(
-        &st.llm,
+        &st.llm(),
         &document_texts,
         &simulation_requirement,
         (!additional_context.is_empty()).then_some(additional_context.as_str()),
@@ -190,7 +190,7 @@ async fn build_graph(
 
     let task_id = builder::spawn_build(
         graph,
-        st.llm.clone(),
+        st.llm(),
         builder::BuildParams {
             project_id,
             text,

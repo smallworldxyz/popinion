@@ -57,9 +57,7 @@ impl Llm {
         max_tokens: u32,
         json_mode: bool,
     ) -> Result<String> {
-        if self.api_key.is_empty() {
-            return Err(anyhow!("LLM_API_KEY not configured"));
-        }
+        // No empty-key rejection: local servers (Ollama, LM Studio) need no key.
         // NOTE: we deliberately do NOT send response_format: json_object. It is
         // not universally supported across OpenAI-compatible servers (LM Studio
         // rejects it for some models, wanting json_schema/text), and the callers
@@ -77,13 +75,11 @@ impl Llm {
         // Retry on 429 / transient errors with capped exponential backoff + jitter.
         let max_retries = 10u32;
         for attempt in 0..max_retries {
-            let resp = self
-                .http
-                .post(&url)
-                .bearer_auth(&self.api_key)
-                .json(&body)
-                .send()
-                .await;
+            let mut builder = self.http.post(&url).json(&body);
+            if !self.api_key.is_empty() {
+                builder = builder.bearer_auth(&self.api_key);
+            }
+            let resp = builder.send().await;
 
             match resp {
                 Ok(r) if r.status().is_success() => {

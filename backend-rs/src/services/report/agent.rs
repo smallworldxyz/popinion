@@ -267,7 +267,7 @@ async fn generate(st: &AppState, report_id: &str) -> anyhow::Result<()> {
             10 + (40 * calls_used / max_calls.max(1)) as i32,
             &format!("Gathering evidence ({calls_used}/{max_calls} tool calls)"),
         );
-        let response = st.llm.chat(&messages, 0.3, 2048).await?;
+        let response = st.llm().chat(&messages, 0.3, 2048).await?;
         registry::agent_log(
             report_id,
             "llm_turn",
@@ -336,7 +336,7 @@ async fn generate(st: &AppState, report_id: &str) -> anyhow::Result<()> {
          - Write in English."
     );
     let mut draft = st
-        .llm_boost
+        .llm_boost()
         .chat(
             &[
                 Msg::system(writer_system.clone()),
@@ -357,7 +357,7 @@ async fn generate(st: &AppState, report_id: &str) -> anyhow::Result<()> {
             &format!("Reflection pass {}/{}", round + 1, st.cfg.report_max_reflection_rounds),
         );
         let critique = st
-            .llm
+            .llm()
             .chat(
                 &[
                     Msg::system(
@@ -384,7 +384,7 @@ async fn generate(st: &AppState, report_id: &str) -> anyhow::Result<()> {
             break;
         }
         draft = st
-            .llm_boost
+            .llm_boost()
             .chat(
                 &[
                     Msg::system(writer_system.clone()),
@@ -454,7 +454,7 @@ pub async fn chat(
     let mut tool_calls_made: Vec<Value> = Vec::new();
 
     for _ in 0..MAX_CHAT_TOOL_CALLS {
-        let response = st.llm.chat(&messages, 0.5, 2048).await.map_err(AppError::Other)?;
+        let response = st.llm().chat(&messages, 0.5, 2048).await.map_err(AppError::Other)?;
         let tool_calls = parse_tool_calls(&response);
         if tool_calls.is_empty() || tool_calls_made.len() >= MAX_CHAT_TOOL_CALLS {
             return Ok(chat_result(&response, &tool_calls_made));
@@ -471,7 +471,7 @@ pub async fn chat(
         messages.push(Msg::user(format!("{observations}\nAnswer the question concisely in English.")));
     }
 
-    let final_response = st.llm.chat(&messages, 0.5, 2048).await.map_err(AppError::Other)?;
+    let final_response = st.llm().chat(&messages, 0.5, 2048).await.map_err(AppError::Other)?;
     Ok(chat_result(&final_response, &tool_calls_made))
 }
 

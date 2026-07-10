@@ -1,4 +1,5 @@
 <template>
+  <router-link v-if="$route.name !== 'Settings'" to="/settings" class="settings-fab" title="Model settings">⚙ Models</router-link>
   <router-view />
 </template>
 
@@ -43,5 +44,29 @@
 /* Global button styles */
 button {
   font-family: inherit;
+}
+
+/* Persistent link to the model settings, visible on every page. */
+.settings-fab {
+  position: fixed;
+  top: 14px;
+  right: 16px;
+  z-index: 1000;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  font-size: 13px;
+  font-family: inherit;
+  color: #000;
+  background: #fff;
+  border: 1px solid #000;
+  border-radius: 8px;
+  text-decoration: none;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+}
+.settings-fab:hover {
+  background: #000;
+  color: #fff;
 }
 </style>

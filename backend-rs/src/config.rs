@@ -11,6 +11,9 @@ pub struct Config {
     pub llm_boost_model: String,
 
     pub graph_db_path: String,
+    /// Where the user-editable LLM provider settings persist (base_url/model/key
+    /// per slot). Overlays the env defaults above at startup.
+    pub settings_path: String,
 
     pub sim_data_dir: String,
     pub sim_default_max_rounds: u32,
@@ -47,6 +50,7 @@ impl Config {
             llm_model,
 
             graph_db_path: var("GRAPH_DB_PATH", "./uploads/graph.db"),
+            settings_path: var("SETTINGS_PATH", "./uploads/settings.json"),
 
             sim_data_dir: var("OASIS_SIMULATION_DATA_DIR", "./uploads/simulations"),
             sim_default_max_rounds: var("OASIS_DEFAULT_MAX_ROUNDS", "10").parse().unwrap_or(10),

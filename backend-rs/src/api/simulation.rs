@@ -180,7 +180,7 @@ async fn prepare(State(st): State<AppState>, Json(req): Json<PrepareReq>) -> App
     let graph_id = resolve_graph_id(&st, &req.simulation_id)?;
     let graph = st.graph().clone();
     // Persona synthesis is low-volume + quality-sensitive → the boost slot.
-    let llm = st.llm_boost.clone();
+    let llm = st.llm_boost();
     let manager = st.sim_manager();
     let sim_id = req.simulation_id;
     let selected = req.selected_entity_ids;
@@ -312,7 +312,7 @@ async fn classify_stance_h(
         .unwrap_or_else(|| "the main issue in the discussion".into());
 
     let items = store.unlabeled_content(300).map_err(AppError::Other)?;
-    let llm = st.llm_boost.clone();
+    let llm = st.llm_boost();
     let labels: Vec<(String, i64, i64, Option<String>, String)> = futures::stream::iter(items.into_iter().map(|it| {
         let llm = llm.clone();
         let topic = topic.clone();
@@ -592,7 +592,7 @@ async fn panel_chat_h(State(st): State<AppState>, Json(req): Json<PanelChatReq>)
     };
     let opts = PanelChatOptions { rounds: req.rounds.unwrap_or(1), ..Default::default() };
     let interviewer = LiveInterviewer(handle);
-    let result = report::panel_chat(&st.llm, &interviewer, &req.question, &panelists, &opts)
+    let result = report::panel_chat(&st.llm(), &interviewer, &req.question, &panelists, &opts)
         .await
         .map_err(AppError::Other)?;
     Ok(Success(json!({ "result": result })))

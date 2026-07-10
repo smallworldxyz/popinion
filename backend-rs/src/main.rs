@@ -4,6 +4,7 @@ mod error;
 mod llm;
 mod models;
 mod services;
+mod settings;
 mod sim;
 mod state;
 
@@ -42,6 +43,7 @@ async fn main() {
         .nest("/api/simulation", api::simulation::router())
         .nest("/api/report", api::report::router())
         .nest("/api/crawl", api::crawl::router())
+        .nest("/api/settings", api::settings::router())
         .layer(cors)
         .layer(TraceLayer::new_for_http())
         .with_state(state);
