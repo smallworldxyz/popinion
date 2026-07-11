@@ -426,7 +426,7 @@ const startSimulation = () => {
 
 /* Chat-native simulation prompt */
 .chat-box {
-  max-width: 780px;
+  max-width: 1000px;
   margin: 40px auto 0;
   background: var(--white);
   border: 1px solid var(--black);
