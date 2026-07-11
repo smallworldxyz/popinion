@@ -62,6 +62,15 @@ fn text_path(project_id: &str) -> PathBuf {
     project_dir(project_id).join("extracted_text.txt")
 }
 
+/// A project id must be a single safe path component — reject anything that
+/// could escape PROJECTS_DIR (path separators, `..`). Ids are generated as
+/// `proj_<hex>`, so this only ever rejects malicious input like `../../etc`.
+fn valid_id(project_id: &str) -> bool {
+    !project_id.is_empty()
+        && project_id.len() <= 64
+        && project_id.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+}
+
 pub fn create(name: &str) -> Result<Project> {
     let now = chrono::Utc::now().to_rfc3339();
     let project = Project {
@@ -88,6 +97,9 @@ pub fn create(name: &str) -> Result<Project> {
 }
 
 pub fn save(project: &Project) -> Result<()> {
+    if !valid_id(&project.project_id) {
+        anyhow::bail!("invalid project id");
+    }
     let mut project = project.clone();
     project.updated_at = chrono::Utc::now().to_rfc3339();
     let path = metadata_path(&project.project_id);
@@ -98,6 +110,9 @@ pub fn save(project: &Project) -> Result<()> {
 }
 
 pub fn get(project_id: &str) -> Option<Project> {
+    if !valid_id(project_id) {
+        return None;
+    }
     let raw = std::fs::read_to_string(metadata_path(project_id)).ok()?;
     match serde_json::from_str(&raw) {
         Ok(p) => Some(p),
@@ -123,6 +138,9 @@ pub fn list(limit: usize) -> Vec<Project> {
 }
 
 pub fn delete(project_id: &str) -> bool {
+    if !valid_id(project_id) {
+        return false;
+    }
     let dir = project_dir(project_id);
     if !dir.exists() {
         return false;
@@ -131,6 +149,9 @@ pub fn delete(project_id: &str) -> bool {
 }
 
 pub fn save_extracted_text(project_id: &str, text: &str) -> Result<()> {
+    if !valid_id(project_id) {
+        anyhow::bail!("invalid project id");
+    }
     let path = text_path(project_id);
     std::fs::create_dir_all(path.parent().unwrap())?;
     std::fs::write(path, text)?;
@@ -138,6 +159,9 @@ pub fn save_extracted_text(project_id: &str, text: &str) -> Result<()> {
 }
 
 pub fn get_extracted_text(project_id: &str) -> Option<String> {
+    if !valid_id(project_id) {
+        return None;
+    }
     std::fs::read_to_string(text_path(project_id)).ok()
 }
 
@@ -170,5 +194,17 @@ mod tests {
         assert!(delete(&id));
         assert!(get(&id).is_none());
         assert!(!delete(&id));
+    }
+
+    #[test]
+    fn rejects_path_traversal_ids() {
+        for bad in ["", "..", "../etc", "a/b", "a\\b", "proj_x/../.."] {
+            assert!(!valid_id(bad), "{bad} should be rejected");
+        }
+        assert!(valid_id("proj_abc123"));
+        // The fs-touching entry points must refuse a traversal id outright.
+        assert!(!delete(".."));
+        assert!(get("../foo").is_none());
+        assert!(get_extracted_text("../foo").is_none());
     }
 }

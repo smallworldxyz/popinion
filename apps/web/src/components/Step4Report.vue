@@ -1513,7 +1513,7 @@ const InterviewDisplay = {
                   ]),
                   h('div', { 
                     class: 'qa-text answer-text',
-                    innerHTML: formatAnswer(answerText, isExpanded)
+                    innerHTML: escapeHtml(formatAnswer(answerText, isExpanded))
                       .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
                       .replace(/\n/g, '<br>')
                   }),
@@ -1866,11 +1866,16 @@ const truncateText = (text, maxLen) => {
   return text.substring(0, maxLen) + '...'
 }
 
+// Escape HTML so crawl/LLM-derived text can't inject tags through the markdown
+// renderer's v-html/innerHTML sinks. Escaping `<` and `&` neuters tag injection
+// (no `<` → no tag) while leaving `>` intact for blockquote syntax.
+const escapeHtml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+
 const renderMarkdown = (content) => {
   if (!content) return ''
-  
+
   // Remove leading H2 title (## xxx), because section title already shown outside
-  let processedContent = content.replace(/^##\s+.+\n+/, '')
+  let processedContent = escapeHtml(content).replace(/^##\s+.+\n+/, '')
   
   // Process code blocks
   let html = processedContent.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre class="code-block"><code>$2</code></pre>')

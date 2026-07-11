@@ -14,7 +14,7 @@ pub mod state;
 
 use axum::routing::get;
 use axum::Router;
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::cors::{AllowOrigin, Any, CorsLayer};
 use tower_http::services::{ServeDir, ServeFile};
 use tower_http::trace::TraceLayer;
 
@@ -28,8 +28,17 @@ pub async fn build_app(cfg: Config) -> Router {
     let static_dir = cfg.static_dir.clone();
     let state = AppState::new(cfg).await;
 
-    // CORS stays permissive for the browser-dev deployment (Vite on another port).
-    let cors = CorsLayer::new().allow_origin(Any).allow_methods(Any).allow_headers(Any);
+    // Scope CORS to the local dev frontend origin only. The desktop app is
+    // same-origin (served from static_dir) and Vite proxies /api server-side,
+    // so no wildcard is needed — and a wildcard on this unauthenticated API
+    // would let any website the user visits drive it cross-origin.
+    let cors = CorsLayer::new()
+        .allow_origin(AllowOrigin::list([
+            "http://localhost:3000".parse().unwrap(),
+            "http://127.0.0.1:3000".parse().unwrap(),
+        ]))
+        .allow_methods(Any)
+        .allow_headers(Any);
 
     let mut app = Router::new()
         .route("/health", get(health))

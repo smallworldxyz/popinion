@@ -765,10 +765,15 @@ const formatTime = (timestamp) => {
   }
 }
 
+// Escape HTML so crawl/LLM-derived text can't inject tags through this v-html
+// sink. Escaping `<` and `&` neuters tag injection while leaving `>` for
+// blockquote syntax.
+const escapeHtml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+
 const renderMarkdown = (content) => {
   if (!content) return ''
-  
-  let processedContent = content.replace(/^##\s+.+\n+/, '')
+
+  let processedContent = escapeHtml(content).replace(/^##\s+.+\n+/, '')
   let html = processedContent.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre class="code-block"><code>$2</code></pre>')
   html = html.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>')
   html = html.replace(/^#### (.+)$/gm, '<h5 class="md-h5">$1</h5>')
