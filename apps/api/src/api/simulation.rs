@@ -152,6 +152,11 @@ async fn prepare_preview(State(st): State<AppState>, Json(req): Json<PreparePrev
     Ok(Success(persona::preview(&data, req.min_evidence.unwrap_or(2))))
 }
 
+/// A crash-test should feel like a public, not a boardroom of named elites, so
+/// when the caller doesn't specify, synthesize this many background citizens per
+/// stance faction. An explicit 0 opts out (raw API).
+const DEFAULT_AUDIENCE_PER_FACTION: usize = 12;
+
 #[derive(Deserialize)]
 struct PrepareReq {
     simulation_id: String,
@@ -188,7 +193,7 @@ async fn prepare(State(st): State<AppState>, Json(req): Json<PrepareReq>) -> App
     let use_llm = req.use_llm_for_profiles;
     let min_evidence = req.min_evidence.unwrap_or(2);
     let event = req.event;
-    let audience = req.audience_per_faction.unwrap_or(0);
+    let audience = req.audience_per_faction.unwrap_or(DEFAULT_AUDIENCE_PER_FACTION);
 
     let task_id = tasks::create("persona_prepare", json!({"simulation_id": sim_id, "graph_id": graph_id}));
     let tid = task_id.clone();
@@ -259,6 +264,10 @@ async fn run_prepare(
     let audience_count = audience.len();
     profiles.extend(audience);
 
+    // Seed the discussion with the caller's event, or the project's stored
+    // scenario (see seed_event) so a wizard run crash-tests THAT policy.
+    let event = seed_event(manager, sim_id, event);
+
     manager.attach_profiles(sim_id, profiles, event)?;
     tasks::complete(
         task_id,
@@ -271,6 +280,21 @@ async fn run_prepare(
         }),
     );
     Ok(())
+}
+
+/// The post that opens the discussion: the caller's `event` if non-empty, else
+/// the sim's project scenario — what the leader typed on the landing page — so a
+/// wizard run crash-tests THAT policy instead of starting scenario-less.
+fn seed_event(manager: &crate::sim::manager::Manager, sim_id: &str, event: Option<String>) -> Option<String> {
+    event.filter(|e| !e.trim().is_empty()).or_else(|| {
+        manager
+            .meta(sim_id)
+            .ok()
+            .and_then(|m| m.project_id)
+            .and_then(|pid| crate::services::graph::projects::get(&pid))
+            .and_then(|p| p.simulation_requirement)
+            .filter(|r| !r.trim().is_empty())
+    })
 }
 
 #[derive(Deserialize)]
@@ -856,5 +880,37 @@ mod tests {
     #[test]
     fn persona_counts_empty_roster() {
         assert_eq!(persona_counts(&[]), (0, 0));
+    }
+
+    #[test]
+    fn seed_event_falls_back_to_project_scenario() {
+        use crate::services::graph::projects;
+        use crate::sim::config::SimConfig;
+        use crate::sim::manager::Manager;
+        use crate::sim::SimRegistry;
+
+        // A project carrying the leader's typed scenario.
+        let mut proj = projects::create("Fuel subsidy").unwrap();
+        let scenario = "How will the public react to cutting the fuel subsidy?";
+        proj.simulation_requirement = Some(scenario.into());
+        projects::save(&proj).unwrap();
+
+        // A sim linked to that project.
+        let dir = std::env::temp_dir().join(format!("popinion-seed-{}", uuid::Uuid::new_v4()));
+        let mgr = Manager::new(&dir, SimRegistry::default(), crate::llm::Llm::new("", "http://localhost", "x"));
+        let people: Vec<Persona> = serde_json::from_value(json!([{ "user_id": 0, "user_name": "u0" }])).unwrap();
+        let sim = mgr
+            .create("sim", people, SimConfig::default(), None, Some(proj.project_id.clone()))
+            .unwrap();
+
+        // No explicit event → the project scenario seeds the discussion.
+        assert_eq!(seed_event(&mgr, &sim, None).as_deref(), Some(scenario));
+        // A blank event still falls back.
+        assert_eq!(seed_event(&mgr, &sim, Some("   ".into())).as_deref(), Some(scenario));
+        // An explicit event wins.
+        assert_eq!(seed_event(&mgr, &sim, Some("cut it now".into())).as_deref(), Some("cut it now"));
+
+        projects::delete(&proj.project_id);
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

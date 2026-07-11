@@ -199,7 +199,7 @@
         <div class="card-content">
           <p class="api-note">POST /api/simulation/prepare</p>
           <p class="description">
-            LLM intelligently configures world time flow, recommendation algorithms, individual active hours, post frequency, event triggers and other parameters based on simulation requirements and reality seeds
+            The engine configures the world's time flow, activity schedule, and post frequency for the run.
           </p>
           
           <!-- Config Preview -->
@@ -432,38 +432,10 @@
         <div class="card-content">
           <p class="api-note">POST /api/simulation/prepare</p>
           <p class="description">
-            Based on narrative direction, automatically generate initial activation events and hot topics to guide the initial state of the simulation world
+            Seed the simulation with the scenario under test as an opening post from the World agent, so the population reacts to your policy.
           </p>
 
           <div v-if="simulationConfig?.event_config" class="orchestration-content">
-            <!-- NarrativeDirection -->
-            <div class="narrative-box">
-              <span class="box-label narrative-label">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="special-icon">
-                  <path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z" stroke="url(#paint0_linear)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                  <path d="M16.24 7.76L14.12 14.12L7.76 16.24L9.88 9.88L16.24 7.76Z" fill="url(#paint0_linear)" stroke="url(#paint0_linear)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                  <defs>
-                    <linearGradient id="paint0_linear" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
-                      <stop stop-color="#FF5722"/>
-                      <stop offset="1" stop-color="#FF9800"/>
-                    </linearGradient>
-                  </defs>
-                </svg>
-                Narrative Direction
-              </span>
-              <p class="narrative-text">{{ simulationConfig.event_config.narrative_direction }}</p>
-            </div>
-
-            <!-- Trending Topic -->
-            <div class="topics-section">
-              <span class="box-label">Initial Hot Topics</span>
-              <div class="hot-topics-grid">
-                <span v-for="topic in simulationConfig.event_config.hot_topics" :key="topic" class="hot-topic-tag">
-                  # {{ topic }}
-                </span>
-              </div>
-            </div>
-
             <!-- Initial posts stream -->
             <div class="initial-posts-section">
               <span class="box-label">Initial Activation Sequence ({{ simulationConfig.event_config.initial_posts.length }})</span>
@@ -1108,9 +1080,8 @@ const startPrepareSimulation = async () => {
   try {
     const res = await prepareSimulation({
       simulation_id: props.simulationId,
-      selected_entity_ids: selectedEntityIds.value,  // NEW: pass selected entities
-      use_llm_for_profiles: true,
-      parallel_profile_count: 5
+      selected_entity_ids: selectedEntityIds.value,
+      use_llm_for_profiles: true
     })
     
     if (res.success && res.data) {

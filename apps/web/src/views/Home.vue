@@ -114,12 +114,12 @@ e.g. How will the public react to phasing out the national fuel subsidy over 12 
           <!-- Metric cards -->
           <div class="metrics-row">
             <div class="metric-card">
-              <div class="metric-value">Smart Scraping</div>
-              <div class="metric-label">Auto-Source Discovery</div>
+              <div class="metric-value">Graph-Grounded</div>
+              <div class="metric-label">Personas from real evidence</div>
             </div>
             <div class="metric-card">
-              <div class="metric-value">AI Detection</div>
-              <div class="metric-label">Fake Content Analysis</div>
+              <div class="metric-value">Trust Checks</div>
+              <div class="metric-label">Noise floor + ablation</div>
             </div>
           </div>
 
@@ -127,15 +127,15 @@ e.g. How will the public react to phasing out the national fuel subsidy over 12 
           <div class="capabilities-list">
              <div class="cap-item">
                <span class="cap-icon">✓</span>
-               <span class="cap-text">AI Search Planner (Context-Aware Scraping)</span>
+               <span class="cap-text">Graph-grounded personas (no fabricated traits)</span>
              </div>
              <div class="cap-item">
                <span class="cap-icon">✓</span>
-               <span class="cap-text">Direct Simulation Injection (World Agent)</span>
+               <span class="cap-text">Direct simulation injection (World Agent)</span>
              </div>
              <div class="cap-item">
                <span class="cap-icon">✓</span>
-               <span class="cap-text">Multimodal & Deepfake Detection</span>
+               <span class="cap-text">Scenario A/B rehearsal with significance test</span>
              </div>
           </div>
 
@@ -149,7 +149,7 @@ e.g. How will the public react to phasing out the national fuel subsidy over 12 
                 <span class="step-num">01</span>
                 <div class="step-info">
                   <div class="step-title">Reality Injection</div>
-                  <div class="step-desc">AI-planned scraping & "World News" context injection & GraphRAG construction</div>
+                  <div class="step-desc">Crawl a Telegram channel or upload documents & build a knowledge graph from the real evidence</div>
                 </div>
               </div>
               <div class="workflow-item">
@@ -163,7 +163,7 @@ e.g. How will the public react to phasing out the national fuel subsidy over 12 
                 <span class="step-num">03</span>
                 <div class="step-info">
                   <div class="step-title">Start Simulation</div>
-                  <div class="step-desc">Dual-platform parallel simulation & Auto-parse prediction requirements & Dynamic temporal memory updates</div>
+                  <div class="step-desc">Multi-agent simulation over rounds with stance & sentiment captured at each action</div>
                 </div>
               </div>
               <div class="workflow-item">
