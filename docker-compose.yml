@@ -6,7 +6,7 @@ services:
   # https://lightpanda.io - AI-native headless browser
   lightpanda:
     image: lightpanda/browser:nightly
-    container_name: pubop-lightpanda
+    container_name: popinion-lightpanda
     ports:
       - "9222:9222" # Primary CDP endpoint
     environment:
@@ -22,7 +22,7 @@ services:
   # Use when LightPanda fails on JS-heavy sites (Twitter, Facebook)
   chrome:
     image: browserless/chrome:latest
-    container_name: pubop-chrome
+    container_name: popinion-chrome
     ports:
       - "9223:3000" # Fallback CDP endpoint
     environment:

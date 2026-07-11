@@ -34,7 +34,7 @@ Real Data  →  Knowledge Graph  →  Personas  →  Simulation  →  Report
 ## 🛠️ Tech stack
 
 - **Frontend**: Vue 3 + Vite (Bun)
-- **Backend**: Rust (`backend-rs`, Axum) — the `popinion` binary
+- **Backend**: Rust (`apps/api`, Axum) — the `popinion` binary
 - **Graph store**: embedded SQLite (no external database)
 - **Per-sim store**: SQLite (stance/sentiment as first-class columns)
 - **LLM**: any OpenAI-compatible endpoint — local (Ollama) for bulk work, a metered API for quality
@@ -82,10 +82,10 @@ For a local model: `ollama serve && ollama pull qwen2.5:14b`.
 
 ```bash
 # Backend (Rust) — serves the API on :5001
-cd backend-rs && cargo run
+cd apps/api && cargo run
 
 # Frontend (Vue) — dev server on :3000, proxies /api to :5001
-cd frontend && bun install && bun run dev
+cd apps/web && bun install && bun run dev
 ```
 
 Or start both from the repo root:
@@ -110,7 +110,7 @@ bun run dev
 ## 🧪 Development
 
 ```bash
-cd backend-rs
+cd apps/api
 cargo test            # unit tests
 cargo clippy          # lints
 cargo run             # start the API
@@ -123,8 +123,6 @@ Popinion's design draws on prior work:
 | Project | Contribution |
 |---------|--------------|
 | **[OASIS](https://github.com/camel-ai/oasis)** | Multi-agent social-simulation concepts (by [CAMEL-AI](https://github.com/camel-ai)); the simulation is now a native Rust engine. |
-| **[MiroFish](https://github.com/rithythul/mirofish)** | Social simulation architecture & workflow design. |
-| **[BettaFish](https://github.com/rithythul/bettafish)** | Real-world data extraction & scraping framework. |
 
 ## 📝 License
 

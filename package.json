@@ -1,17 +1,18 @@
 {
-  "name": "pubop",
+  "name": "popinion",
   "version": "0.3.0",
-  "description": "pubop - Global Public Opinion Analysis Platform powered by AI Simulation",
+  "description": "Popinion - Global Public Opinion Analysis Platform powered by AI Simulation",
   "scripts": {
-    "setup": "bun install && cd frontend && bun install",
-    "setup:backend": "cd backend-rs && cargo build",
+    "setup": "bun install && cd apps/web && bun install",
+    "setup:backend": "cd apps/api && cargo build",
     "setup:all": "bun run setup && bun run setup:backend",
-    "dev": "concurrently -n \"backend,frontend\" -c \"yellow,cyan\" \"bun run backend\" \"bun run frontend\"",
-    "preview": "concurrently -n \"backend,frontend\" -c \"yellow,cyan\" \"bun run backend\" \"bun run frontend:preview\"",
-    "backend": "cd backend-rs && cargo run",
-    "frontend": "cd frontend && bun run dev",
-    "frontend:preview": "cd frontend && bun run preview -- --host",
-    "build": "cd frontend && bun run build"
+    "dev": "concurrently -n \"api,web\" -c \"yellow,cyan\" \"bun run backend\" \"bun run frontend\"",
+    "preview": "concurrently -n \"api,web\" -c \"yellow,cyan\" \"bun run backend\" \"bun run frontend:preview\"",
+    "backend": "cd apps/api && cargo run",
+    "frontend": "cd apps/web && bun run dev",
+    "frontend:preview": "cd apps/web && bun run preview -- --host",
+    "build": "cd apps/web && bun run build",
+    "tauri": "bun run build && cd apps/desktop && bunx @tauri-apps/cli dev"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"
