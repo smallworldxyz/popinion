@@ -24,6 +24,9 @@ pub fn router() -> Router<AppState> {
         .route("/lmstudio/unload", post(lms_unload))
         .route("/lmstudio/download", post(lms_download))
         .route("/lmstudio/download/status", post(lms_download_status))
+        // Ollama local model management (native /api/pull — no CLI needed).
+        .route("/ollama/pull", post(ollama_pull))
+        .route("/ollama/pull/status", post(lms_download_status))
 }
 
 /// Slot view with the key masked to a presence flag — never leak the secret.
@@ -358,6 +361,85 @@ async fn lms_download_status(Json(req): Json<TaskIdReq>) -> AppResult<Success<Va
     let task = crate::services::graph::tasks::get(&req.task_id)
         .ok_or_else(|| AppError::NotFound(format!("task {}", req.task_id)))?;
     Ok(Success(serde_json::to_value(task).map_err(|e| AppError::Other(e.into()))?))
+}
+
+// ---- Ollama local model management ----
+
+#[derive(Deserialize)]
+struct OllamaPullReq {
+    model: String,
+    /// The slot's base_url (e.g. http://localhost:11434/v1); the native pull API
+    /// lives at the host root. Defaults to the standard local Ollama port.
+    #[serde(default)]
+    base_url: Option<String>,
+}
+
+/// Pull an Ollama model (e.g. "gemma3n:e4b") via its native /api/pull, which
+/// streams progress. Runs as a background task; poll /ollama/pull/status.
+async fn ollama_pull(Json(req): Json<OllamaPullReq>) -> AppResult<Success<Value>> {
+    let model = req.model.trim().to_string();
+    if !valid_model_id(&model) {
+        return Err(AppError::BadRequest("invalid model id".into()));
+    }
+    // The native API lives at the host root; strip a trailing /v1 so an
+    // OpenAI-compat base_url (http://host:11434/v1) resolves to http://host:11434.
+    let base = req.base_url.unwrap_or_else(|| "http://127.0.0.1:11434".into());
+    let host = base.trim().trim_end_matches('/').trim_end_matches("/v1").trim_end_matches('/');
+    let url = format!("{host}/api/pull");
+
+    let task_id = crate::services::graph::tasks::create("ollama_pull", json!({ "model": model }));
+    let tid = task_id.clone();
+    let model_c = model.clone();
+    tokio::spawn(async move {
+        match run_ollama_pull(&url, &model_c, &tid).await {
+            Ok(_) => crate::services::graph::tasks::complete(&tid, json!({ "model": model_c, "downloaded": true })),
+            Err(e) => crate::services::graph::tasks::fail(&tid, e),
+        }
+    });
+    Ok(Success(json!({ "task_id": task_id, "model": model })))
+}
+
+/// Stream Ollama's /api/pull NDJSON, updating task progress from total/completed.
+async fn run_ollama_pull(url: &str, model: &str, tid: &str) -> Result<(), String> {
+    let client = reqwest::Client::builder().build().map_err(|e| e.to_string())?;
+    let mut resp = client
+        .post(url)
+        .json(&json!({ "name": model, "stream": true }))
+        .send()
+        .await
+        .map_err(|e| format!("Ollama not reachable — is it running? ({e})"))?;
+    if !resp.status().is_success() {
+        let code = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("Ollama returned {code}: {}", body.chars().take(120).collect::<String>()));
+    }
+    let mut buf: Vec<u8> = Vec::new();
+    let mut last_pct: u8 = 0;
+    while let Some(chunk) = resp.chunk().await.map_err(|e| e.to_string())? {
+        buf.extend_from_slice(&chunk);
+        // Ollama emits one JSON object per line; parse each complete line.
+        while let Some(nl) = buf.iter().position(|&b| b == b'\n') {
+            let line: Vec<u8> = buf.drain(..=nl).collect();
+            if line.iter().all(|b| b.is_ascii_whitespace()) {
+                continue;
+            }
+            let Ok(v) = serde_json::from_slice::<Value>(&line) else { continue };
+            if let Some(err) = v.get("error").and_then(|e| e.as_str()) {
+                return Err(err.to_string());
+            }
+            let status = v.get("status").and_then(|s| s.as_str()).unwrap_or("");
+            let pct = match (
+                v.get("total").and_then(|t| t.as_u64()),
+                v.get("completed").and_then(|c| c.as_u64()),
+            ) {
+                (Some(t), Some(c)) if t > 0 => ((c as f64 / t as f64) * 100.0) as u8,
+                _ => last_pct,
+            };
+            last_pct = pct;
+            crate::services::graph::tasks::update(tid, pct.min(99), format!("{status} ({pct}%)"));
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

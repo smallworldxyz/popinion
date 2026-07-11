@@ -57,6 +57,23 @@
           <div v-if="dlStatus" class="lms-status" :class="{ err: dlStatus.err }">{{ dlStatus.msg }}</div>
         </div>
 
+        <!-- Ollama: pull a model and enable it, or pick an already-installed one. -->
+        <div v-if="isOllama(c.state)" class="lms">
+          <div class="lms-head">
+            <span>Ollama models</span>
+            <button class="mini" @click="reloadProviders">↻</button>
+          </div>
+          <div v-if="!ollamaModels.length" class="lms-empty">No models installed yet — pull one below.</div>
+          <div v-for="m in ollamaModels" :key="m" class="lms-row" :class="{ sel: c.state.model === m }">
+            <span class="lms-name" @click="c.state.model = m" title="Use for this slot">{{ m }}</span>
+          </div>
+          <div class="lms-dl">
+            <input class="input" v-model="pullModel" placeholder="model to pull, e.g. gemma3n:e4b" />
+            <button class="mini" :disabled="pullBusy" @click="pullOllama(c.state)">{{ pullBusy ? '…' : 'Pull' }}</button>
+          </div>
+          <div v-if="pullStatus" class="lms-status" :class="{ err: pullStatus.err }">{{ pullStatus.msg }}</div>
+        </div>
+
         <label>{{ c.state.has_key ? 'API key (leave blank to keep current)' : 'API key (optional for local)' }}</label>
         <input class="input" type="password" v-model="c.state.key"
                :placeholder="c.state.has_key ? '•••••••• saved' : ''" />
@@ -80,6 +97,7 @@ import { reactive, ref, onMounted } from 'vue'
 import {
   getLlmSettings, getLlmStatus, updateLlmSettings, testLlm, getProviders,
   lmsModels, lmsLoad, lmsUnload, lmsDownload, lmsDownloadStatus,
+  ollamaPull, ollamaPullStatus,
 } from '../api/settings'
 
 const bulk = reactive({ base_url: '', model: '', has_key: false, key: '' })
@@ -162,12 +180,68 @@ async function pollDownload(taskId) {
   }
 }
 
+// ---- Ollama model management (native pull; enables the model on success) ----
+const ollamaModels = ref([])
+const pullModel = ref('gemma3n:e4b')
+const pullBusy = ref(false)
+const pullStatus = ref(null)
+
+const isOllama = (state) => (state.base_url || '').includes(':11434')
+
+function refreshOllama() {
+  const o = providers.detected.find(d => d.id === 'ollama')
+  ollamaModels.value = o ? (o.models || []) : []
+}
+async function reloadProviders() {
+  try {
+    const p = (await getProviders()).data
+    providers.detected = p.detected || []
+    providers.presets = p.presets || []
+  } catch (e) { /* best-effort */ }
+  refreshOllama()
+}
+async function pullOllama(state) {
+  const m = pullModel.value.trim()
+  if (!m) return
+  pullBusy.value = true
+  pullStatus.value = { err: false, msg: 'starting…' }
+  try {
+    const r = await ollamaPull(m, state.base_url)
+    pollPull(r.data.task_id, state)
+  } catch (e) {
+    pullBusy.value = false
+    pullStatus.value = { err: true, msg: 'failed to start — is Ollama running?' }
+  }
+}
+async function pollPull(taskId, state) {
+  try {
+    const t = (await ollamaPullStatus(taskId)).data
+    if (t.status === 'completed') {
+      state.model = pullModel.value.trim()   // enable the pulled model in this slot
+      await save()                           // persist + activate immediately
+      pullStatus.value = { err: false, msg: 'downloaded & enabled ✓' }
+      pullBusy.value = false
+      await reloadProviders()
+    } else if (t.status === 'failed') {
+      pullStatus.value = { err: true, msg: t.error || 'pull failed' }
+      pullBusy.value = false
+    } else {
+      pullStatus.value = { err: false, msg: t.message || 'downloading…' }
+      setTimeout(() => pollPull(taskId, state), 1500)
+    }
+  } catch (e) {
+    pullStatus.value = { err: true, msg: 'status check failed' }
+    pullBusy.value = false
+  }
+}
+
 // Every success response is `{ success: true, data: <payload> }` — read `.data`.
 onMounted(async () => {
   try {
     const p = (await getProviders()).data
     providers.detected = p.detected || []
     providers.presets = p.presets || []
+    refreshOllama()
   } catch (e) { /* detection is best-effort */ }
   const cur = (await getLlmSettings()).data
   Object.assign(bulk, cur.bulk, { key: '' })
