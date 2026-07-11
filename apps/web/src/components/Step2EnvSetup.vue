@@ -1153,6 +1153,7 @@ const startPrepareSimulation = async () => {
 }
 
 const startPolling = () => {
+  if (pollTimer) return // guard: don't orphan an already-running interval
   pollTimer = setInterval(pollPrepareStatus, 2000)
 }
 
@@ -1164,6 +1165,7 @@ const stopPolling = () => {
 }
 
 const startProfilesPolling = () => {
+  if (profilesTimer) return // guard: don't orphan an already-running interval
   profilesTimer = setInterval(fetchProfilesRealtime, 3000)
 }
 

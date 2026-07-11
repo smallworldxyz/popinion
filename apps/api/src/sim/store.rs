@@ -55,14 +55,16 @@ CREATE TABLE IF NOT EXISTS follow (
     follow_id   INTEGER PRIMARY KEY AUTOINCREMENT,
     follower_id INTEGER NOT NULL,
     followee_id INTEGER NOT NULL,
-    created_at  TEXT
+    created_at  TEXT,
+    UNIQUE(follower_id, followee_id)
 );
 CREATE TABLE IF NOT EXISTS post_like (
     like_id     INTEGER PRIMARY KEY AUTOINCREMENT,
     post_id     INTEGER NOT NULL,
     user_id     INTEGER NOT NULL,
     is_dislike  INTEGER DEFAULT 0,
-    created_at  TEXT
+    created_at  TEXT,
+    UNIQUE(post_id, user_id)
 );
 CREATE TABLE IF NOT EXISTS trace (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -154,28 +156,36 @@ impl Store {
 
     pub fn like_post(&self, post_id: i64, user_id: i64, is_dislike: bool) -> Result<()> {
         let c = self.conn.lock().unwrap();
-        c.execute(
-            "INSERT INTO post_like (post_id, user_id, is_dislike, created_at) VALUES (?1, ?2, ?3, ?4)",
+        // One reaction per (post, user): a repeat like/dislike is ignored so a
+        // single agent can't inflate num_likes across the run's many rounds.
+        let inserted = c.execute(
+            "INSERT OR IGNORE INTO post_like (post_id, user_id, is_dislike, created_at) VALUES (?1, ?2, ?3, ?4)",
             params![post_id, user_id, is_dislike as i64, now()],
         )?;
-        let col = if is_dislike { "num_dislikes" } else { "num_likes" };
-        c.execute(
-            &format!("UPDATE post SET {col} = {col} + 1 WHERE post_id = ?1"),
-            params![post_id],
-        )?;
+        if inserted > 0 {
+            let col = if is_dislike { "num_dislikes" } else { "num_likes" };
+            c.execute(
+                &format!("UPDATE post SET {col} = {col} + 1 WHERE post_id = ?1"),
+                params![post_id],
+            )?;
+        }
         Ok(())
     }
 
     pub fn follow(&self, follower_id: i64, followee_id: i64) -> Result<()> {
         let c = self.conn.lock().unwrap();
-        c.execute(
-            "INSERT INTO follow (follower_id, followee_id, created_at) VALUES (?1, ?2, ?3)",
+        // One edge per (follower, followee): a repeat follow is ignored so
+        // num_followers stays a distinct count and re-seeding can't double it.
+        let inserted = c.execute(
+            "INSERT OR IGNORE INTO follow (follower_id, followee_id, created_at) VALUES (?1, ?2, ?3)",
             params![follower_id, followee_id, now()],
         )?;
-        c.execute(
-            "UPDATE user SET num_followers = num_followers + 1 WHERE user_id = ?1",
-            params![followee_id],
-        )?;
+        if inserted > 0 {
+            c.execute(
+                "UPDATE user SET num_followers = num_followers + 1 WHERE user_id = ?1",
+                params![followee_id],
+            )?;
+        }
         Ok(())
     }
 
@@ -604,6 +614,27 @@ mod tests {
         assert_eq!(comments.len(), 1);
         let dist = s.stance_distribution().unwrap();
         assert_eq!(dist[0]["stance"], "support");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn follow_and_like_are_idempotent() {
+        let dir = std::env::temp_dir().join(format!("popinion-idem-{}", std::process::id()));
+        let s = Store::open(&dir.join("s.db")).unwrap();
+        s.add_user(1, "A", "a", "", "").unwrap();
+        s.add_user(2, "B", "b", "", "").unwrap();
+        let p = s.add_post(2, "hi", 0, None, None).unwrap();
+
+        // Repeated follow / like from the same agent must not inflate counts.
+        s.follow(1, 2).unwrap();
+        s.follow(1, 2).unwrap();
+        s.like_post(p, 1, false).unwrap();
+        s.like_post(p, 1, false).unwrap();
+
+        let followers = s.agent_stats().unwrap();
+        let b = followers.iter().find(|u| u["user_id"] == 2).unwrap();
+        assert_eq!(b["num_followers"], 1, "duplicate follow must not double the count");
+        assert_eq!(s.list_posts(10, 0).unwrap()[0]["num_likes"], 1, "duplicate like must not double the count");
         std::fs::remove_dir_all(&dir).ok();
     }
 

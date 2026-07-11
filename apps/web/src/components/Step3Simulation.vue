@@ -257,6 +257,10 @@ const poll = async () => {
   // Spread is a cheap read but not worth every tick — every 4th poll (~10s).
   pollTick += 1
   if (pollTick % 4 === 1) loadSpread()
+
+  // Once the run reaches a terminal state there's nothing left to refresh —
+  // stop the 2.5s interval instead of polling forever.
+  if (canReport.value) stopPolling()
 }
 
 // ---- mid-run injection + spread ----

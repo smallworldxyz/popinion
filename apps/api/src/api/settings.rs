@@ -251,6 +251,16 @@ fn lms_bin() -> String {
     }
 }
 
+/// A model id is a hub path like "openai/gpt-oss-20b". Reject empty, a leading
+/// '-' (which the `lms` CLI would parse as a flag, not a model), and anything
+/// outside the hub-id charset — guards the subprocess against argument injection.
+fn valid_model_id(model: &str) -> bool {
+    let m = model.trim();
+    !m.is_empty()
+        && !m.starts_with('-')
+        && m.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '/' | '-' | ':'))
+}
+
 /// Run an `lms` subcommand off the async runtime; Ok(stdout) / Err(stderr).
 async fn run_lms(args: Vec<String>) -> Result<String, String> {
     tokio::task::spawn_blocking(move || {
@@ -301,6 +311,9 @@ struct ModelReq {
 }
 
 async fn lms_load(Json(req): Json<ModelReq>) -> AppResult<Success<Value>> {
+    if !valid_model_id(&req.model) {
+        return Ok(Success(json!({ "ok": false, "error": "invalid model id" })));
+    }
     match run_lms(vec!["load".into(), req.model.clone(), "-y".into()]).await {
         Ok(_) => Ok(Success(json!({ "ok": true, "model": req.model, "state": "loaded" }))),
         Err(e) => Ok(Success(json!({ "ok": false, "error": e }))),
@@ -308,6 +321,9 @@ async fn lms_load(Json(req): Json<ModelReq>) -> AppResult<Success<Value>> {
 }
 
 async fn lms_unload(Json(req): Json<ModelReq>) -> AppResult<Success<Value>> {
+    if !valid_model_id(&req.model) {
+        return Ok(Success(json!({ "ok": false, "error": "invalid model id" })));
+    }
     match run_lms(vec!["unload".into(), req.model.clone()]).await {
         Ok(_) => Ok(Success(json!({ "ok": true, "model": req.model, "state": "not-loaded" }))),
         Err(e) => Ok(Success(json!({ "ok": false, "error": e }))),
@@ -318,8 +334,8 @@ async fn lms_unload(Json(req): Json<ModelReq>) -> AppResult<Success<Value>> {
 /// download, so it runs as a background task; poll /lmstudio/download/status.
 async fn lms_download(Json(req): Json<ModelReq>) -> AppResult<Success<Value>> {
     let model = req.model.trim().to_string();
-    if model.is_empty() {
-        return Err(AppError::BadRequest("model id required".into()));
+    if !valid_model_id(&model) {
+        return Err(AppError::BadRequest("invalid model id".into()));
     }
     let task_id = crate::services::graph::tasks::create("lms_download", json!({ "model": model }));
     let tid = task_id.clone();

@@ -24,12 +24,17 @@ fn user_agent() -> &'static str {
 // this function to drive the CDP browsers from docker-compose (LightPanda
 // :9222, Chrome fallback :9223) via e.g. `chromiumoxide` and return the
 // rendered DOM instead.
+/// Cap on the response body we'll buffer. Crawl targets serve HTML pages, not
+/// downloads; without this a huge or slowly-inflating body (or a redirect to
+/// one) could drive per-request memory to arbitrary size.
+const MAX_BODY_BYTES: usize = 8 * 1024 * 1024;
+
 pub async fn fetch_html(url: &str) -> anyhow::Result<String> {
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(30))
         .user_agent(user_agent())
         .build()?;
-    let resp = client
+    let mut resp = client
         .get(url)
         .header("Accept-Language", "en-US,en;q=0.9")
         .header(
@@ -39,5 +44,13 @@ pub async fn fetch_html(url: &str) -> anyhow::Result<String> {
         .send()
         .await?
         .error_for_status()?;
-    Ok(resp.text().await?)
+    // Stream with a hard cap so a chunked/undeclared body can't exhaust memory.
+    let mut buf = Vec::new();
+    while let Some(chunk) = resp.chunk().await? {
+        if buf.len() + chunk.len() > MAX_BODY_BYTES {
+            anyhow::bail!("response body exceeded {MAX_BODY_BYTES} bytes for {url}");
+        }
+        buf.extend_from_slice(&chunk);
+    }
+    Ok(String::from_utf8_lossy(&buf).into_owned())
 }

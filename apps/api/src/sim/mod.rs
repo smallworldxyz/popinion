@@ -65,10 +65,6 @@ impl SimRegistry {
     pub fn remove(&self, id: &str) -> Option<SimHandle> {
         self.inner.lock().unwrap().remove(id)
     }
-
-    pub fn ids(&self) -> Vec<String> {
-        self.inner.lock().unwrap().keys().cloned().collect()
-    }
 }
 
 impl Default for SimRegistry {

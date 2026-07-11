@@ -20,7 +20,6 @@ pub struct Config {
     pub static_dir: Option<String>,
 
     pub sim_data_dir: String,
-    pub sim_default_max_rounds: u32,
 
     pub report_max_tool_calls: u32,
     pub report_max_reflection_rounds: u32,
@@ -58,7 +57,6 @@ impl Config {
             static_dir: env::var("STATIC_DIR").ok().filter(|s| !s.is_empty()),
 
             sim_data_dir: var("POPINION_SIMULATION_DATA_DIR", "./uploads/simulations"),
-            sim_default_max_rounds: var("POPINION_DEFAULT_MAX_ROUNDS", "10").parse().unwrap_or(10),
 
             report_max_tool_calls: var("REPORT_AGENT_MAX_TOOL_CALLS", "5").parse().unwrap_or(5),
             report_max_reflection_rounds: var("REPORT_AGENT_MAX_REFLECTION_ROUNDS", "2")

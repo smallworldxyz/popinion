@@ -56,14 +56,6 @@ pub async fn build_app(cfg: Config) -> Router {
     app.layer(cors).layer(TraceLayer::new_for_http()).with_state(state)
 }
 
-/// Bind an ephemeral loopback port for the in-process desktop server. Returns
-/// the listener and the port so the shell can point its window at it.
-pub async fn bind_loopback() -> std::io::Result<(tokio::net::TcpListener, u16)> {
-    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await?;
-    let port = listener.local_addr()?.port();
-    Ok((listener, port))
-}
-
 /// Serve the app on an already-bound listener until shutdown.
 pub async fn serve(listener: tokio::net::TcpListener, cfg: Config) {
     let app = build_app(cfg).await;
