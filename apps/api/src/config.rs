@@ -42,7 +42,7 @@ impl Config {
 
         let llm_api_key = var("LLM_API_KEY", "");
         let llm_base_url = var("LLM_BASE_URL", "http://localhost:11434/v1");
-        let llm_model = var("LLM_MODEL_NAME", "gemma3n:e4b");
+        let llm_model = var("LLM_MODEL_NAME", "gemma4:e4b");
 
         Config {
             llm_boost_api_key: env::var("LLM_BOOST_API_KEY").unwrap_or_else(|_| llm_api_key.clone()),

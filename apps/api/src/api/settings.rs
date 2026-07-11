@@ -374,7 +374,7 @@ struct OllamaPullReq {
     base_url: Option<String>,
 }
 
-/// Pull an Ollama model (e.g. "gemma3n:e4b") via its native /api/pull, which
+/// Pull an Ollama model (e.g. "gemma4:e4b") via its native /api/pull, which
 /// streams progress. Runs as a background task; poll /ollama/pull/status.
 async fn ollama_pull(Json(req): Json<OllamaPullReq>) -> AppResult<Success<Value>> {
     let model = req.model.trim().to_string();

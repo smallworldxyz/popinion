@@ -68,7 +68,7 @@
             <span class="lms-name" @click="c.state.model = m" title="Use for this slot">{{ m }}</span>
           </div>
           <div class="lms-dl">
-            <input class="input" v-model="pullModel" placeholder="model to pull, e.g. gemma3n:e4b" />
+            <input class="input" v-model="pullModel" placeholder="model to pull, e.g. gemma4:e4b" />
             <button class="mini" :disabled="pullBusy" @click="pullOllama(c.state)">{{ pullBusy ? '…' : 'Pull' }}</button>
           </div>
           <div v-if="pullStatus" class="lms-status" :class="{ err: pullStatus.err }">{{ pullStatus.msg }}</div>
@@ -182,7 +182,7 @@ async function pollDownload(taskId) {
 
 // ---- Ollama model management (native pull; enables the model on success) ----
 const ollamaModels = ref([])
-const pullModel = ref('gemma3n:e4b')
+const pullModel = ref('gemma4:e4b')
 const pullBusy = ref(false)
 const pullStatus = ref(null)
 
