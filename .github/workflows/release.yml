@@ -1,0 +1,81 @@
+name: Release
+
+# Builds installable desktop apps for macOS (Apple Silicon + Intel), Linux, and
+# Windows and publishes them to a GitHub Release. Triggered by pushing a version
+# tag (e.g. `v0.3.0`). Cross-platform installers can only be produced on their
+# own OS, which is why this runs on a matrix of GitHub-hosted runners.
+#
+# Note: the binaries are UNSIGNED. macOS users open via right-click → Open;
+# Windows users click "More info → Run anyway" past SmartScreen. To sign, add
+# the Apple/Windows signing secrets that tauri-action reads (see its docs).
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  release:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest      # Apple Silicon
+            args: '--target aarch64-apple-darwin'
+          - platform: macos-latest      # Intel
+            args: '--target x86_64-apple-darwin'
+          - platform: ubuntu-22.04      # older glibc/webkit for broad compatibility
+            args: ''
+          - platform: windows-latest
+            args: ''
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop -> target
+
+      - name: Build frontend
+        run: |
+          cd apps/web
+          bun install
+          bun run build
+
+      - name: Build and release
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # The Tauri app lives at apps/desktop and bundles the prebuilt
+          # frontend (apps/web/dist) produced by the step above.
+          projectPath: apps/desktop
+          tagName: ${{ github.ref_name }}
+          releaseName: 'Popinion ${{ github.ref_name }}'
+          releaseBody: 'Desktop installers for macOS, Linux, and Windows are attached below. The apps are unsigned — see the workflow notes for opening them.'
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}

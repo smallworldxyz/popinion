@@ -1,8 +1,8 @@
 {
-  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "$schema": "../web/node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Popinion",
-  "version": "0.1.0",
-  "identifier": "ai.popinion.app",
+  "version": "0.3.0",
+  "identifier": "ai.popinion.desktop",
   "build": {
     "frontendDist": "../web/dist",
     "devUrl": "http://localhost:3100"

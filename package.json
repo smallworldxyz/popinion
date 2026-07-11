@@ -12,7 +12,8 @@
     "frontend": "cd apps/web && bun run dev",
     "frontend:preview": "cd apps/web && bun run preview -- --host",
     "build": "cd apps/web && bun run build",
-    "tauri": "bun run build && cd apps/desktop && bunx @tauri-apps/cli dev"
+    "tauri": "bun run build && cd apps/desktop && bunx @tauri-apps/cli dev",
+    "tauri:build": "cd apps/web && bun run build && cd ../desktop && bunx @tauri-apps/cli build"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"
