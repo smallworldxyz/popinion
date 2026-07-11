@@ -194,8 +194,16 @@ impl Manager {
         out
     }
 
-    /// Open the social store for reads (or writes) of a sim.
+    /// Open the social store for reads (or writes) of a sim. Errors if the sim
+    /// doesn't exist, so read handlers 404 on a bogus id instead of silently
+    /// materializing an empty social.db (and a directory) for it.
     pub fn store(&self, id: &str) -> Result<Arc<Store>> {
+        if id.is_empty() || id.contains('/') || id.contains('\\') || id.contains("..") {
+            anyhow::bail!("invalid simulation id");
+        }
+        if !self.dir(id).exists() {
+            anyhow::bail!("simulation {id} not found");
+        }
         Ok(Arc::new(Store::open(&self.db_path(id))?))
     }
 

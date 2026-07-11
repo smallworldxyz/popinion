@@ -710,6 +710,7 @@ const saveChatHistory = () => {
 }
 
 const selectReportAgentChat = () => {
+  if (isSending.value) return // don't switch target while a reply is in flight
   // Save current chat history
   saveChatHistory()
   
@@ -724,6 +725,7 @@ const selectReportAgentChat = () => {
 }
 
 const selectSurveyTab = () => {
+  if (isSending.value) return // don't switch target while a reply is in flight
   activeTab.value = 'survey'
   selectedAgent.value = null
   selectedAgentIndex.value = null
@@ -731,6 +733,7 @@ const selectSurveyTab = () => {
 }
 
 const toggleAgentDropdown = () => {
+  if (isSending.value) return // don't switch target while a reply is in flight
   showAgentDropdown.value = !showAgentDropdown.value
   if (showAgentDropdown.value) {
     activeTab.value = 'chat'
@@ -739,6 +742,7 @@ const toggleAgentDropdown = () => {
 }
 
 const selectAgent = (agent, idx) => {
+  if (isSending.value) return // don't switch target while a reply is in flight
   // Save current chat history
   saveChatHistory()
   

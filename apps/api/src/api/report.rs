@@ -29,9 +29,6 @@ pub fn router() -> Router<AppState> {
 #[derive(Deserialize)]
 struct GenerateReq {
     simulation_id: Option<String>,
-    /// Path to the simulation's SQLite store. Falls back to the sim's own
-    /// social.db (resolved via the sim Manager) when omitted.
-    db_path: Option<String>,
     #[serde(alias = "simulation_requirement")]
     topic: Option<String>,
     #[serde(default)]
@@ -43,11 +40,16 @@ async fn generate(
     Json(req): Json<GenerateReq>,
 ) -> AppResult<Success<Value>> {
     let simulation_id = req.simulation_id.clone().unwrap_or_default();
-    if simulation_id.is_empty() && req.db_path.is_none() {
-        return Err(AppError::BadRequest("Please provide simulation_id or db_path".into()));
+    if simulation_id.is_empty() {
+        return Err(AppError::BadRequest("Please provide simulation_id".into()));
+    }
+    // The DB path is resolved from the sim id via the Manager only — never from
+    // a caller-supplied path (that let a request open/mutate any SQLite file).
+    if simulation_id.contains('/') || simulation_id.contains('\\') || simulation_id.contains("..") {
+        return Err(AppError::BadRequest("invalid simulation_id".into()));
     }
 
-    if !req.force_regenerate && !simulation_id.is_empty() {
+    if !req.force_regenerate {
         if let Some(existing) = registry::find_by_simulation(&simulation_id) {
             if existing.status == JobStatus::Completed {
                 return Ok(Success(json!({
@@ -61,11 +63,9 @@ async fn generate(
         }
     }
 
-    let db_path = req
-        .db_path
-        .unwrap_or_else(|| st.sim_manager().db_path(&simulation_id).to_string_lossy().into_owned());
+    let db_path = st.sim_manager().db_path(&simulation_id).to_string_lossy().into_owned();
     if !std::path::Path::new(&db_path).exists() {
-        return Err(AppError::BadRequest(format!("Simulation database not found: {db_path}")));
+        return Err(AppError::BadRequest(format!("Simulation database not found for {simulation_id}")));
     }
 
     let topic = req.topic.unwrap_or_default();

@@ -328,10 +328,13 @@ impl Store {
     pub fn timeline(&self) -> Result<Vec<Value>> {
         let c = self.conn.lock().unwrap();
         let mut stmt = c.prepare(
-            "SELECT r, SUM(posts), SUM(comments), AVG(sent) FROM (
-                 SELECT round r, COUNT(*) posts, 0 comments, AVG(sentiment) sent FROM post GROUP BY round
+            // Count-weighted mean sentiment: sum every non-null sentiment across
+            // posts+comments and divide by their count. Averaging the two
+            // per-source AVGs (the old form) ignored row counts and skewed the curve.
+            "SELECT r, SUM(posts), SUM(comments), SUM(sent_sum) / NULLIF(SUM(sent_cnt), 0) FROM (
+                 SELECT round r, COUNT(*) posts, 0 comments, COUNT(sentiment) sent_cnt, COALESCE(SUM(sentiment), 0.0) sent_sum FROM post GROUP BY round
                  UNION ALL
-                 SELECT round r, 0 posts, COUNT(*) comments, AVG(sentiment) sent FROM comment GROUP BY round
+                 SELECT round r, 0 posts, COUNT(*) comments, COUNT(sentiment) sent_cnt, COALESCE(SUM(sentiment), 0.0) sent_sum FROM comment GROUP BY round
              ) GROUP BY r ORDER BY r ASC",
         )?;
         let rows = stmt
