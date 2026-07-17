@@ -28,11 +28,24 @@ pub struct SimMeta {
     #[serde(default)]
     pub status: String,
     /// The knowledge graph this sim draws its population from (the "God's-eye"
-    /// source). Set when created via the wizard; used by /prepare.
+    /// source). Set when created via the wizard; used by /prepare. This is the
+    /// World a Run belongs to: Runs are grouped and listed by `graph_id`.
     #[serde(default)]
     pub graph_id: Option<String>,
     #[serde(default)]
     pub project_id: Option<String>,
+    /// What kind of Run this is within its World. `canonical` is a first-class
+    /// run; `alt`/`replicate`/`ablation` are derived from another via duplicate.
+    /// Lets the runs table separate real runs from honesty-test spawns.
+    #[serde(default = "default_kind")]
+    pub kind: String,
+    /// The Run this one was duplicated from, if any (fork/rehearsal lineage).
+    #[serde(default)]
+    pub parent_id: Option<String>,
+}
+
+fn default_kind() -> String {
+    "canonical".into()
 }
 
 impl Manager {
@@ -89,6 +102,8 @@ impl Manager {
             status: "created".into(),
             graph_id,
             project_id,
+            kind: default_kind(),
+            parent_id: None,
         };
         self.write_profiles_and_config(&id, &profiles, config)?;
         self.write_meta(&meta)?;
@@ -141,6 +156,10 @@ impl Manager {
         let id = self.create(&format!("{} — alternative", src.name), profiles, config, src.graph_id, src.project_id)?;
         let mut meta = self.meta(&id)?;
         meta.status = "prepared".into();
+        // A duplicate is a derived Run in the same World: record the lineage so
+        // the runs table can separate it from canonical runs.
+        meta.kind = "alt".into();
+        meta.parent_id = Some(src_id.to_string());
         self.write_meta(&meta)?;
         Ok(id)
     }
@@ -166,6 +185,19 @@ impl Manager {
     fn write_meta(&self, meta: &SimMeta) -> Result<()> {
         std::fs::write(self.dir(&meta.simulation_id).join("metadata.json"), serde_json::to_vec_pretty(meta)?)?;
         Ok(())
+    }
+
+    /// Persist a terminal run status to disk. Reads the raw persisted meta (not
+    /// the live-status-merged `meta()`), so the engine can stamp "completed" or
+    /// "error: .." without clobbering it with the in-memory status.
+    fn persist_status(&self, id: &str, status: &str) {
+        let path = self.dir(id).join("metadata.json");
+        if let Ok(raw) = std::fs::read(&path) {
+            if let Ok(mut m) = serde_json::from_slice::<SimMeta>(&raw) {
+                m.status = status.to_string();
+                let _ = self.write_meta(&m);
+            }
+        }
     }
 
     pub fn meta(&self, id: &str) -> Result<SimMeta> {
@@ -230,7 +262,11 @@ impl Manager {
         }
         let store = self.store(id)?;
         let engine = Engine::new(store, profiles, config, self.llm.clone());
-        let handle = engine.spawn(id.to_string(), max_rounds);
+        let mgr = self.clone();
+        let sim_id = id.to_string();
+        let persist: Arc<dyn Fn(&str) + Send + Sync> =
+            Arc::new(move |status: &str| mgr.persist_status(&sim_id, status));
+        let handle = engine.spawn(id.to_string(), max_rounds, persist);
         self.registry.insert(handle);
         Ok(effective_seed)
     }
@@ -297,6 +333,27 @@ mod tests {
         let meta = m.meta(&dup).unwrap();
         assert_eq!(meta.status, "prepared");
         assert_eq!(meta.num_agents, 3);
+
+        // Lineage: the copy is a derived run pointing back at its source, while
+        // the source stays canonical. The runs table groups both under one World.
+        assert_eq!(meta.kind, "alt");
+        assert_eq!(meta.parent_id.as_deref(), Some(src.as_str()));
+        assert_eq!(m.meta(&src).unwrap().kind, "canonical");
+        assert_eq!(m.meta(&src).unwrap().parent_id, None);
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn persist_status_survives_a_dropped_handle() {
+        // A finished run must read as terminal on disk, not revert to the stale
+        // "prepared" once the live handle is gone (the runs-table bug).
+        let (m, dir) = test_manager();
+        let id = m.create("Fuel Levy", personas(2), SimConfig::default(), None, None).unwrap();
+        assert_eq!(m.meta(&id).unwrap().status, "created");
+
+        m.persist_status(&id, "completed");
+        assert_eq!(m.meta(&id).unwrap().status, "completed");
 
         let _ = std::fs::remove_dir_all(dir);
     }

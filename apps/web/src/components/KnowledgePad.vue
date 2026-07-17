@@ -5,6 +5,8 @@
       <p class="pad-subtitle">Capture and inject insights from conversations</p>
     </div>
 
+    <div v-if="notice" class="pad-notice" :class="notice.kind">{{ notice.msg }}</div>
+
     <!-- Empty State -->
     <div v-if="highlights.length === 0" class="empty-state">
       <div class="empty-icon">💡</div>
@@ -226,6 +228,15 @@ const selectedAgentIdx = ref(0)
 const showSummaryModal = ref(false)
 const isGeneratingSummary = ref(false)
 
+// Inline feedback instead of a native alert() dialog.
+const notice = ref(null)
+let noticeTimer = null
+const flash = (msg, kind = 'error') => {
+  notice.value = { msg, kind }
+  clearTimeout(noticeTimer)
+  noticeTimer = setTimeout(() => { notice.value = null }, 4000)
+}
+
 // Summary Computed Properties
 const uniqueAgentsCount = computed(() => {
   const agents = new Set(props.highlights.map(h => h.source?.agent).filter(Boolean))
@@ -368,7 +379,7 @@ const handleImport = async (event) => {
   
   // Validate file type
   if (!file.name.endsWith('.json')) {
-    alert('Only JSON files can be imported. Please export as JSON if you want to import later.')
+    flash('Only JSON files can be imported. Export as JSON first.')
     event.target.value = ''
     return
   }
@@ -379,7 +390,7 @@ const handleImport = async (event) => {
     
     // Validate structure
     if (!data.highlights || !Array.isArray(data.highlights)) {
-      alert('Invalid Knowledge Pad file. Missing highlights array.')
+      flash('Invalid Knowledge Pad file: missing highlights array.')
       event.target.value = ''
       return
     }
@@ -394,7 +405,7 @@ const handleImport = async (event) => {
     // Reset file input
     event.target.value = ''
   } catch (err) {
-    alert(`Failed to parse JSON file: ${err.message}`)
+    flash(`Failed to parse JSON file: ${err.message}`)
     event.target.value = ''
   }
 }
@@ -426,7 +437,7 @@ const copySummary = () => {
   })
   
   navigator.clipboard.writeText(summary)
-  alert('Summary copied to clipboard!')
+  flash('Summary copied to clipboard.', 'ok')
 }
 </script>
 
@@ -438,6 +449,15 @@ const copySummary = () => {
   background: #FAFAFA;
   overflow: hidden;
 }
+.pad-notice {
+  margin: 8px 16px 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.pad-notice.error { background: #fee2e2; color: #b91c1c; }
+.pad-notice.ok { background: #d1fae5; color: #065f46; }
 
 .pad-header {
   padding: 24px;

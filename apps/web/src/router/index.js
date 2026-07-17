@@ -1,6 +1,8 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import Home from '../views/Home.vue'
 import Process from '../views/MainView.vue'
+import WorldsView from '../views/WorldsView.vue'
+import WorldView from '../views/WorldView.vue'
 import SimulationView from '../views/SimulationView.vue'
 import SimulationRunView from '../views/SimulationRunView.vue'
 import ReportView from '../views/ReportView.vue'
@@ -12,6 +14,17 @@ const routes = [
     path: '/',
     name: 'Home',
     component: Home
+  },
+  {
+    path: '/worlds',
+    name: 'Worlds',
+    component: WorldsView
+  },
+  {
+    path: '/world/:graphId',
+    name: 'World',
+    component: WorldView,
+    props: true
   },
   {
     path: '/process/:projectId',

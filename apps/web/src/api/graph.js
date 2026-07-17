@@ -68,3 +68,15 @@ export function getProject(projectId) {
     method: 'get'
   })
 }
+
+/**
+ * List all projects (each carries graph_id, name, node/edge counts). Used to
+ * label and size the Worlds a Run can belong to.
+ * @returns {Promise}
+ */
+export function listProjects() {
+  return service({
+    url: '/api/graph/projects',
+    method: 'get'
+  })
+}

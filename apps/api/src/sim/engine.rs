@@ -80,7 +80,12 @@ impl Engine {
 
     /// Spawn the engine as a background task. Returns a handle with a command
     /// channel — interviews and stop flow through it, no subprocess/file IPC.
-    pub fn spawn(self, simulation_id: String, max_rounds: Option<u32>) -> SimHandle {
+    pub fn spawn(
+        self,
+        simulation_id: String,
+        max_rounds: Option<u32>,
+        persist: Arc<dyn Fn(&str) + Send + Sync>,
+    ) -> SimHandle {
         let status = Arc::new(Mutex::new("initializing".to_string()));
         let (tx, rx) = mpsc::channel::<Command>(64);
         let handle = SimHandle {
@@ -88,10 +93,15 @@ impl Engine {
             status: status.clone(),
             cmd: tx,
         };
+        let persist_run = persist.clone();
         tokio::spawn(async move {
-            if let Err(e) = self.run(rx, status.clone(), max_rounds).await {
+            if let Err(e) = self.run(rx, status.clone(), max_rounds, persist_run).await {
                 tracing::error!("simulation {simulation_id} failed: {e}");
-                *status.lock().unwrap() = format!("error: {e}");
+                let s = format!("error: {e}");
+                *status.lock().unwrap() = s.clone();
+                // Persist so the run reads as failed after the handle drops,
+                // not as an untouched "prepared" sim.
+                persist(&s);
             }
         });
         handle
@@ -102,6 +112,7 @@ impl Engine {
         mut rx: mpsc::Receiver<Command>,
         status: Arc<Mutex<String>>,
         max_rounds: Option<u32>,
+        persist: Arc<dyn Fn(&str) + Send + Sync>,
     ) -> Result<()> {
         self.reset()?;
         *status.lock().unwrap() = "running".into();
@@ -134,7 +145,12 @@ impl Engine {
             }
         }
 
-        // Post-run: stay "alive" to serve interviews (panel chat / survey) until stopped.
+        // Rounds are done. Persist "completed" to disk now, so the run reads as
+        // finished even after the handle drops from the registry (on disk it
+        // would otherwise revert to the stale "prepared"). In memory we stay
+        // "alive" to keep serving interviews (panel chat / survey) until stopped,
+        // and live status wins over the persisted one while resident.
+        persist("completed");
         *status.lock().unwrap() = "alive".into();
         while let Some(cmd) = rx.recv().await {
             if self.handle_command(cmd, None).await {
