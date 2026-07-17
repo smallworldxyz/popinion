@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "test:e2e": "playwright test",
     "tauri": "tauri"
   },
   "dependencies": {
@@ -16,6 +17,7 @@
     "vue-router": "^4.6.3"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "@tauri-apps/cli": "^2",
     "@vitejs/plugin-vue": "^6.0.1",
     "vite": "^7.2.4"
