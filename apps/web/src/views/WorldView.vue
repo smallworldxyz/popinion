@@ -135,6 +135,6 @@ onMounted(async () => {
 .badge.failed { background: #fee2e2; color: #b91c1c; }
 .date { color: #9ca3af; white-space: nowrap; }
 .act { text-align: right; white-space: nowrap; }
-.bar-link { font-size: 12.5px; color: #2563eb; text-decoration: none; }
+.bar-link { font-size: 12.5px; color: oklch(0.62 0.13 265); text-decoration: none; }
 .bar-link:hover { text-decoration: underline; }
 </style>
