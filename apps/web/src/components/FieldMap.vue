@@ -38,6 +38,7 @@
 
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
+import { contourDensity, geoPath } from 'd3'
 
 const props = defineProps({
   personas: { type: Array, default: () => [] },
@@ -99,10 +100,28 @@ function layout(personas) {
 }
 
 const marks = ref([])
-let ctx, dpr, W, H, ro, raf, animT0
+let ctx, dpr, W, H, ro, raf, animT0, iso = { con: [], pro: [] }
 const PAD = 28
 const px = (v) => PAD + v * (W - 2 * PAD)
 const py = (v) => (H - PAD) - v * (H - 2 * PAD)
+
+// Isopleths: density contours of where opposition and support concentrate at the
+// current round, drawn like isobars. Recomputed per round (membership shifts as
+// stance moves), so the ridges themselves drift, which is the weather-map read.
+function computeIso() {
+  if (!W || !marks.value.length) { iso = { con: [], pro: [] }; return }
+  const density = (pred) =>
+    contourDensity()
+      .x((m) => px(m._x))
+      .y((m) => py(m._y))
+      .size([Math.round(W), Math.round(H)])
+      .bandwidth(26)
+      .thresholds(5)(marks.value.filter(pred))
+  iso = {
+    con: density((m) => m.ts < -0.2),
+    pro: density((m) => m.ts > 0.2),
+  }
+}
 
 function resize() {
   if (!canvas.value || !wrap.value) return
@@ -113,6 +132,7 @@ function resize() {
   canvas.value.style.width = W + 'px'; canvas.value.style.height = H + 'px'
   ctx = canvas.value.getContext('2d')
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  computeIso()
   draw()
 }
 
@@ -131,6 +151,18 @@ function draw() {
   ctx.lineWidth = 1
   for (let i = 1; i < 8; i++) { const g = (i / 8) * W; ctx.beginPath(); ctx.moveTo(g, 0); ctx.lineTo(g, H); ctx.stroke() }
   for (let i = 1; i < 6; i++) { const g = (i / 6) * H; ctx.beginPath(); ctx.moveTo(0, g); ctx.lineTo(W, g); ctx.stroke() }
+
+  // Isopleths under the marks.
+  const path = geoPath(null, ctx)
+  for (const [rings, color] of [[iso.con, '70, 120, 224'], [iso.pro, '212, 158, 60']]) {
+    rings.forEach((c, i) => {
+      ctx.beginPath()
+      path(c)
+      ctx.strokeStyle = `rgba(${color}, ${0.1 + i * 0.06})`
+      ctx.lineWidth = 1
+      ctx.stroke()
+    })
+  }
 
   for (const m of marks.value) {
     const x = px(m._x), y = py(m._y)
@@ -169,6 +201,7 @@ function animate(ts) {
 }
 function retarget() {
   for (const m of marks.value) m.ts = stanceAt(m, round.value)
+  computeIso()
   animT0 = 0
   if (!raf) raf = requestAnimationFrame(animate)
 }
@@ -198,6 +231,7 @@ watch(() => props.personas, (v) => {
   marks.value = layout(v || [])
   round.value = 0
   for (const m of marks.value) { m.cs = stanceAt(m, 0); m.ts = m.cs }
+  computeIso()
   draw()
 }, { immediate: true })
 
