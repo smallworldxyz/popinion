@@ -68,7 +68,7 @@ const fmtDate = (iso) => {
   return isNaN(d) ? '' : d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
-const open = (r) => router.push(`/simulation/${r.simulation_id}`)
+const open = (r) => router.push(`/world/${props.graphId}/run/${r.simulation_id}`)
 
 onMounted(async () => {
   try {

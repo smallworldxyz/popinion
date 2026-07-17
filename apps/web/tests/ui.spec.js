@@ -126,7 +126,33 @@ test.describe('Worlds — saved runs are grouped and reachable', () => {
     await expect(page.locator('.badge.completed')).toBeVisible()
 
     await page.locator('.run').first().click()
-    await expect(page).toHaveURL(/\/simulation\/s1$/)
+    await expect(page).toHaveURL(/\/world\/g-fuel\/run\/s1$/)
+  })
+
+  test('a run with no Personas shows an honest empty state, not a broken map', async ({ page }) => {
+    stubWorlds(page)
+    page.route('**/api/simulation/s3', (route) =>
+      route.fulfill({ json: { success: true, data: { simulation_id: 's3', name: 'Telecom base', num_agents: 0 } } })
+    )
+    page.route('**/api/simulation/s3/profiles*', (route) =>
+      route.fulfill({ json: { success: true, data: { profiles: [] } } })
+    )
+    await page.goto('/world/g-tel/run/s3')
+    await expect(page.getByText('This run has no prepared Personas yet.')).toBeVisible()
+    await expect(page.locator('.field')).toHaveCount(0)
+  })
+})
+
+test.describe('FIELD map', () => {
+  test('renders a stance-coloured population and scrubs rounds', async ({ page }) => {
+    await page.goto('/field-demo')
+    await expect(page.locator('canvas')).toBeVisible()
+    await expect(page.locator('.count')).toContainText('personas')
+    // The Time Ribbon drives the run.
+    const scrub = page.locator('.scrub')
+    await expect(scrub).toBeVisible()
+    await scrub.fill('15')
+    await expect(page.locator('.round')).toContainText('r15')
   })
 })
 

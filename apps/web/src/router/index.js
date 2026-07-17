@@ -4,6 +4,7 @@ import Process from '../views/MainView.vue'
 import WorldsView from '../views/WorldsView.vue'
 import WorldView from '../views/WorldView.vue'
 import FieldDemoView from '../views/FieldDemoView.vue'
+import RunView from '../views/RunView.vue'
 import SimulationView from '../views/SimulationView.vue'
 import SimulationRunView from '../views/SimulationRunView.vue'
 import ReportView from '../views/ReportView.vue'
@@ -30,6 +31,12 @@ const routes = [
     path: '/world/:graphId',
     name: 'World',
     component: WorldView,
+    props: true
+  },
+  {
+    path: '/world/:graphId/run/:simId',
+    name: 'Run',
+    component: RunView,
     props: true
   },
   {
