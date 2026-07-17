@@ -639,6 +639,7 @@ mod tests {
             evidence: vec![],
             synthetic: false,
             faction: None,
+            position: None,
         }
     }
 

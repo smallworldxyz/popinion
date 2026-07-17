@@ -264,6 +264,10 @@ async fn run_prepare(
     let audience_count = audience.len();
     profiles.extend(audience);
 
+    // Lay the whole population out on the opinion basemap once, so the FIELD map
+    // has a fixed coordinate per Persona that never moves during a run.
+    persona::assign_positions(&mut profiles);
+
     // Seed the discussion with the caller's event, or the project's stored
     // scenario (see seed_event) so a wizard run crash-tests THAT policy.
     let event = seed_event(manager, sim_id, event);

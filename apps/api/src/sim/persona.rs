@@ -176,6 +176,7 @@ pub fn to_persona(bundle: &EvidenceBundle, user_id: i64) -> Persona {
         evidence: selected_evidence(bundle),
         synthetic: false,
         faction: bundle.faction().map(String::from),
+        position: None, // assigned in a batch by assign_positions after prep
     }
 }
 
@@ -268,11 +269,61 @@ pub fn synthesize_audience(graph_data: &GraphData, per_faction: usize, start_id:
                 evidence: sample.clone(),
                 synthetic: true,
                 faction: Some(faction.into()),
+                position: None,
             });
             id += 1;
         }
     }
     out
+}
+
+/// Assign each Persona a fixed [x, y] in [0,1] on the opinion basemap. x is
+/// stance (con left, neutral centre, pro right); y separates entity types into
+/// evenly spaced bands. A per-persona deterministic jitter spreads marks inside
+/// their stance/type cell so they do not stack. This is the deterministic layout
+/// the FIELD map reads: the honest floor that always works and the fallback for
+/// thin populations, ahead of any learned embedding.
+pub fn assign_positions(personas: &mut [Persona]) {
+    // Stable band index per entity type, in first-seen order, so the layout is
+    // deterministic and identical across runs of the same population.
+    let mut types: Vec<String> = Vec::new();
+    for p in personas.iter() {
+        let t = p.source_entity_type.clone().unwrap_or_else(|| "Entity".to_string());
+        if !types.contains(&t) {
+            types.push(t);
+        }
+    }
+    let bands = types.len().max(1) as f32;
+
+    for p in personas.iter_mut() {
+        let stance_x = match p.faction.as_deref() {
+            Some("con") => 0.2,
+            Some("pro") => 0.8,
+            _ => 0.5,
+        };
+        let t = p.source_entity_type.clone().unwrap_or_else(|| "Entity".to_string());
+        let band = types.iter().position(|x| *x == t).unwrap_or(0) as f32;
+        // Centre of this type's horizontal band.
+        let band_y = (band + 0.5) / bands;
+
+        // Deterministic jitter in [-0.5, 0.5) from the id, split into two axes,
+        // so marks in the same cell fan out without randomness (reproducible).
+        let (jx, jy) = jitter(p.user_id);
+        let x = (stance_x + jx * 0.12).clamp(0.02, 0.98);
+        let y = (band_y + jy * (0.8 / bands)).clamp(0.02, 0.98);
+        p.position = Some([x, y]);
+    }
+}
+
+/// Two deterministic values in [-0.5, 0.5) derived from an id. A cheap integer
+/// hash (splitmix-ish), so the same population always lays out the same way.
+fn jitter(id: i64) -> (f32, f32) {
+    let mut z = (id as u64).wrapping_mul(0x9E3779B97F4A7C15).wrapping_add(0x2545F4914F6CDD1D);
+    z = (z ^ (z >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
+    z ^= z >> 27;
+    let a = ((z & 0xFFFF) as f32) / 65536.0 - 0.5;
+    let b = (((z >> 16) & 0xFFFF) as f32) / 65536.0 - 0.5;
+    (a, b)
 }
 
 /// Entities grouped by type with evidence scores, for the /prepare/preview picker.
@@ -340,6 +391,60 @@ fn sanitize_username(name: &str, user_id: i64) -> String {
 mod tests {
     use super::*;
     use crate::services::graph::db::{GraphEdge, GraphNode};
+    use crate::sim::agent::Persona;
+
+    fn persona_with(id: i64, faction: Option<&str>, etype: &str) -> Persona {
+        Persona {
+            user_id: id,
+            user_name: format!("u{id}"),
+            name: format!("p{id}"),
+            bio: String::new(),
+            persona: String::new(),
+            age: None,
+            gender: None,
+            mbti: None,
+            country: None,
+            profession: None,
+            interested_topics: vec![],
+            source_entity_uuid: None,
+            source_entity_type: Some(etype.into()),
+            evidence: vec![],
+            synthetic: false,
+            faction: faction.map(String::from),
+            position: None,
+        }
+    }
+
+    #[test]
+    fn positions_encode_stance_on_x_and_are_deterministic() {
+        let mut a = vec![
+            persona_with(1, Some("con"), "Citizen"),
+            persona_with(2, Some("pro"), "Citizen"),
+            persona_with(3, None, "Ministry"),
+        ];
+        assign_positions(&mut a);
+
+        let x = |p: &Persona| p.position.unwrap()[0];
+        // Oppose sits left of neutral sits left of support.
+        assert!(x(&a[0]) < x(&a[2]), "con should be left of neutral");
+        assert!(x(&a[2]) < x(&a[1]), "neutral should be left of pro");
+        // Different entity types land in different y bands.
+        assert_ne!(a[0].position.unwrap()[1], a[2].position.unwrap()[1]);
+        // Everything is inside the map.
+        for p in &a {
+            let [px, py] = p.position.unwrap();
+            assert!((0.0..=1.0).contains(&px) && (0.0..=1.0).contains(&py));
+        }
+
+        // Same population lays out identically (no randomness).
+        let mut b = vec![
+            persona_with(1, Some("con"), "Citizen"),
+            persona_with(2, Some("pro"), "Citizen"),
+            persona_with(3, None, "Ministry"),
+        ];
+        assign_positions(&mut b);
+        assert_eq!(a[0].position, b[0].position);
+    }
 
     fn node(uuid: &str, name: &str, entity_type: &str, summary: &str) -> GraphNode {
         GraphNode {

@@ -44,6 +44,13 @@ pub struct Persona {
     /// or unknown; neutral agents are followed by both camps at seeding.
     #[serde(default)]
     pub faction: Option<String>,
+    /// Fixed [x, y] in [0,1] on the opinion basemap: x is stance (oppose left,
+    /// support right), y separates entity types into bands. Assigned once at
+    /// prepare time and never moved during a run, so the map recolours in place.
+    /// This is the deterministic layout, the honest floor and the sub-30 fallback
+    /// for the eventual semantic embedding.
+    #[serde(default)]
+    pub position: Option<[f32; 2]>,
 }
 
 impl Persona {
