@@ -1080,7 +1080,9 @@ const startPrepareSimulation = async () => {
   try {
     const res = await prepareSimulation({
       simulation_id: props.simulationId,
-      selected_entity_ids: selectedEntityIds.value,
+      // The API takes a list, where empty means "every eligible entity" — the
+      // same thing null means here. Sending null itself is a 422.
+      selected_entity_ids: selectedEntityIds.value ?? [],
       use_llm_for_profiles: true
     })
     

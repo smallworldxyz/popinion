@@ -5,6 +5,7 @@
       <div class="nav-brand">POPINION</div>
       <div class="nav-desc">Public Opinion Analysis</div>
       <div class="nav-links">
+        <router-link to="/worlds" class="nav-btn">Worlds</router-link>
         <router-link to="/settings" class="nav-btn">⚙ Models</router-link>
         <a href="https://github.com/rithythul/popinion" target="_blank" class="nav-btn">
           GitHub <span class="arrow">↗</span>
@@ -41,6 +42,24 @@ e.g. How will the public react to phasing out the national fuel subsidy over 12 
             </div>
           </div>
 
+          <!-- Typed/pasted markdown as a reality seed: becomes an .md file at submit -->
+          <div v-if="showText || pastedText" class="text-seed">
+            <div class="text-seed-head">
+              <span class="tg-icon">📝</span>
+              <span class="text-seed-label">Markdown or plain text — pasted posts, notes, transcripts</span>
+              <button class="chip-x" @click="clearText" :disabled="loading">×</button>
+            </div>
+            <textarea
+              v-model="pastedText"
+              class="text-seed-input"
+              placeholder="Paste real opinions, posts, or notes here to ground the sim.
+
+Markdown is fine — it's treated exactly like an uploaded .md file."
+              rows="6"
+              :disabled="loading"
+            ></textarea>
+          </div>
+
           <!-- Telegram channel as a reality seed: crawled server-side at build time -->
           <div v-if="showTelegram || telegramChannel" class="telegram-row">
             <span class="tg-icon">📡</span>
@@ -70,6 +89,9 @@ e.g. How will the public react to phasing out the national fuel subsidy over 12 
           <div class="chat-toolbar">
             <button class="attach-btn" @click="triggerFileInput" :disabled="loading">
               📎 Reality seeds
+            </button>
+            <button class="attach-btn" @click="showText = !showText" :disabled="loading">
+              📝 Write text
             </button>
             <button class="attach-btn" @click="showTelegram = !showTelegram" :disabled="loading">
               📡 Telegram
@@ -227,6 +249,15 @@ const formData = ref({
 // File list
 const files = ref([])
 
+// Typed markdown seed — sent as an .md file, which the backend already parses
+const showText = ref(false)
+const pastedText = ref('')
+
+const clearText = () => {
+  pastedText.value = ''
+  showText.value = false
+}
+
 // Telegram channel seed
 const showTelegram = ref(false)
 const telegramChannel = ref('')
@@ -245,20 +276,21 @@ const isDragOver = ref(false)
 // File input reference
 const fileInput = ref(null)
 
-// Computed attributes: canSubmit — at least one reality seed (file or channel)
+// Computed attributes: canSubmit — at least one reality seed (file, text, or channel)
 const canSubmit = computed(() => {
   return formData.value.simulationRequirement.trim() !== '' &&
-    (files.value.length > 0 || telegramChannel.value.trim() !== '') &&
+    (files.value.length > 0 || pastedText.value.trim() !== '' || telegramChannel.value.trim() !== '') &&
     modelStatus.value?.ready === true
 })
 
 const seedHint = computed(() => {
   const parts = []
   if (files.value.length) parts.push(`${files.value.length} file${files.value.length > 1 ? 's' : ''}`)
+  if (pastedText.value.trim()) parts.push('pasted text')
   if (telegramChannel.value.trim()) parts.push(`Telegram ${telegramChannel.value.trim()}`)
   return parts.length
     ? parts.join(' + ') + ' — real data grounds the simulation'
-    : 'Attach PDF · MD · TXT or a Telegram channel to ground the sim in real data'
+    : 'Attach PDF · MD · TXT, write text, or crawl Telegram'
 })
 
 // Trigger file selection
@@ -322,8 +354,12 @@ const startSimulation = () => {
   // Store pending upload data
   import('../store/pendingUpload.js').then(({ setPendingUpload }) => {
     const channel = telegramChannel.value.trim()
+    const typed = pastedText.value.trim()
+    const seeds = typed
+      ? [...files.value, new File([typed], 'written-note.md', { type: 'text/markdown' })]
+      : files.value
     setPendingUpload(
-      files.value,
+      seeds,
       formData.value.simulationRequirement,
       channel ? { channel, maxPosts: telegramMaxPosts.value } : null
     )
@@ -369,7 +405,13 @@ const startSimulation = () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 16px;
   padding: 0 40px;
+}
+/* The tagline is decorative — drop it before it collides with the brand. */
+@media (max-width: 760px) {
+  .navbar { padding: 0 20px; }
+  .nav-desc { display: none; }
 }
 
 .nav-brand {
@@ -470,6 +512,29 @@ const startSimulation = () => {
 .chip-name { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chip-x { border: none; background: none; cursor: pointer; font-size: 1rem; color: #9ca3af; line-height: 1; }
 .chip-x:hover { color: #dc2626; }
+.text-seed {
+  margin: 8px 0 4px;
+  padding: 6px 10px;
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+}
+.text-seed-head { display: flex; align-items: center; gap: 8px; }
+.text-seed-label { flex: 1; font-size: 0.85rem; color: var(--gray-text); }
+.text-seed-input {
+  width: 100%;
+  margin-top: 6px;
+  border: none;
+  outline: none;
+  resize: vertical;
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--black);
+  box-sizing: border-box;
+}
+.text-seed-input::placeholder { color: #9ca3af; }
 .telegram-row {
   display: flex;
   align-items: center;
@@ -503,12 +568,14 @@ const startSimulation = () => {
 .chat-toolbar {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 12px;
   margin-top: 14px;
   padding-top: 14px;
   border-top: 1px solid #eee;
 }
 .attach-btn {
+  flex: none;
   font-family: inherit;
   font-size: 0.9rem;
   padding: 8px 14px;
@@ -516,6 +583,7 @@ const startSimulation = () => {
   background: #fff;
   border-radius: 8px;
   cursor: pointer;
+  white-space: nowrap;
 }
 .attach-btn:hover { background: #f9fafb; }
 .attach-hint { flex: 1; font-size: 0.82rem; color: #9ca3af; }

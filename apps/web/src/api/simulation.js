@@ -51,13 +51,11 @@ export const getSimulationProfiles = (simulationId, platform = 'reddit') => {
 }
 
 /**
- * Real-time get generating Agent Profiles
- * @param {string} simulationId
- * @param {string} platform - 'reddit' | 'twitter'
+ * Poll Agent Profiles while they're still being generated. There is no separate
+ * realtime endpoint — /profiles already serves current state, and 404s until the
+ * first profile lands — so this is the same call under a name that says why.
  */
-export const getSimulationProfilesRealtime = (simulationId, platform = 'reddit') => {
-  return service.get(`/api/simulation/${simulationId}/profiles/realtime`, { params: { platform } })
-}
+export const getSimulationProfilesRealtime = getSimulationProfiles
 
 /**
  * Get simulation config
@@ -68,13 +66,10 @@ export const getSimulationConfig = (simulationId) => {
 }
 
 /**
- * Real-time get generating simulation config
- * @param {string} simulationId
- * @returns {Promise} Config info, containing metadata and config content
+ * Poll the simulation config while it's being written. As with profiles above,
+ * /config is already the live view — there is no /config/realtime route.
  */
-export const getSimulationConfigRealtime = (simulationId) => {
-  return service.get(`/api/simulation/${simulationId}/config/realtime`)
-}
+export const getSimulationConfigRealtime = getSimulationConfig
 
 /**
  * List all simulations
