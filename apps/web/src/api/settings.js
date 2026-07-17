@@ -9,6 +9,12 @@ export const updateLlmSettings = (data) => service.put('/api/settings/llm', data
 export const testLlm = (data) => service.post('/api/settings/llm/test', data)
 export const getProviders = () => service.get('/api/settings/llm/providers')
 
+// "Sign in with ChatGPT" — use a ChatGPT subscription as the provider.
+// login returns { auth_url } to open; status returns { logged_in, email, plan, status }.
+export const chatgptLogin = () => service.post('/api/settings/llm/chatgpt/login')
+export const chatgptStatus = () => service.get('/api/settings/llm/chatgpt/status')
+export const chatgptLogout = () => service.post('/api/settings/llm/chatgpt/logout')
+
 // LM Studio local model management
 export const lmsModels = () => service.get('/api/settings/lmstudio/models')
 export const lmsLoad = (model) => service.post('/api/settings/lmstudio/load', { model })

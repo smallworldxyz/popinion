@@ -28,6 +28,7 @@ futures = "0.3"
 async-trait = "0.1.89"
 scraper = "0.27.0"
 pdf-extract = "0.12.0"
+sha2 = "0.10"
 
 [profile.dev]
 opt-level = 0

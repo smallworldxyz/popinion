@@ -14,6 +14,9 @@ pub struct Config {
     /// Where the user-editable LLM provider settings persist (base_url/model/key
     /// per slot). Overlays the env defaults above at startup.
     pub settings_path: String,
+    /// Where ChatGPT-subscription OAuth tokens persist (0600). Separate from
+    /// settings.json since it's rotated on token refresh.
+    pub chatgpt_auth_path: String,
     /// Directory of the built frontend to serve on the same origin as the API.
     /// Set (e.g. by the desktop shell) to make one process serve UI + API — no
     /// separate dev server, no CORS. None = API only (browser dev via Vite).
@@ -45,15 +48,19 @@ impl Config {
         let llm_model = var("LLM_MODEL_NAME", "gemma4:e4b");
 
         Config {
-            llm_boost_api_key: env::var("LLM_BOOST_API_KEY").unwrap_or_else(|_| llm_api_key.clone()),
-            llm_boost_base_url: env::var("LLM_BOOST_BASE_URL").unwrap_or_else(|_| llm_base_url.clone()),
-            llm_boost_model: env::var("LLM_BOOST_MODEL_NAME").unwrap_or_else(|_| llm_model.clone()),
+            // Empty = "same as the main model". Copying the main slot in here
+            // would make `llm_boost()`'s fallback dead code and force the user to
+            // configure two identical models. Set all three to actually split.
+            llm_boost_api_key: var("LLM_BOOST_API_KEY", ""),
+            llm_boost_base_url: var("LLM_BOOST_BASE_URL", ""),
+            llm_boost_model: var("LLM_BOOST_MODEL_NAME", ""),
             llm_api_key,
             llm_base_url,
             llm_model,
 
             graph_db_path: var("GRAPH_DB_PATH", "./uploads/graph.db"),
             settings_path: var("SETTINGS_PATH", "./uploads/settings.json"),
+            chatgpt_auth_path: var("CHATGPT_AUTH_PATH", "./uploads/chatgpt_auth.json"),
             static_dir: env::var("STATIC_DIR").ok().filter(|s| !s.is_empty()),
 
             sim_data_dir: var("POPINION_SIMULATION_DATA_DIR", "./uploads/simulations"),

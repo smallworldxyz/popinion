@@ -1313,6 +1313,7 @@ dependencies = [
  "scraper",
  "serde",
  "serde_json",
+ "sha2",
  "thiserror",
  "tokio",
  "tower-http",

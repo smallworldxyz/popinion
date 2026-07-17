@@ -3,6 +3,7 @@
 //! router (API + optionally the built frontend on the same origin).
 
 pub mod api;
+pub mod chatgpt_auth;
 pub mod config;
 pub mod error;
 pub mod llm;

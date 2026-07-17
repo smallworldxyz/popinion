@@ -18,6 +18,10 @@ pub fn router() -> Router<AppState> {
         .route("/llm/test", post(test_llm))
         .route("/llm/status", get(llm_status))
         .route("/llm/providers", get(providers))
+        // "Sign in with ChatGPT" — use a ChatGPT subscription as the provider.
+        .route("/llm/chatgpt/login", post(chatgpt_login))
+        .route("/llm/chatgpt/status", get(chatgpt_status))
+        .route("/llm/chatgpt/logout", post(chatgpt_logout))
         // LM Studio local model management (list / load / unload / download).
         .route("/lmstudio/models", get(lms_models))
         .route("/lmstudio/load", post(lms_load))
@@ -106,13 +110,40 @@ async fn test_llm(Json(req): Json<TestReq>) -> AppResult<Success<Value>> {
 /// the landing page on a dead endpoint.
 async fn llm_status(State(st): State<AppState>) -> AppResult<Success<Value>> {
     let slot = st.llm_settings.read().unwrap().bulk.clone();
-    let reason = probe_slot(&slot).await;
+    // The ChatGPT subscription slot has no /chat/completions to probe — its
+    // readiness is simply whether we hold OAuth credentials.
+    let reason = if crate::chatgpt_auth::is_chatgpt_backend(&slot.base_url) {
+        (!st.chatgpt.logged_in()).then(|| "Not signed in to ChatGPT — sign in from Settings.".to_string())
+    } else {
+        probe_slot(&slot).await
+    };
     Ok(Success(json!({
         "ready": reason.is_none(),
         "model": slot.model,
         "base_url": slot.base_url,
         "reason": reason.unwrap_or_default(),
     })))
+}
+
+/// Start the browser OAuth flow and hand the frontend the URL to open.
+async fn chatgpt_login(State(st): State<AppState>) -> AppResult<Success<Value>> {
+    let url = st
+        .chatgpt
+        .clone()
+        .begin_login()
+        .await
+        .map_err(|e| AppError::BadRequest(format!("{e}")))?;
+    Ok(Success(json!({ "auth_url": url })))
+}
+
+/// { logged_in, email, plan, status } — the UI polls this after opening the URL.
+async fn chatgpt_status(State(st): State<AppState>) -> AppResult<Success<Value>> {
+    Ok(Success(st.chatgpt.status_json()))
+}
+
+async fn chatgpt_logout(State(st): State<AppState>) -> AppResult<Success<Value>> {
+    st.chatgpt.logout();
+    Ok(Success(json!({ "logged_in": false })))
 }
 
 /// None = ready; Some(reason) = human-readable why-not. Fails within ~5s.
@@ -197,48 +228,88 @@ fn http_error_reason(status: u16, body: &str, model: &str, has_key: bool) -> Str
 
 /// Detected local servers (with their loaded models) + remote presets, so the UI
 /// can offer a one-click pick. Probing happens here (not the browser) to dodge CORS.
+/// Every provider Popinion can talk to, tagged `local` or `remote` so the UI can
+/// split them into tabs. Local ones are probed live: `running` says whether the
+/// server answered, and `models` is what it actually has installed.
 async fn providers() -> AppResult<Success<Value>> {
     let http = reqwest::Client::builder()
         .timeout(Duration::from_millis(700))
         .build()
         .map_err(|e| AppError::Other(e.into()))?;
 
-    let mut detected = Vec::new();
-
     // Ollama (native /api/tags → models[].name; OpenAI-compat lives at /v1).
+    let mut ollama_models: Vec<String> = Vec::new();
+    let mut ollama_running = false;
     if let Ok(r) = http.get("http://127.0.0.1:11434/api/tags").send().await {
         if let Ok(v) = r.json::<Value>().await {
-            let models: Vec<String> = v["models"]
+            ollama_running = true;
+            ollama_models = v["models"]
                 .as_array()
                 .map(|a| a.iter().filter_map(|m| m["name"].as_str().map(String::from)).collect())
                 .unwrap_or_default();
-            detected.push(json!({
-                "id": "ollama", "label": "Ollama (local)",
-                "base_url": "http://127.0.0.1:11434/v1", "needs_key": false, "models": models,
-            }));
         }
     }
     // LM Studio (/v1/models → data[].id).
+    let mut lms_models: Vec<String> = Vec::new();
+    let mut lms_running = false;
     if let Ok(r) = http.get("http://127.0.0.1:1234/v1/models").send().await {
         if let Ok(v) = r.json::<Value>().await {
-            let models: Vec<String> = v["data"]
+            lms_running = true;
+            lms_models = v["data"]
                 .as_array()
                 .map(|a| a.iter().filter_map(|m| m["id"].as_str().map(String::from)).collect())
                 .unwrap_or_default();
-            detected.push(json!({
-                "id": "lmstudio", "label": "LM Studio (local)",
-                "base_url": "http://127.0.0.1:1234/v1", "needs_key": false, "models": models,
-            }));
         }
     }
 
-    let presets = json!([
-        {"id": "openai", "label": "OpenAI", "base_url": "https://api.openai.com/v1", "needs_key": true},
-        {"id": "openrouter", "label": "OpenRouter", "base_url": "https://openrouter.ai/api/v1", "needs_key": true},
-        {"id": "anthropic", "label": "Anthropic", "base_url": "https://api.anthropic.com/v1", "needs_key": true},
+    // Remote presets are OpenAI-compatible `/chat/completions` endpoints, so the
+    // one client works for all of them. ChatGPT is the odd one out: OAuth against
+    // a subscription instead of a metered key.
+    let providers = json!([
+        {"id": "ollama", "label": "Ollama", "kind": "local", "base_url": "http://127.0.0.1:11434/v1",
+         "needs_key": false, "running": ollama_running, "models": ollama_models,
+         "hint": "Free, private, no key. Needs a GPU to be usable."},
+        {"id": "lmstudio", "label": "LM Studio", "kind": "local", "base_url": "http://127.0.0.1:1234/v1",
+         "needs_key": false, "running": lms_running, "models": lms_models,
+         "hint": "Free, private, no key. Needs a GPU to be usable."},
+
+        // Codex rejects any model not entitled to ChatGPT-account auth (gpt-5,
+        // gpt-5-codex, gpt-5.2, gpt-5.3-codex are all retired on this path).
+        // Terra first: the everyday workhorse, and this is bulk work.
+        {"id": "chatgpt", "label": "ChatGPT (subscription)", "kind": "remote", "base_url": crate::chatgpt_auth::BACKEND,
+         "needs_key": false, "oauth": true,
+         "models": ["gpt-5.6-terra", "gpt-5.6-sol", "gpt-5.6-luna", "gpt-5.5"],
+         "hint": "Sign in with your ChatGPT plan — no API key, no per-token bill."},
+        {"id": "openai", "label": "OpenAI (API key)", "kind": "remote", "base_url": "https://api.openai.com/v1",
+         "needs_key": true, "models": ["gpt-4o", "gpt-4o-mini", "o3-mini"],
+         "hint": "Metered API key from platform.openai.com — billed per token."},
+        // Z.ai bills a Coding Plan key against subscription quota ONLY on the
+        // /coding/ endpoint. The same key also authenticates on the general
+        // endpoint below, where it silently draws down wallet balance instead —
+        // hence two entries rather than one guessable base_url.
+        {"id": "glm-coding", "label": "Z.ai GLM (coding plan)", "kind": "remote",
+         "base_url": "https://api.z.ai/api/coding/paas/v4",
+         "needs_key": true, "models": ["glm-5.2", "glm-5-turbo", "glm-4.7", "glm-4.5-air"],
+         "hint": "Coding Plan subscription quota. Key from the Coding Plan console — not a general Z.ai key."},
+        {"id": "glm", "label": "Z.ai GLM (pay per token)", "kind": "remote",
+         "base_url": "https://api.z.ai/api/paas/v4",
+         "needs_key": true, "models": ["glm-5.2", "glm-5-turbo", "glm-4.7", "glm-4.5-air"],
+         "hint": "Metered wallet balance from z.ai. A Coding Plan key here bills your wallet, not the plan."},
+        {"id": "kimi", "label": "Moonshot (Kimi)", "kind": "remote", "base_url": "https://api.moonshot.ai/v1",
+         "needs_key": true, "models": ["kimi-k3", "kimi-k2.7-code", "kimi-k2.6", "moonshot-v1-128k"],
+         "hint": "Metered key from platform.moonshot.ai — long context."},
+        {"id": "deepseek", "label": "DeepSeek", "kind": "remote", "base_url": "https://api.deepseek.com/v1",
+         "needs_key": true, "models": ["deepseek-chat", "deepseek-reasoner"],
+         "hint": "Key from platform.deepseek.com — low cost."},
+        {"id": "anthropic", "label": "Anthropic", "kind": "remote", "base_url": "https://api.anthropic.com/v1",
+         "needs_key": true, "models": ["claude-opus-4-8", "claude-sonnet-5", "claude-haiku-4-5"],
+         "hint": "Key from console.anthropic.com — uses the OpenAI-compatible endpoint."},
+        {"id": "openrouter", "label": "OpenRouter", "kind": "remote", "base_url": "https://openrouter.ai/api/v1",
+         "needs_key": true, "models": [],
+         "hint": "One key, many models — type any OpenRouter model id."},
     ]);
 
-    Ok(Success(json!({ "detected": detected, "presets": presets })))
+    Ok(Success(json!({ "providers": providers })))
 }
 
 // ---- LM Studio local model management ----

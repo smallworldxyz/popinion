@@ -1,17 +1,24 @@
+use crate::chatgpt_auth::ChatGptAuth;
 use anyhow::{anyhow, Context, Result};
 use serde::Serialize;
 use serde_json::{json, Value};
+use std::sync::Arc;
 use std::time::Duration;
 
 /// OpenAI-compatible chat client. Talks to any `${base_url}/chat/completions`
 /// endpoint (OpenAI, Azure, local vLLM, OpenRouter, ...), same as the Python
 /// `LLMClient` wrapper around the `openai` SDK.
+///
+/// When `chatgpt` is set the client instead speaks the ChatGPT subscription
+/// backend (`/backend-api/codex/responses`, the Responses API over SSE) using
+/// an OAuth access token — a different wire format entirely. See `chatgpt_auth`.
 #[derive(Clone)]
 pub struct Llm {
     http: reqwest::Client,
     api_key: String,
     base_url: String,
     model: String,
+    chatgpt: Option<Arc<ChatGptAuth>>,
 }
 
 #[derive(Serialize)]
@@ -43,6 +50,22 @@ impl Llm {
             api_key: api_key.to_string(),
             base_url: base_url.trim_end_matches('/').to_string(),
             model: model.to_string(),
+            chatgpt: None,
+        }
+    }
+
+    /// A client backed by a ChatGPT subscription (OAuth) instead of an API key.
+    pub fn chatgpt(model: &str, auth: Arc<ChatGptAuth>) -> Self {
+        let http = reqwest::Client::builder()
+            .timeout(Duration::from_secs(300))
+            .build()
+            .expect("reqwest client");
+        Llm {
+            http,
+            api_key: String::new(),
+            base_url: crate::chatgpt_auth::BACKEND.to_string(),
+            model: model.to_string(),
+            chatgpt: Some(auth),
         }
     }
 
@@ -57,6 +80,9 @@ impl Llm {
         max_tokens: u32,
         json_mode: bool,
     ) -> Result<String> {
+        if self.chatgpt.is_some() {
+            return self.chatgpt_call(messages).await;
+        }
         // No empty-key rejection: local servers (Ollama, LM Studio) need no key.
         // NOTE: we deliberately do NOT send response_format: json_object. It is
         // not universally supported across OpenAI-compatible servers (LM Studio
@@ -111,6 +137,72 @@ impl Llm {
         Err(anyhow!("LLM retries exhausted"))
     }
 
+    /// The ChatGPT subscription path: the Responses API over SSE against the
+    /// private Codex backend. System messages become `instructions`; the rest
+    /// become `input` turns. We stream and concatenate the text deltas.
+    ///
+    /// ponytail: no temperature/max_tokens here — the backend's models are
+    /// mostly reasoning models that reject `temperature` and count reasoning
+    /// against `max_output_tokens`, so passing them starves or 400s the call.
+    /// Add per-model knobs only if a non-reasoning model needs them.
+    async fn chatgpt_call(&self, messages: &[Msg]) -> Result<String> {
+        let auth = self.chatgpt.as_ref().expect("chatgpt auth set");
+        let (access_token, account_id) = auth.valid().await?;
+
+        let instructions: String = messages
+            .iter()
+            .filter(|m| m.role == "system")
+            .map(|m| m.content.as_str())
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        let input: Vec<Value> = messages
+            .iter()
+            .filter(|m| m.role != "system")
+            .map(|m| {
+                // Responses API: user turns are input_text, assistant output_text.
+                let text_type = if m.role == "assistant" { "output_text" } else { "input_text" };
+                json!({
+                    "type": "message",
+                    "role": m.role,
+                    "content": [{ "type": text_type, "text": m.content }],
+                })
+            })
+            .collect();
+        let body = json!({
+            "model": self.model,
+            "instructions": if instructions.is_empty() { "You are a helpful assistant.".into() } else { instructions },
+            "input": input,
+            "store": false,
+            "stream": true,
+        });
+
+        let url = format!("{}/responses", self.base_url);
+        let resp = self
+            .http
+            .post(&url)
+            .bearer_auth(&access_token)
+            .header("chatgpt-account-id", account_id)
+            .header("OpenAI-Beta", "responses=experimental")
+            .header("originator", "codex_cli_rs")
+            .header("session_id", uuid::Uuid::new_v4().to_string())
+            .header("Accept", "text/event-stream")
+            .json(&body)
+            .send()
+            .await?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            let hint = if status.as_u16() == 401 {
+                " (ChatGPT session expired or revoked — sign in again in Settings)"
+            } else {
+                ""
+            };
+            return Err(anyhow!("ChatGPT backend error {status}{hint}: {}", text.chars().take(300).collect::<String>()));
+        }
+        parse_responses_sse(resp).await
+    }
+
     pub async fn chat(&self, messages: &[Msg], temperature: f32, max_tokens: u32) -> Result<String> {
         self.call(messages, temperature, max_tokens, false).await
     }
@@ -130,6 +222,67 @@ impl Llm {
                 .with_context(|| format!("LLM returned invalid JSON: {}", raw.chars().take(500).collect::<String>())),
         }
     }
+}
+
+/// Read a Responses API SSE stream and return the assembled assistant text.
+/// Events are `data: {json}` lines; we sum `response.output_text.delta` deltas
+/// and fall back to the final message in `response.completed` if none arrived.
+async fn parse_responses_sse(mut resp: reqwest::Response) -> Result<String> {
+    let mut text = String::new();
+    let mut buf: Vec<u8> = Vec::new();
+    while let Some(chunk) = resp.chunk().await.context("read ChatGPT stream")? {
+        buf.extend_from_slice(&chunk);
+        while let Some(nl) = buf.iter().position(|&b| b == b'\n') {
+            let line: Vec<u8> = buf.drain(..=nl).collect();
+            let line = String::from_utf8_lossy(&line);
+            let Some(data) = line.trim().strip_prefix("data:") else { continue };
+            let data = data.trim();
+            if data.is_empty() || data == "[DONE]" {
+                continue;
+            }
+            let Ok(v) = serde_json::from_str::<Value>(data) else { continue };
+            match v["type"].as_str().unwrap_or("") {
+                "response.output_text.delta" => {
+                    if let Some(d) = v["delta"].as_str() {
+                        text.push_str(d);
+                    }
+                }
+                "response.completed" if text.is_empty() => {
+                    // No deltas seen (non-streaming-ish backend): dig the final
+                    // assistant text out of the completed response object.
+                    text = extract_completed_text(&v["response"]);
+                }
+                "response.failed" | "error" => {
+                    let msg = v["response"]["error"]["message"]
+                        .as_str()
+                        .or_else(|| v["error"]["message"].as_str())
+                        .or_else(|| v["message"].as_str())
+                        .unwrap_or("stream failed");
+                    return Err(anyhow!("ChatGPT backend: {msg}"));
+                }
+                _ => {}
+            }
+        }
+    }
+    if text.is_empty() {
+        return Err(anyhow!("ChatGPT backend returned no text"));
+    }
+    Ok(text)
+}
+
+/// Concatenate `output_text` parts from a completed Responses object.
+fn extract_completed_text(response: &Value) -> String {
+    response["output"]
+        .as_array()
+        .map(|items| {
+            items
+                .iter()
+                .flat_map(|item| item["content"].as_array().cloned().unwrap_or_default())
+                .filter_map(|c| c["text"].as_str().map(String::from))
+                .collect::<Vec<_>>()
+                .join("")
+        })
+        .unwrap_or_default()
 }
 
 /// Pull the JSON document out of an LLM reply: strip markdown fences and any

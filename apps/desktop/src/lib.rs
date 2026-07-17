@@ -20,6 +20,7 @@ pub fn run() {
                 std::env::set_var("GRAPH_DB_PATH", data.join("graph.db"));
                 std::env::set_var("POPINION_SIMULATION_DATA_DIR", data.join("simulations"));
                 std::env::set_var("SETTINGS_PATH", data.join("settings.json"));
+                std::env::set_var("CHATGPT_AUTH_PATH", data.join("chatgpt_auth.json"));
             }
             std::env::set_var("STATIC_DIR", concat!(env!("CARGO_MANIFEST_DIR"), "/../web/dist"));
 
