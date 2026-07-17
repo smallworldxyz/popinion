@@ -5,7 +5,7 @@
         <canvas ref="canvas" @mousemove="onMove" @mouseleave="clearHover"></canvas>
         <div class="axis oppose">OPPOSE</div>
         <div class="axis support">SUPPORT</div>
-        <div class="count">{{ marks.length }} personas</div>
+        <div class="count">{{ shownCount }} personas<span v-if="refusedCount" class="refused"> · {{ refusedCount }} refused</span></div>
       </div>
 
       <div v-if="roundCount > 1" class="ribbon">
@@ -66,6 +66,15 @@ const stanceColor = (s) => {
 const scalarClass = (s) => (s < -0.15 ? 'oppose' : s > 0.15 ? 'support' : 'neutral')
 const scalarLabel = (s) => (s < -0.15 ? 'Opposes' : s > 0.15 ? 'Supports' : 'Neutral')
 
+// Mark radius grows with how much the graph actually knows (evidence_score:
+// facts + summary). Demo personas carry no score, so they keep the fixed size.
+const markSize = (m) =>
+  m.evidence_score != null ? Math.max(3.5, Math.min(9, 3.5 + Math.sqrt(m.evidence_score) * 1.3)) : 5
+
+// A mark for an entity below the evidence bar: real, shown at true scale, but
+// never coloured, sized, contoured, or counted (see redesign-plan.md §3.5).
+const isRefused = (m) => m.eligible === false
+
 const factionScalar = (p) => (p.faction === 'con' ? -0.7 : p.faction === 'pro' ? 0.7 : 0)
 const roundCount = computed(() => {
   let n = 1
@@ -76,6 +85,8 @@ const stanceAt = (p, r) =>
   Array.isArray(p.trajectory) && p.trajectory.length ? p.trajectory[Math.min(r, p.trajectory.length - 1)] : factionScalar(p)
 
 const selectedStance = computed(() => (selected.value ? stanceAt(selected.value, round.value) : 0))
+const shownCount = computed(() => marks.value.filter((m) => !isRefused(m)).length)
+const refusedCount = computed(() => marks.value.filter(isRefused).length)
 
 // ---- layout (mirror of the backend; used when a Persona has no position) ----
 function jitter(id) {
@@ -166,10 +177,19 @@ function draw() {
 
   for (const m of marks.value) {
     const x = px(m._x), y = py(m._y)
+    const sel = m === selected.value
+    if (isRefused(m)) {
+      // Hollow outline, uncoloured: what the world refused to invent, kept visible.
+      ctx.strokeStyle = 'oklch(0.5 0.02 265)'
+      ctx.globalAlpha = sel ? 0.7 : 0.45
+      ctx.lineWidth = 1
+      ctx.beginPath(); ctx.arc(x, y, sel ? 5 : 3.5, 0, Math.PI * 2); ctx.stroke()
+      continue
+    }
     ctx.strokeStyle = stanceColor(m.cs)
     ctx.globalAlpha = m.synthetic ? 0.5 : 1
-    ctx.lineWidth = m === selected.value ? 3 : 2
-    chevron(x, y, m === selected.value ? 7 : 5, scalarClass(m.cs))
+    ctx.lineWidth = sel ? 3 : 2
+    chevron(x, y, markSize(m) + (sel ? 2 : 0), scalarClass(m.cs))
     ctx.stroke()
   }
   ctx.globalAlpha = 1
@@ -248,6 +268,7 @@ canvas { display: block; }
 .axis.oppose { left: 12px; }
 .axis.support { right: 12px; }
 .count { position: absolute; top: 10px; right: 12px; font: 500 11px/1 ui-monospace, monospace; color: oklch(0.6 0.02 265); }
+.count .refused { color: oklch(0.5 0.02 265); }
 .ribbon { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-top: 1px solid oklch(0.32 0.02 265); background: oklch(0.22 0.024 265); }
 .play { width: 30px; height: 26px; border: 1px solid oklch(0.4 0.03 265); background: oklch(0.28 0.028 265); color: oklch(0.9 0.01 265); border-radius: 6px; cursor: pointer; font-size: 11px; }
 .scrub { flex: 1; accent-color: oklch(0.66 0.14 74); }
