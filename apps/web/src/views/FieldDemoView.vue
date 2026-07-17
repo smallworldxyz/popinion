@@ -35,12 +35,33 @@ let seed = 7
 const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff }
 const pick = (arr) => arr[Math.floor(rnd() * arr.length)]
 
+const ROUNDS = 16
+const EVENT_AT = 6 // a "subsidy offset" is announced, softening some opposition
+
+// A stance trajectory in [-1,1] over rounds: start at the faction lean, then let
+// the mid-run event pull a share of opponents toward neutral so a front visibly
+// sweeps the field when you scrub or play.
+function trajectory(base, sway) {
+  const out = []
+  let s = base
+  for (let r = 0; r < ROUNDS; r++) {
+    if (r >= EVENT_AT) s += (0 - base) * 0.14 * sway // decay toward neutral
+    s += (rnd() - 0.5) * 0.05 // small per-round noise
+    out.push(Math.max(-1, Math.min(1, s)))
+  }
+  return out
+}
+
 const personas = ref(
   Array.from({ length: 130 }, (_, i) => {
     const t = pick(TYPES)
     const forced = lean[t]
     const faction = forced !== undefined ? forced : rnd() < 0.45 ? 'con' : rnd() < 0.6 ? 'pro' : null
     const synthetic = t === 'Citizen' && rnd() < 0.5
+    const base = faction === 'con' ? -0.75 : faction === 'pro' ? 0.75 : 0
+    // Opponents who are ordinary citizens are the most persuadable; the ministry
+    // and unions hold firm.
+    const sway = t === 'Ministry' || t === 'Union' ? 0.1 : rnd()
     return {
       user_id: i + 1,
       name: `${t} ${i + 1}`,
@@ -49,6 +70,7 @@ const personas = ref(
       source_entity_type: t,
       synthetic,
       evidence: synthetic ? [] : FACTS[t] || [],
+      trajectory: trajectory(base, faction === 'con' ? sway : 0.15),
     }
   })
 )
