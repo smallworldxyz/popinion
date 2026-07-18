@@ -125,7 +125,11 @@ test.describe('Worlds — saved runs are grouped and reachable', () => {
     await expect(page.getByText('↳ derived')).toBeVisible()
     await expect(page.locator('.badge.completed')).toBeVisible()
 
-    await page.locator('.run').first().click()
+    // Each run offers a live evidence-bar preview of its World.
+    await expect(page.locator('.run').first().locator('.bar-link'))
+      .toHaveAttribute('href', '/world/g-fuel/prepare/s1')
+
+    await page.locator('.name').first().click()
     await expect(page).toHaveURL(/\/world\/g-fuel\/run\/s1$/)
   })
 
@@ -195,6 +199,65 @@ test.describe('FIELD map', () => {
     await expect(scrub).toBeVisible()
     await scrub.fill('15')
     await expect(page.locator('.round')).toContainText('r15')
+  })
+})
+
+test.describe('Prepare — the evidence bar is a live control', () => {
+  // A fixed roster with known evidence scores. The stub answers /prepare/preview
+  // the way the backend does: eligible iff evidence_score >= max(min_evidence, 1).
+  const ROSTER = [
+    { uuid: 'a', name: 'Ministry', type: 'Ministry', ev: 6 },
+    { uuid: 'b', name: 'Union', type: 'Union', ev: 4 },
+    { uuid: 'c', name: 'Vendor', type: 'Vendor', ev: 3 },
+    { uuid: 'd', name: 'Citizen 1', type: 'Citizen', ev: 2 },
+    { uuid: 'e', name: 'Citizen 2', type: 'Citizen', ev: 1 },
+    { uuid: 'f', name: 'Bare node', type: 'Citizen', ev: 0 },
+  ]
+  const stubPreview = (page) =>
+    page.route('**/api/simulation/prepare/preview', (route) => {
+      const bar = Math.max(route.request().postDataJSON()?.min_evidence ?? 2, 1)
+      const byType = {}
+      let eligible = 0
+      let below = 0
+      for (const r of ROSTER) {
+        const ok = r.ev >= bar
+        ok ? eligible++ : below++
+        ;(byType[r.type] ||= []).push({
+          uuid: r.uuid, name: r.name, summary: '', fact_count: r.ev,
+          stance_facts: 0, evidence_score: r.ev, eligible: ok,
+        })
+      }
+      route.fulfill({
+        json: {
+          success: true,
+          data: {
+            groups: Object.entries(byType).map(([entity_type, entities]) => ({ entity_type, count: entities.length, entities })),
+            eligible_count: eligible,
+            below_bar_count: below,
+            min_evidence: bar,
+          },
+        },
+      })
+    })
+
+  test('raising the bar drops personas below it and repaints the count', async ({ page }) => {
+    await stubPreview(page)
+    await page.goto('/world/g-fuel/prepare/s1')
+
+    // Default bar = 2 -> four of six clear it (ev 6,4,3,2).
+    await expect(page.locator('.bar-val')).toHaveText('min_evidence 2')
+    await expect(page.locator('.count')).toContainText('4 eligible')
+    await expect(page.locator('.count')).toContainText('/ 6 entities')
+
+    // Raise the bar to 4 -> only Ministry(6) and Union(4) survive.
+    await page.locator('.bar-slider').fill('4')
+    await expect(page.locator('.bar-val')).toHaveText('min_evidence 4')
+    await expect(page.locator('.count')).toContainText('2 eligible')
+
+    // Push it past everyone -> the graph grounds no one, honestly.
+    await page.locator('.bar-slider').fill('7')
+    await expect(page.locator('.count')).toContainText('0 eligible')
+    await expect(page.locator('.count')).toContainText('/ 6 entities')
   })
 })
 
