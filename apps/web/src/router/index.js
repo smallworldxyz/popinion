@@ -1,16 +1,15 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import Home from '../views/Home.vue'
-import Process from '../views/MainView.vue'
 import WorldsView from '../views/WorldsView.vue'
 import WorldView from '../views/WorldView.vue'
 import FieldDemoView from '../views/FieldDemoView.vue'
 import RunView from '../views/RunView.vue'
-import SimulationView from '../views/SimulationView.vue'
-import SimulationRunView from '../views/SimulationRunView.vue'
-import ReportView from '../views/ReportView.vue'
-import InteractionView from '../views/InteractionView.vue'
+import PrepareView from '../views/PrepareView.vue'
+import WorldShell from '../views/WorldShell.vue'
 import SettingsView from '../views/SettingsView.vue'
 
+// The five wizard surfaces (process → simulation → run → report → interaction)
+// are altitudes of one shell; WorldShell renders the right one by route name.
 const routes = [
   {
     path: '/',
@@ -40,34 +39,35 @@ const routes = [
     props: true
   },
   {
+    path: '/world/:graphId/prepare/:simId',
+    name: 'Prepare',
+    component: PrepareView,
+    props: true
+  },
+  {
     path: '/process/:projectId',
     name: 'Process',
-    component: Process,
-    props: true
+    component: WorldShell
   },
   {
     path: '/simulation/:simulationId',
     name: 'Simulation',
-    component: SimulationView,
-    props: true
+    component: WorldShell
   },
   {
     path: '/simulation/:simulationId/start',
     name: 'SimulationRun',
-    component: SimulationRunView,
-    props: true
+    component: WorldShell
   },
   {
     path: '/report/:reportId',
     name: 'Report',
-    component: ReportView,
-    props: true
+    component: WorldShell
   },
   {
     path: '/interaction/:reportId',
     name: 'Interaction',
-    component: InteractionView,
-    props: true
+    component: WorldShell
   },
   {
     path: '/settings',

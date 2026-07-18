@@ -33,9 +33,15 @@
       <template v-else-if="vPhase === 'done' && vResult">
         <p class="block-text">
           <strong class="figure">&plusmn;{{ points(vResult.noise_floor) }} points</strong>
-          &mdash; across {{ vResult.runs.length }} runs of the identical scenario, the
-          population's stance shares wobbled by an average of
-          {{ points(vResult.noise_floor) }} points from randomness alone.
+          <template v-if="vResult.runs">
+            &mdash; across {{ vResult.runs.length }} runs of the identical scenario, the
+            population's stance shares wobbled by an average of
+            {{ points(vResult.noise_floor) }} points from randomness alone.
+          </template>
+          <template v-else>
+            &mdash; the noise floor measured for this run. Any claimed effect smaller than
+            this is indistinguishable from seed noise.
+          </template>
         </p>
         <p class="block-caption">
           Treat any difference smaller than ~{{ points(threshold(vResult.noise_floor)) }} points
@@ -118,6 +124,7 @@ import {
   getRunStatus,
   getSimulationActions,
   getSimulationConfig,
+  getSimulation,
   validateSimulation
 } from '../api/simulation'
 
@@ -140,8 +147,6 @@ const aResult = ref(null)
 const aError = ref(null)
 
 const stateKey = computed(() => `trust:${props.simulationId}`)
-// Written only when the floor is measured; RehearsalPanel reads it for compare's runs=.
-const rerunsKey = computed(() => `trust:reruns:${props.simulationId}`)
 
 const points = (x) => Math.round((x || 0) * 100)
 const threshold = (floor) => (floor > 0 ? floor * 1.5 : 0.05)
@@ -240,9 +245,10 @@ const loadResults = async () => {
   }
   const res = await validateSimulation(body)
   if (body.simulation_ids && vPhase.value === 'running') {
+    // /validate persisted this floor onto the Run itself, so it's the
+    // authoritative source (RehearsalPanel's /compare reads it from there).
     vResult.value = { noise_floor: res.data.noise_floor, runs: res.data.runs }
     vPhase.value = 'done'
-    sessionStorage.setItem(rerunsKey.value, JSON.stringify(rerunIds.value))
   }
   if (res.data.persona_ablation && aPhase.value === 'running') {
     const ab = res.data.persona_ablation
@@ -293,7 +299,6 @@ const resetVariance = () => {
   vDone.value = 0
   vResult.value = null
   vError.value = null
-  sessionStorage.removeItem(rerunsKey.value)
   saveState()
 }
 
@@ -306,8 +311,22 @@ const resetAblation = () => {
   saveState()
 }
 
+// The floor is a persisted Run property: show it straight away, so trust is
+// visible on any Run without re-running the variance check.
+const loadPersistedFloor = async () => {
+  try {
+    const res = await getSimulation(props.simulationId)
+    const floor = res.data?.noise_floor
+    if (vPhase.value === 'idle' && typeof floor === 'number' && floor > 0) {
+      vResult.value = { noise_floor: floor, runs: null }
+      vPhase.value = 'done'
+    }
+  } catch { /* the panel still offers to measure */ }
+}
+
 onMounted(() => {
   if (!props.simulationId) return
+  loadPersistedFloor()
   const saved = sessionStorage.getItem(stateKey.value)
   if (!saved) return
   try {

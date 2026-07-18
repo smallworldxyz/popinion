@@ -130,7 +130,7 @@ mod tests {
     #[test]
     fn noise_floor_needs_two_runs() {
         let a = stance_shares(&json!([{"stance": "support", "count": 1}]));
-        assert_eq!(noise_floor(&[a.clone()]), 0.0);
+        assert_eq!(noise_floor(std::slice::from_ref(&a)), 0.0);
         let b = stance_shares(&json!([{"stance": "oppose", "count": 1}]));
         assert!((noise_floor(&[a, b]) - 1.0).abs() < 1e-9);
     }

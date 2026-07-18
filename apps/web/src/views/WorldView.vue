@@ -19,6 +19,7 @@
           <th>Status</th>
           <th class="num">Agents</th>
           <th>Created</th>
+          <th></th>
         </tr>
       </thead>
       <tbody>
@@ -31,6 +32,11 @@
           <td><span class="badge" :class="statusOf(r).cls">{{ statusOf(r).label }}</span></td>
           <td class="num">{{ r.num_agents }}</td>
           <td class="date">{{ fmtDate(r.created_at) }}</td>
+          <td class="act">
+            <router-link class="bar-link" :to="`/world/${graphId}/prepare/${r.simulation_id}`" @click.stop>
+              ⊹ evidence bar
+            </router-link>
+          </td>
         </tr>
       </tbody>
     </table>
@@ -128,4 +134,7 @@ onMounted(async () => {
 .badge.stopped, .badge.draft { background: #f3f4f6; color: #6b7280; }
 .badge.failed { background: #fee2e2; color: #b91c1c; }
 .date { color: #9ca3af; white-space: nowrap; }
+.act { text-align: right; white-space: nowrap; }
+.bar-link { font-size: 12.5px; color: oklch(0.62 0.13 265); text-decoration: none; }
+.bar-link:hover { text-decoration: underline; }
 </style>

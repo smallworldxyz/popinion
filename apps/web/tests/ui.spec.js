@@ -125,7 +125,11 @@ test.describe('Worlds — saved runs are grouped and reachable', () => {
     await expect(page.getByText('↳ derived')).toBeVisible()
     await expect(page.locator('.badge.completed')).toBeVisible()
 
-    await page.locator('.run').first().click()
+    // Each run offers a live evidence-bar preview of its World.
+    await expect(page.locator('.run').first().locator('.bar-link'))
+      .toHaveAttribute('href', '/world/g-fuel/prepare/s1')
+
+    await page.locator('.name').first().click()
     await expect(page).toHaveURL(/\/world\/g-fuel\/run\/s1$/)
   })
 
@@ -141,6 +145,67 @@ test.describe('Worlds — saved runs are grouped and reachable', () => {
     await expect(page.getByText('This run has no prepared Personas yet.')).toBeVisible()
     await expect(page.locator('.field')).toHaveCount(0)
   })
+
+  test('trust panels live in the Run header, present without a generated report', async ({ page }) => {
+    stubWorlds(page)
+    page.route('**/api/simulation/s7', (route) =>
+      route.fulfill({ json: { success: true, data: { simulation_id: 's7', name: 'Fuel base', num_agents: 0, noise_floor: 0.12 } } })
+    )
+    page.route('**/api/simulation/s7/profiles*', (route) =>
+      route.fulfill({ json: { success: true, data: { profiles: [] } } })
+    )
+    page.route('**/api/simulation/s7/credibility', (route) =>
+      route.fulfill({ json: { success: true, data: { total: 2, grounded: 2, synthetic: 0, agent_weighted: [], post_weighted: [] } } })
+    )
+    await page.goto('/world/g-fuel/run/s7')
+    // No report anywhere on this Run, yet both trust panels are in the DOM.
+    await expect(page.locator('.trust-header .credibility-panel')).toBeVisible()
+    await expect(page.locator('.trust-header .trust-panel')).toBeVisible()
+    // The floor comes from the persisted Run property, not a rerun this session.
+    await expect(page.locator('.trust-panel')).toContainText('12 points')
+  })
+
+  test('a prepared run paints real stance-coloured marks and hollows the refused', async ({ page }) => {
+    stubWorlds(page)
+    page.route('**/api/simulation/s5', (route) =>
+      route.fulfill({ json: { success: true, data: { simulation_id: 's5', name: 'Fuel base', num_agents: 2 } } })
+    )
+    page.route('**/api/simulation/s5/profiles*', (route) =>
+      route.fulfill({
+        json: {
+          success: true,
+          data: {
+            profiles: [
+              { user_id: 0, name: 'Ministry', user_name: 'ministry_0', source_entity_uuid: 'u-min', source_entity_type: 'Ministry', faction: 'pro', synthetic: false, evidence: ['Defended the levy.'], position: [0.8, 0.3] },
+              { user_id: 1, name: 'Union', user_name: 'union_1', source_entity_uuid: 'u-uni', source_entity_type: 'Union', faction: 'con', synthetic: false, evidence: ['Petitioned against it.', 'Represents drivers.'], position: [0.2, 0.7] },
+            ],
+          },
+        },
+      })
+    )
+    // The preview carries evidence_score + eligibility; one entity is below the bar.
+    page.route('**/api/simulation/prepare/preview', (route) =>
+      route.fulfill({
+        json: {
+          success: true,
+          data: {
+            eligible_count: 2,
+            below_bar_count: 1,
+            groups: [
+              { entity_type: 'Ministry', count: 1, entities: [{ uuid: 'u-min', name: 'Ministry', evidence_score: 6, eligible: true }] },
+              { entity_type: 'Union', count: 1, entities: [{ uuid: 'u-uni', name: 'Union', evidence_score: 4, eligible: true }] },
+              { entity_type: 'Citizen', count: 1, entities: [{ uuid: 'u-cit', name: 'Passerby', evidence_score: 1, eligible: false }] },
+            ],
+          },
+        },
+      })
+    )
+    await page.goto('/world/g-fuel/run/s5')
+    await expect(page.locator('canvas')).toBeVisible()
+    // Two grounded Personas counted; the below-bar entity shown but refused, not counted.
+    await expect(page.locator('.count')).toContainText('2 personas')
+    await expect(page.locator('.count')).toContainText('1 refused')
+  })
 })
 
 test.describe('FIELD map', () => {
@@ -153,6 +218,65 @@ test.describe('FIELD map', () => {
     await expect(scrub).toBeVisible()
     await scrub.fill('15')
     await expect(page.locator('.round')).toContainText('r15')
+  })
+})
+
+test.describe('Prepare — the evidence bar is a live control', () => {
+  // A fixed roster with known evidence scores. The stub answers /prepare/preview
+  // the way the backend does: eligible iff evidence_score >= max(min_evidence, 1).
+  const ROSTER = [
+    { uuid: 'a', name: 'Ministry', type: 'Ministry', ev: 6 },
+    { uuid: 'b', name: 'Union', type: 'Union', ev: 4 },
+    { uuid: 'c', name: 'Vendor', type: 'Vendor', ev: 3 },
+    { uuid: 'd', name: 'Citizen 1', type: 'Citizen', ev: 2 },
+    { uuid: 'e', name: 'Citizen 2', type: 'Citizen', ev: 1 },
+    { uuid: 'f', name: 'Bare node', type: 'Citizen', ev: 0 },
+  ]
+  const stubPreview = (page) =>
+    page.route('**/api/simulation/prepare/preview', (route) => {
+      const bar = Math.max(route.request().postDataJSON()?.min_evidence ?? 2, 1)
+      const byType = {}
+      let eligible = 0
+      let below = 0
+      for (const r of ROSTER) {
+        const ok = r.ev >= bar
+        ok ? eligible++ : below++
+        ;(byType[r.type] ||= []).push({
+          uuid: r.uuid, name: r.name, summary: '', fact_count: r.ev,
+          stance_facts: 0, evidence_score: r.ev, eligible: ok,
+        })
+      }
+      route.fulfill({
+        json: {
+          success: true,
+          data: {
+            groups: Object.entries(byType).map(([entity_type, entities]) => ({ entity_type, count: entities.length, entities })),
+            eligible_count: eligible,
+            below_bar_count: below,
+            min_evidence: bar,
+          },
+        },
+      })
+    })
+
+  test('raising the bar drops personas below it and repaints the count', async ({ page }) => {
+    await stubPreview(page)
+    await page.goto('/world/g-fuel/prepare/s1')
+
+    // Default bar = 2 -> four of six clear it (ev 6,4,3,2).
+    await expect(page.locator('.bar-val')).toHaveText('min_evidence 2')
+    await expect(page.locator('.count')).toContainText('4 eligible')
+    await expect(page.locator('.count')).toContainText('/ 6 entities')
+
+    // Raise the bar to 4 -> only Ministry(6) and Union(4) survive.
+    await page.locator('.bar-slider').fill('4')
+    await expect(page.locator('.bar-val')).toHaveText('min_evidence 4')
+    await expect(page.locator('.count')).toContainText('2 eligible')
+
+    // Push it past everyone -> the graph grounds no one, honestly.
+    await page.locator('.bar-slider').fill('7')
+    await expect(page.locator('.count')).toContainText('0 eligible')
+    await expect(page.locator('.count')).toContainText('/ 6 entities')
   })
 })
 
