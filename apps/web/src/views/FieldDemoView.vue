@@ -52,8 +52,11 @@ function trajectory(base, sway) {
   return out
 }
 
+// ?n=1200 scales the synthetic population for profiling the WebGL layer at scale.
+const N = Math.max(1, Math.min(5000, Number(new URLSearchParams(location.search).get('n')) || 130))
+
 const personas = ref(
-  Array.from({ length: 130 }, (_, i) => {
+  Array.from({ length: N }, (_, i) => {
     const t = pick(TYPES)
     const forced = lean[t]
     const faction = forced !== undefined ? forced : rnd() < 0.45 ? 'con' : rnd() < 0.6 ? 'pro' : null
