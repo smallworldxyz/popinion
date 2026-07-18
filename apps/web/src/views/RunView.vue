@@ -28,7 +28,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import FieldMap from '../components/FieldMap.vue'
-import { getSimulation, getSimulationProfiles } from '../api/simulation'
+import { getSimulation, getSimulationProfiles, preparePreview } from '../api/simulation'
 
 const props = defineProps({
   graphId: { type: String, required: true },
@@ -39,14 +39,55 @@ const loading = ref(true)
 const personas = ref([])
 const name = ref('Run')
 
+// Every entity the graph observed, with its evidence_score and whether it
+// cleared the bar. Both live on /prepare/preview — zero new backend.
+function flattenPreview(preview) {
+  const out = []
+  for (const g of preview?.data?.groups || []) {
+    for (const e of g.entities || []) out.push({ ...e, source_entity_type: g.entity_type })
+  }
+  return out
+}
+
+// Join the prepared Personas (real positions, faction, evidence) to the preview
+// entities (evidence_score, eligibility), then add the below-bar entities as
+// hollow REFUSED marks so the map is drawn at true population scale.
+function buildMarks(profiles, entities) {
+  const byUuid = new Map(entities.map((e) => [e.uuid, e]))
+  const matched = new Set()
+  const marks = profiles.map((p) => {
+    const e = p.source_entity_uuid ? byUuid.get(p.source_entity_uuid) : null
+    if (e) matched.add(e.uuid)
+    return { ...p, eligible: true, evidence_score: e?.evidence_score ?? p.evidence?.length ?? 0 }
+  })
+  let refusedId = 1_000_000
+  for (const e of entities) {
+    if (e.eligible || matched.has(e.uuid)) continue
+    marks.push({
+      user_id: refusedId++,
+      name: e.name,
+      source_entity_type: e.source_entity_type,
+      faction: null,
+      synthetic: false,
+      evidence: [],
+      eligible: false,
+      evidence_score: e.evidence_score,
+    })
+  }
+  return marks
+}
+
 onMounted(async () => {
   try {
-    const [meta, profs] = await Promise.all([
+    const [meta, profs, preview] = await Promise.all([
       getSimulation(props.simId).catch(() => null),
       getSimulationProfiles(props.simId).catch(() => null),
+      preparePreview({ simulation_id: props.simId }).catch(() => null),
     ])
     name.value = meta?.data?.name || 'Run'
-    personas.value = profs?.data?.profiles || []
+    const profiles = profs?.data?.profiles || []
+    const entities = flattenPreview(preview)
+    personas.value = profiles.length || entities.length ? buildMarks(profiles, entities) : []
   } finally {
     loading.value = false
   }

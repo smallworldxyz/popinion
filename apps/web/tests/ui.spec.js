@@ -141,6 +141,48 @@ test.describe('Worlds — saved runs are grouped and reachable', () => {
     await expect(page.getByText('This run has no prepared Personas yet.')).toBeVisible()
     await expect(page.locator('.field')).toHaveCount(0)
   })
+
+  test('a prepared run paints real stance-coloured marks and hollows the refused', async ({ page }) => {
+    stubWorlds(page)
+    page.route('**/api/simulation/s5', (route) =>
+      route.fulfill({ json: { success: true, data: { simulation_id: 's5', name: 'Fuel base', num_agents: 2 } } })
+    )
+    page.route('**/api/simulation/s5/profiles*', (route) =>
+      route.fulfill({
+        json: {
+          success: true,
+          data: {
+            profiles: [
+              { user_id: 0, name: 'Ministry', user_name: 'ministry_0', source_entity_uuid: 'u-min', source_entity_type: 'Ministry', faction: 'pro', synthetic: false, evidence: ['Defended the levy.'], position: [0.8, 0.3] },
+              { user_id: 1, name: 'Union', user_name: 'union_1', source_entity_uuid: 'u-uni', source_entity_type: 'Union', faction: 'con', synthetic: false, evidence: ['Petitioned against it.', 'Represents drivers.'], position: [0.2, 0.7] },
+            ],
+          },
+        },
+      })
+    )
+    // The preview carries evidence_score + eligibility; one entity is below the bar.
+    page.route('**/api/simulation/prepare/preview', (route) =>
+      route.fulfill({
+        json: {
+          success: true,
+          data: {
+            eligible_count: 2,
+            below_bar_count: 1,
+            groups: [
+              { entity_type: 'Ministry', count: 1, entities: [{ uuid: 'u-min', name: 'Ministry', evidence_score: 6, eligible: true }] },
+              { entity_type: 'Union', count: 1, entities: [{ uuid: 'u-uni', name: 'Union', evidence_score: 4, eligible: true }] },
+              { entity_type: 'Citizen', count: 1, entities: [{ uuid: 'u-cit', name: 'Passerby', evidence_score: 1, eligible: false }] },
+            ],
+          },
+        },
+      })
+    )
+    await page.goto('/world/g-fuel/run/s5')
+    await expect(page.locator('canvas')).toBeVisible()
+    // Two grounded Personas counted; the below-bar entity shown but refused, not counted.
+    await expect(page.locator('.count')).toContainText('2 personas')
+    await expect(page.locator('.count')).toContainText('1 refused')
+  })
 })
 
 test.describe('FIELD map', () => {
