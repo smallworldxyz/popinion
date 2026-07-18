@@ -80,11 +80,11 @@ const personas = ref(
 </script>
 
 <style scoped>
-.demo { display: flex; flex-direction: column; height: 100vh; background: oklch(0.19 0.021 265); }
-.demo-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px; color: oklch(0.82 0.012 265); }
-.tag { font: 600 12px/1 ui-monospace, monospace; letter-spacing: .08em; color: oklch(0.7 0.15 74); }
-.note { margin-left: 14px; font-size: 13px; color: oklch(0.6 0.02 265); }
-.back { color: oklch(0.7 0.05 250); text-decoration: none; font-size: 13px; }
+.demo { display: flex; flex-direction: column; height: 100vh; background: var(--navy); font-family: var(--font-sans); }
+.demo-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px; color: var(--on-dark); }
+.tag { font: 700 11px/1 var(--font-sans); letter-spacing: .14em; text-transform: uppercase; color: var(--emerald-bright); }
+.note { margin-left: 14px; font-size: 13px; color: var(--on-dark-muted); }
+.back { color: var(--emerald-bright); text-decoration: none; font-size: 13px; }
 .back:hover { text-decoration: underline; }
 .demo :deep(.field) { flex: 1; }
 </style>

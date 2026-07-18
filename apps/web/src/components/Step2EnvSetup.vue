@@ -1283,9 +1283,11 @@ const fetchConfigRealtime = async () => {
         }
       }
       
-      // if configuration Generated
-      if (data.config_generated && data.config) {
-        simulationConfig.value = data.config
+      // Config ready. GET /config returns the config flat with agent_configs;
+      // the older { config_generated, config } shape is never sent, so gating
+      // on it left the Start button permanently disabled.
+      if (data.agent_configs || (data.config_generated && data.config)) {
+        simulationConfig.value = data.config || data
         addLog('✓ Simulation configuration Generation Completed')
         
         // Show Detailed configuration summary
@@ -1332,8 +1334,8 @@ const loadPreparedData = async () => {
   try {
     const res = await getSimulationConfigRealtime(props.simulationId)
     if (res.success && res.data) {
-      if (res.data.config_generated && res.data.config) {
-        simulationConfig.value = res.data.config
+      if (res.data.agent_configs || (res.data.config_generated && res.data.config)) {
+        simulationConfig.value = res.data.config || res.data
         addLog('✓ Simulation configuration loaded successfully')
         
         // Show Detailed configuration summary
@@ -1373,10 +1375,12 @@ onMounted(async () => {
   if (props.simulationId) {
     addLog('Step2 Environment Setup Initialization')
     
-    // Quick check if already prepared - if so, load existing data
+    // Quick check if already prepared - if so, load existing data. A reload has
+    // no task_id (prepare/status needs one), so detect prepared-ness by the sim's
+    // own config keyed on simulationId: agent_configs present means prep finished.
     try {
-      const statusRes = await getPrepareStatus({ simulation_id: props.simulationId })
-      if (statusRes.success && statusRes.data?.status === 'completed') {
+      const cfgRes = await getSimulationConfig(props.simulationId)
+      if (cfgRes.success && cfgRes.data?.agent_configs) {
         addLog('Detected existing preparation, loading...')
         await loadPreparedData()
         return

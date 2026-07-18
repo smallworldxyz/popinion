@@ -5,7 +5,7 @@
         <svg class="vector" :viewBox="`0 0 ${W} ${H}`" :width="W" :height="H" aria-hidden="true">
           <defs>
             <marker id="flow-head" markerWidth="5" markerHeight="5" refX="4" refY="2.5" orient="auto">
-              <path d="M0,0 L5,2.5 L0,5 Z" fill="oklch(0.72 0.13 74)" />
+              <path d="M0,0 L5,2.5 L0,5 Z" fill="rgba(230,166,86,0.7)" />
             </marker>
           </defs>
           <g class="grid">
@@ -13,8 +13,8 @@
             <line v-for="(gy, i) in gridY" :key="'hy' + i" x1="0" :y1="gy" :x2="W" :y2="gy" />
           </g>
           <g class="iso">
-            <path v-for="(d, i) in layers.iso.con" :key="'c' + i" :d="d" :style="{ stroke: `rgba(70,120,224,${0.1 + i * 0.06})` }" />
-            <path v-for="(d, i) in layers.iso.pro" :key="'p' + i" :d="d" :style="{ stroke: `rgba(212,158,60,${0.1 + i * 0.06})` }" />
+            <path v-for="(d, i) in layers.iso.con" :key="'c' + i" :d="d" :style="{ stroke: `rgba(245,144,120,${0.12 + i * 0.06})` }" />
+            <path v-for="(d, i) in layers.iso.pro" :key="'p' + i" :d="d" :style="{ stroke: `rgba(31,176,163,${0.14 + i * 0.06})` }" />
           </g>
           <path v-if="layers.fracture" class="fracture" :class="{ strong: layers.fracture.strong }" :d="layers.fracture.d" />
           <g class="flow">
@@ -255,40 +255,40 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.field { display: flex; height: 100%; min-height: 520px; background: oklch(0.19 0.021 265); color: oklch(0.88 0.012 265); }
+.field { display: flex; height: 100%; min-height: 520px; background: var(--navy); color: var(--on-dark); font-family: var(--font-sans); }
 .stage { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.canvas-wrap { position: relative; flex: 1; min-height: 0; background: oklch(0.245 0.026 265); overflow: hidden; }
+.canvas-wrap { position: relative; flex: 1; min-height: 0; background: var(--navy); overflow: hidden; }
 .vector, .marks { position: absolute; inset: 0; display: block; }
 .vector { pointer-events: none; }
-.vector .grid line { stroke: oklch(0.38 0.022 265 / 0.35); stroke-width: 1; }
-.vector .iso path { fill: none; stroke-width: 1; }
-.vector .fracture { fill: none; stroke: oklch(0.7 0.02 265 / 0.28); stroke-width: 1; stroke-dasharray: 3 5; }
-.vector .fracture.strong { stroke: oklch(0.82 0.14 32 / 0.65); stroke-width: 1.6; stroke-dasharray: none; }
-.vector .flow line { stroke: oklch(0.72 0.13 74); stroke-width: 1.4; }
-.sel-ring { position: absolute; width: 26px; height: 26px; margin: -13px 0 0 -13px; border: 1px solid oklch(0.92 0.012 265 / 0.6); border-radius: 50%; pointer-events: none; }
+.vector .grid line { stroke: rgba(201, 214, 229, 0.06); stroke-width: 1; }
+.vector .iso path { fill: none; stroke-width: 1.2; }
+.vector .fracture { fill: none; stroke: rgba(201, 214, 229, 0.24); stroke-width: 1; stroke-dasharray: 3 5; }
+.vector .fracture.strong { stroke: var(--coral-bright); stroke-opacity: 0.7; stroke-width: 1.6; stroke-dasharray: none; }
+.vector .flow line { stroke: rgba(230, 166, 86, 0.7); stroke-width: 1.4; }
+.sel-ring { position: absolute; width: 26px; height: 26px; margin: -13px 0 0 -13px; border: 1px solid rgba(255, 255, 255, 0.6); border-radius: 50%; pointer-events: none; }
 .marks { cursor: crosshair; }
-.axis { position: absolute; bottom: 8px; font: 600 11px/1 ui-monospace, monospace; letter-spacing: .1em; color: oklch(0.6 0.02 265); }
-.axis.oppose { left: 12px; }
-.axis.support { right: 12px; }
-.count { position: absolute; top: 10px; right: 12px; font: 500 11px/1 ui-monospace, monospace; color: oklch(0.6 0.02 265); }
-.count .refused { color: oklch(0.5 0.02 265); }
-.ribbon { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-top: 1px solid oklch(0.32 0.02 265); background: oklch(0.22 0.024 265); }
-.play { width: 30px; height: 26px; border: 1px solid oklch(0.4 0.03 265); background: oklch(0.28 0.028 265); color: oklch(0.9 0.01 265); border-radius: 6px; cursor: pointer; font-size: 11px; }
-.scrub { flex: 1; accent-color: oklch(0.66 0.14 74); }
-.round { font: 600 12px/1 ui-monospace, monospace; color: oklch(0.85 0.01 265); }
-.round .of { color: oklch(0.55 0.02 265); }
-.sheet { width: 280px; flex: none; border-left: 1px solid oklch(0.32 0.02 265); padding: 20px 18px; overflow-y: auto; background: oklch(0.22 0.024 265); }
-.sheet-name { font-size: 16px; font-weight: 650; }
-.sheet-type { font-size: 12px; color: oklch(0.62 0.02 265); margin-top: 2px; }
-.sheet-stance { margin-top: 12px; font: 600 12px/1 ui-monospace, monospace; letter-spacing: .04em; }
-.sheet-stance.oppose { color: oklch(0.62 0.16 252); }
-.sheet-stance.support { color: oklch(0.7 0.15 74); }
-.sheet-stance.neutral { color: oklch(0.78 0.02 265); }
-.sheet-stance .val { margin-left: 8px; color: oklch(0.6 0.02 265); font-weight: 400; }
-.synthetic { margin-left: 8px; color: oklch(0.55 0.03 265); font-weight: 400; }
-.sheet-ev-head { margin-top: 18px; font-size: 12px; color: oklch(0.66 0.018 265); }
+.axis { position: absolute; bottom: 10px; font: 700 10px/1 var(--font-sans); letter-spacing: .14em; text-transform: uppercase; color: var(--on-dark-muted); }
+.axis.oppose { left: 14px; }
+.axis.support { right: 14px; }
+.count { position: absolute; top: 12px; right: 14px; font: 600 11px/1 var(--font-sans); font-variant-numeric: tabular-nums; color: var(--on-dark-muted); }
+.count .refused { color: rgba(201, 214, 229, 0.6); }
+.ribbon { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-top: 1px solid rgba(201, 214, 229, 0.14); background: var(--navy-raised); }
+.play { width: 30px; height: 26px; border: 1px solid rgba(201, 214, 229, 0.24); background: rgba(255, 255, 255, 0.06); color: var(--on-dark); border-radius: var(--r-sm); cursor: pointer; font-size: 11px; }
+.scrub { flex: 1; accent-color: #F3D096; }
+.round { font: 600 12px/1 var(--font-sans); font-variant-numeric: tabular-nums; color: var(--on-dark); }
+.round .of { color: var(--on-dark-muted); }
+.sheet { width: 280px; flex: none; border-left: 1px solid rgba(201, 214, 229, 0.14); padding: 20px 18px; overflow-y: auto; background: var(--navy-raised); }
+.sheet-name { font-family: var(--font-serif); font-size: 17px; font-weight: 500; }
+.sheet-type { font-size: 12px; color: var(--on-dark-muted); margin-top: 2px; }
+.sheet-stance { margin-top: 12px; font: 700 11px/1 var(--font-sans); letter-spacing: .1em; text-transform: uppercase; }
+.sheet-stance.oppose { color: var(--coral-bright); }
+.sheet-stance.support { color: var(--emerald-bright); }
+.sheet-stance.neutral { color: var(--on-dark-muted); }
+.sheet-stance .val { margin-left: 8px; color: var(--on-dark-muted); font-weight: 400; font-variant-numeric: tabular-nums; }
+.synthetic { margin-left: 8px; color: var(--on-dark-muted); font-weight: 400; text-transform: none; letter-spacing: 0; }
+.sheet-ev-head { margin-top: 18px; font-size: 12px; color: var(--on-dark-muted); }
 .sheet-ev { list-style: none; padding: 0; margin: 8px 0 0; display: flex; flex-direction: column; gap: 8px; }
-.sheet-ev li { font-size: 12.5px; line-height: 1.45; color: oklch(0.82 0.012 265); padding-left: 10px; border-left: 1px solid oklch(0.34 0.02 265); }
-.sheet-ev li.none { color: oklch(0.55 0.02 265); border: none; }
-.sheet-empty { color: oklch(0.55 0.02 265); font-size: 13px; line-height: 1.5; }
+.sheet-ev li { font-size: 12.5px; line-height: 1.45; color: var(--on-dark); padding-left: 10px; border-left: 1px solid rgba(201, 214, 229, 0.2); }
+.sheet-ev li.none { color: var(--on-dark-muted); border: none; }
+.sheet-empty { color: var(--on-dark-muted); font-size: 13px; line-height: 1.5; }
 </style>

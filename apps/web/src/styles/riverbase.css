@@ -1,0 +1,59 @@
+/* Riverbase design system — the single source of truth for tokens.
+   Colours, type, radii, shadows and spacing all live here so surfaces consume
+   var(--…) instead of hardcoding literals. Fonts (Fraunces + Inter) are loaded
+   in index.html. */
+:root {
+  /* Brand */
+  --emerald: #0C8577;
+  --emerald-bright: #1FB0A3;
+  --coral: #E86A4C;
+  --coral-bright: #F59078;
+  --coral-on-light: #C74E33;
+  --navy: #0E2340;
+  --navy-raised: #16345C;
+
+  /* Surfaces */
+  --white: #FFFFFF;
+  --subtle: #F4F6F9;
+  --border: #D9E0E8;
+
+  /* Text */
+  --text-strong: #1A2433;
+  --text-muted: #5D6B7C;
+  --on-dark: #FFFFFF;
+  --on-dark-muted: #C9D6E5;
+
+  /* Radius */
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 16px;
+  --r-pill: 999px;
+
+  /* Elevation */
+  --elev-1: 0 2px 6px rgba(26, 36, 51, .08);
+  --elev-2: 0 4px 12px rgba(26, 36, 51, .14);
+
+  /* Spacing scale */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-6: 24px;
+  --s-8: 32px;
+  --s-12: 48px;
+
+  /* Type */
+  --font-serif: 'Fraunces', Georgia, 'Times New Roman', serif;
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+/* Utilities shared across surfaces (match the mock skin). */
+.serif { font-family: var(--font-serif); }
+.eyebrow {
+  font-family: var(--font-sans);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}

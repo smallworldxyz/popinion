@@ -84,24 +84,49 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.worlds { max-width: 820px; margin: 0 auto; padding: 40px 20px; color: #1a1a2e; }
-.head h1 { margin: 0 0 8px; font-size: 28px; }
-.sub { color: #555; line-height: 1.55; max-width: 620px; margin: 0 0 4px; }
-.back { display: inline-block; margin-top: 10px; color: #2563eb; text-decoration: none; font-size: 14px; }
+.worlds {
+  max-width: 820px; margin: 0 auto; padding: 40px 20px;
+  font-family: var(--font-sans); color: var(--text-strong);
+  background: var(--subtle); min-height: 100vh;
+}
+.head h1 {
+  margin: 0 0 8px; font-family: var(--font-serif); font-weight: 500;
+  font-size: 28px; color: var(--text-strong);
+}
+.sub { color: var(--text-muted); line-height: 1.55; max-width: 620px; margin: 0 0 4px; }
+.back {
+  display: inline-block; margin-top: 10px; color: var(--emerald);
+  text-decoration: none; font-size: 14px; font-weight: 500;
+}
 .back:hover { text-decoration: underline; }
-.note { margin-top: 32px; color: #6b7280; }
-.note a { color: #2563eb; }
+.note { margin-top: 32px; color: var(--text-muted); }
+.note a { color: var(--emerald); }
 .list { list-style: none; padding: 0; margin: 28px 0 0; display: flex; flex-direction: column; gap: 10px; }
 .world-link {
   display: flex; align-items: center; justify-content: space-between; gap: 16px;
-  padding: 16px 18px; border: 1px solid #e5e7eb; border-radius: 12px;
-  background: #fff; text-decoration: none; color: inherit; transition: border-color .15s, background .15s;
+  padding: 16px 18px; border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--white); box-shadow: var(--elev-1);
+  text-decoration: none; color: inherit;
+  transition: border-color .15s, box-shadow .15s, transform .15s;
 }
-.world-link:hover { border-color: #c7d2fe; background: #fafbff; }
+.world-link:hover {
+  border-color: var(--emerald); box-shadow: var(--elev-2); transform: translateY(-1px);
+}
 .world-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.world-name { font-weight: 650; font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.world-meta { font-size: 12.5px; color: #6b7280; }
+.world-name {
+  font-family: var(--font-serif); font-weight: 500; font-size: 17px;
+  color: var(--text-strong);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.world-meta {
+  font-size: 12.5px; color: var(--text-muted); font-variant-numeric: tabular-nums;
+}
 .world-stats { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; flex: none; }
-.runs { font-weight: 600; font-size: 14px; color: #374151; }
-.last { font-size: 12px; color: #9ca3af; }
+.runs {
+  font-weight: 600; font-size: 14px; color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.last {
+  font-size: 12px; color: var(--text-muted); font-variant-numeric: tabular-nums;
+}
 </style>

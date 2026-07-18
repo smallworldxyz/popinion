@@ -2,13 +2,16 @@
 // uploads sizes/flags computed here and reproduces the colour ramp in-shader;
 // the 2D fallback and the SVG layers call these directly. One source of truth.
 
-export const OPPOSE = [70, 120, 224]
-export const NEUTRAL = [176, 178, 190]
-export const SUPPORT = [212, 158, 60]
+// Riverbase stance axis: coral (against) → pale → emerald (pro), per the mock.
+// Stance stays colour-blind safe because shape is redundant (down-chevron
+// oppose / bar neutral / up-chevron support) — colour is never the only channel.
+export const OPPOSE = [245, 144, 120]
+export const NEUTRAL = [201, 214, 229]
+export const SUPPORT = [31, 176, 163]
 
 const lerp = (a, b, t) => a + (b - a) * t
 
-// Diverging blue→pale→amber ramp, mirrored in the fragment shader.
+// Diverging coral→pale→emerald ramp, mirrored in the fragment shader.
 export function stanceRGB(s) {
   const t = Math.max(-1, Math.min(1, s))
   return t < 0

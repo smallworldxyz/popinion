@@ -812,20 +812,21 @@ onUnmounted(resetTimers)
   height: 100vh;
   display: flex;
   flex-direction: column;
-  background: #FFF;
+  background: var(--white);
   overflow: hidden;
-  font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: var(--font-sans);
 }
 
-/* Header */
+/* Header — clean Riverbase toolbar */
 .app-header {
   height: 60px;
-  border-bottom: 1px solid #EAEAEA;
+  border-bottom: 1px solid var(--border);
+  box-shadow: var(--elev-1);
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 120px 0 24px;
-  background: #FFF;
+  background: var(--white);
   z-index: 100;
   position: relative;
 }
@@ -837,18 +838,19 @@ onUnmounted(resetTimers)
 }
 
 .brand {
-  font-family: 'JetBrains Mono', monospace;
-  font-weight: 800;
-  font-size: 18px;
-  letter-spacing: 1px;
+  font-family: var(--font-serif);
+  font-weight: 500;
+  font-size: 20px;
+  letter-spacing: 0.5px;
+  color: var(--text-strong);
   cursor: pointer;
 }
 
 .view-switcher {
   display: flex;
-  background: #F5F5F5;
+  background: var(--subtle);
   padding: 4px;
-  border-radius: 6px;
+  border-radius: var(--r-pill);
   gap: 4px;
 }
 
@@ -858,16 +860,20 @@ onUnmounted(resetTimers)
   padding: 6px 16px;
   font-size: 12px;
   font-weight: 600;
-  color: #666;
-  border-radius: 4px;
+  color: var(--text-muted);
+  border-radius: var(--r-pill);
   cursor: pointer;
   transition: all 0.2s;
 }
 
+.switch-btn:hover {
+  color: var(--text-strong);
+}
+
 .switch-btn.active {
-  background: #FFF;
-  color: #000;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  background: var(--white);
+  color: var(--emerald);
+  box-shadow: var(--elev-1);
 }
 
 .header-right {
@@ -879,25 +885,29 @@ onUnmounted(resetTimers)
 .workflow-step {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   font-size: 14px;
 }
 
 .step-num {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
   font-weight: 700;
-  color: #999;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
 }
 
 .step-name {
   font-weight: 700;
-  color: #000;
+  color: var(--text-strong);
 }
 
 .step-divider {
   width: 1px;
   height: 14px;
-  background-color: #E0E0E0;
+  background-color: var(--border);
 }
 
 .status-indicator {
@@ -905,7 +915,7 @@ onUnmounted(resetTimers)
   align-items: center;
   gap: 8px;
   font-size: 12px;
-  color: #666;
+  color: var(--text-muted);
   font-weight: 500;
 }
 
@@ -913,13 +923,13 @@ onUnmounted(resetTimers)
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #CCC;
+  background: var(--text-muted);
 }
 
-.status-indicator.ready .dot { background: #4CAF50; }
-.status-indicator.processing .dot { background: #FF5722; animation: pulse 1s infinite; }
-.status-indicator.completed .dot { background: #4CAF50; }
-.status-indicator.error .dot { background: #F44336; }
+.status-indicator.ready .dot { background: var(--emerald); }
+.status-indicator.processing .dot { background: var(--coral); animation: pulse 1s infinite; }
+.status-indicator.completed .dot { background: var(--emerald); }
+.status-indicator.error .dot { background: var(--coral-on-light); }
 
 @keyframes pulse { 50% { opacity: 0.5; } }
 
@@ -929,6 +939,7 @@ onUnmounted(resetTimers)
   display: flex;
   position: relative;
   overflow: hidden;
+  background: var(--subtle);
 }
 
 .panel-wrapper {
@@ -939,6 +950,6 @@ onUnmounted(resetTimers)
 }
 
 .panel-wrapper.left {
-  border-right: 1px solid #EAEAEA;
+  border-right: 1px solid var(--border);
 }
 </style>

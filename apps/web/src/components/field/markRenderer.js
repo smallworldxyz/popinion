@@ -60,9 +60,9 @@ in float v_alpha;
 flat in int v_cell;
 out vec4 frag;
 vec3 stanceColor(float s) {
-  vec3 O = vec3(70.0, 120.0, 224.0) / 255.0;
-  vec3 N = vec3(176.0, 178.0, 190.0) / 255.0;
-  vec3 S = vec3(212.0, 158.0, 60.0) / 255.0;
+  vec3 O = vec3(245.0, 144.0, 120.0) / 255.0;
+  vec3 N = vec3(201.0, 214.0, 229.0) / 255.0;
+  vec3 S = vec3(31.0, 176.0, 163.0) / 255.0;
   float t = clamp(s, -1.0, 1.0);
   return t < 0.0 ? mix(N, O, -t) : mix(N, S, t);
 }
@@ -70,7 +70,7 @@ void main() {
   vec2 origin = vec2((v_cell == 1 || v_cell == 3) ? 0.5 : 0.0, v_cell >= 2 ? 0.5 : 0.0);
   float a = texture(u_atlas, origin + gl_PointCoord * 0.5).a;
   if (a < 0.02) discard;
-  vec3 col = v_cell == 3 ? vec3(0.5, 0.5, 0.52) : stanceColor(v_stance);
+  vec3 col = v_cell == 3 ? vec3(0.788, 0.839, 0.898) : stanceColor(v_stance);
   frag = vec4(col, a * v_alpha);
 }`
 
@@ -302,7 +302,7 @@ function create2D(canvas) {
         const stance = from[i] + (to[i] - from[i]) * easeOutQuint(t)
         const x = px(m._x), y = py(m._y), sel = i === selected
         if (isRefused(m)) {
-          ctx.strokeStyle = 'rgb(128,128,133)'; ctx.globalAlpha = sel ? 0.7 : 0.45; ctx.lineWidth = 1
+          ctx.strokeStyle = 'rgb(201,214,229)'; ctx.globalAlpha = sel ? 0.7 : 0.45; ctx.lineWidth = 1
           glyph(x, y, sel ? 5 : 3.5, 0, true); ctx.stroke(); continue
         }
         const [r, g, b] = stanceRGB(stance)

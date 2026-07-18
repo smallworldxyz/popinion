@@ -350,12 +350,14 @@ onUnmounted(stopPolling)
 
 <style scoped>
 .trust-panel {
-  border: 1px solid #E5E7EB;
-  border-top: 2px solid #111827;
+  border: 1px solid var(--border);
+  border-top: 2px solid var(--emerald);
+  border-radius: var(--r-md);
+  box-shadow: var(--elev-1);
   padding: 20px 24px 8px;
   margin-bottom: 36px;
-  background: #FCFCFB;
-  font-family: 'Times New Roman', Times, serif;
+  background: var(--white);
+  font-family: var(--font-sans);
 }
 
 .panel-heading {
@@ -370,24 +372,24 @@ onUnmounted(stopPolling)
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: #111827;
+  color: var(--text-strong);
 }
 
 .panel-note {
   font-size: 13px;
   font-style: italic;
-  color: #9CA3AF;
+  color: var(--text-muted);
 }
 
 .block {
   padding: 14px 0 16px;
-  border-top: 1px solid #ECECEA;
+  border-top: 1px solid var(--border);
 }
 
 .block-title {
   font-size: 14px;
   font-weight: 700;
-  color: #111827;
+  color: var(--text-strong);
   margin: 0 0 6px;
 }
 
@@ -395,14 +397,14 @@ onUnmounted(stopPolling)
   font-weight: 400;
   font-style: italic;
   font-size: 12px;
-  color: #9CA3AF;
+  color: var(--text-muted);
   margin-left: 6px;
 }
 
 .block-text {
   font-size: 14px;
   line-height: 1.65;
-  color: #374151;
+  color: var(--text-strong);
   margin: 0 0 10px;
 }
 
@@ -410,27 +412,29 @@ onUnmounted(stopPolling)
   font-size: 13px;
   font-style: italic;
   line-height: 1.6;
-  color: #6B7280;
+  color: var(--text-muted);
   margin: 10px 0 12px;
 }
 
 .quiet-line {
   font-size: 13px;
   font-style: italic;
-  color: #9CA3AF;
+  color: var(--text-muted);
   margin: 4px 0 12px;
 }
 
 .error-line {
   font-size: 13px;
-  color: #B91C1C;
+  color: var(--coral-on-light);
   margin: 8px 0 12px;
 }
 
 .figure {
-  font-size: 20px;
-  font-weight: 700;
-  color: #111827;
+  font-family: var(--font-serif);
+  font-size: 22px;
+  font-weight: 500;
+  color: var(--text-strong);
+  font-variant-numeric: tabular-nums;
 }
 
 .check-btn {
@@ -440,9 +444,9 @@ onUnmounted(stopPolling)
   font-family: inherit;
   font-size: 13px;
   font-weight: 600;
-  color: #111827;
-  background: #FFFFFF;
-  border: 1px solid #111827;
+  color: var(--navy);
+  background: #fff;
+  border: 1px solid var(--navy);
   padding: 8px 16px;
   cursor: pointer;
   margin-bottom: 4px;
@@ -450,8 +454,8 @@ onUnmounted(stopPolling)
 }
 
 .check-btn:hover:not(:disabled) {
-  background: #111827;
-  color: #FFFFFF;
+  background: var(--navy);
+  color: #fff;
 }
 
 .check-btn:disabled {
@@ -460,14 +464,14 @@ onUnmounted(stopPolling)
 }
 
 .check-btn.ghost {
-  border-color: #D1D5DB;
-  color: #6B7280;
+  border-color: var(--border);
+  color: var(--text-muted);
 }
 
 .check-btn.ghost:hover {
-  border-color: #111827;
-  background: #FFFFFF;
-  color: #111827;
+  border-color: var(--navy);
+  background: #fff;
+  color: var(--navy);
 }
 
 .btn-spinner {
@@ -489,17 +493,17 @@ onUnmounted(stopPolling)
 .callout {
   font-size: 13.5px;
   line-height: 1.6;
-  color: #111827;
-  background: #FFFFFF;
+  color: var(--text-strong);
+  background: var(--white);
   padding: 10px 14px;
   margin: 0 0 10px;
 }
 
 .callout.moves {
-  border-left: 3px solid #166534;
+  border-left: 3px solid var(--emerald);
 }
 
 .callout.noise {
-  border-left: 3px solid #B91C1C;
+  border-left: 3px solid var(--coral-on-light);
 }
 </style>
