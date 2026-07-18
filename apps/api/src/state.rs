@@ -39,7 +39,7 @@ impl AppState {
 
     /// Build a client for a slot, routing to the ChatGPT subscription backend
     /// when its base_url is the sentinel, else the OpenAI-compatible API path.
-    fn client_for(&self, slot: &crate::settings::LlmSlot) -> Llm {
+    pub fn client_for(&self, slot: &crate::settings::LlmSlot) -> Llm {
         if crate::chatgpt_auth::is_chatgpt_backend(&slot.base_url) {
             Llm::chatgpt(&slot.model, self.chatgpt.clone())
         } else {
