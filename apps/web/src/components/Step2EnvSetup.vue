@@ -869,7 +869,7 @@ const handleKnowledgeImport = async (event) => {
   if (!file) return
   
   if (!file.name.endsWith('.json')) {
-    alert('Only JSON files can be imported. Export your Knowledge Pad as JSON to import it here.')
+    addLog('Import rejected: only JSON files can be imported. Export your Knowledge Pad as JSON to import it here.')
     event.target.value = ''
     return
   }
@@ -879,7 +879,7 @@ const handleKnowledgeImport = async (event) => {
     const data = JSON.parse(text)
     
     if (!data.highlights || !Array.isArray(data.highlights)) {
-      alert('Invalid Knowledge Pad file. Missing highlights array.')
+      addLog('Import rejected: invalid Knowledge Pad file, missing highlights array.')
       event.target.value = ''
       return
     }
@@ -915,7 +915,7 @@ const handleKnowledgeImport = async (event) => {
     addLog(`Parsed ${data.highlights.length} highlights from ${Object.keys(agentCounts).length} agent(s)`)
     event.target.value = ''
   } catch (err) {
-    alert(`Failed to parse JSON: ${err.message}`)
+    addLog(`Import failed: could not parse JSON — ${err.message}`)
     event.target.value = ''
   }
 }

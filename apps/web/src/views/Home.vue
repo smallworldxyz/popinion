@@ -86,6 +86,11 @@ Markdown is fine — it's treated exactly like an uploaded .md file."
             <router-link to="/settings" class="model-note-link">Set up a model →</router-link>
           </div>
 
+          <div v-if="error" class="model-note missing">
+            <div class="model-note-title">Couldn't start the engine.</div>
+            <div class="model-note-reason">{{ error }}</div>
+          </div>
+
           <div class="chat-toolbar">
             <button class="attach-btn" @click="triggerFileInput" :disabled="loading">
               📎 Reality seeds
@@ -214,6 +219,7 @@ Markdown is fine — it's treated exactly like an uploaded .md file."
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { getLlmStatus } from '../api/settings'
+import { generateOntology } from '../api/graph'
 
 const router = useRouter()
 
@@ -347,34 +353,48 @@ const scrollToBottom = () => {
   })
 }
 
-// Start Simulation - Jump immediately, API call in Process page
-const startSimulation = () => {
+// Start Simulation: upload the reality seeds here, then land on the real
+// project. Doing the call before navigation (rather than stashing the files in
+// an in-memory module and jumping to /process/new) means a refresh can't strand
+// the shell with no data to build from.
+const startSimulation = async () => {
   if (!canSubmit.value || loading.value) return
-  
-  // Store pending upload data
-  import('../store/pendingUpload.js').then(({ setPendingUpload }) => {
-    const channel = telegramChannel.value.trim()
-    const typed = pastedText.value.trim()
-    const seeds = typed
-      ? [...files.value, new File([typed], 'written-note.md', { type: 'text/markdown' })]
-      : files.value
-    setPendingUpload(
-      seeds,
-      formData.value.simulationRequirement,
-      channel ? { channel, maxPosts: telegramMaxPosts.value } : null
-    )
 
-    // Jump immediately to Process page (use special flag for new items)
-    router.push({
-      name: 'Process',
-      params: { projectId: 'new' }
-    })
-  })
+  const channel = telegramChannel.value.trim()
+  const typed = pastedText.value.trim()
+  const seeds = typed
+    ? [...files.value, new File([typed], 'written-note.md', { type: 'text/markdown' })]
+    : files.value
+
+  loading.value = true
+  error.value = ''
+  try {
+    const formPayload = new FormData()
+    seeds.forEach(f => formPayload.append('files', f))
+    formPayload.append('simulation_requirement', formData.value.simulationRequirement)
+    if (channel) {
+      formPayload.append('telegram_channel', channel)
+      formPayload.append('telegram_max_posts', String(telegramMaxPosts.value))
+    }
+
+    const res = await generateOntology(formPayload)
+    if (res.success && res.data?.project_id) {
+      router.push({ name: 'Process', params: { projectId: res.data.project_id } })
+    } else {
+      error.value = res.error || 'Failed to analyze the reality seeds.'
+    }
+  } catch (err) {
+    error.value = err.response?.data?.error || err.message
+  } finally {
+    loading.value = false
+  }
 }
 </script>
 
-<style scoped>
-/* Global variables and Reset */
+<!-- Tokens must live on the real :root, so this block is intentionally
+     unscoped — a scoped :root gets a data-attribute and matches nothing,
+     leaving every var(--…) below undefined. -->
+<style>
 :root {
   --black: #000000;
   --white: #FFFFFF;
@@ -382,14 +402,12 @@ const startSimulation = () => {
   --gray-light: #F5F5F5;
   --gray-text: #666666;
   --border: #E5E5E5;
-  /* 
-    Use Space Grotesk as main title font, JetBrains Mono as code/label font
-    Ensure these Google Fonts are imported in index.html 
-  */
   --font-mono: 'JetBrains Mono', monospace;
   --font-sans: 'Space Grotesk', -apple-system, sans-serif;
 }
+</style>
 
+<style scoped>
 .home-container {
   min-height: 100vh;
   background: var(--white);

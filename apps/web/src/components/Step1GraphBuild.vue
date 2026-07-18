@@ -174,6 +174,7 @@
             <span v-if="creatingSimulation" class="spinner-sm"></span>
             {{ creatingSimulation ? 'Creating...' : 'Enter Environment Setup ➝' }}
           </button>
+          <p v-if="simError" class="sim-error">{{ simError }}</p>
         </div>
       </div>
     </div>
@@ -215,6 +216,7 @@ defineEmits(['next-step'])
 const selectedOntologyItem = ref(null)
 const logContent = ref(null)
 const creatingSimulation = ref(false)
+const simError = ref('')
 
 // Enter Environment Setup - Create simulation and navigate
 const handleEnterEnvSetup = async () => {
@@ -224,7 +226,8 @@ const handleEnterEnvSetup = async () => {
   }
   
   creatingSimulation.value = true
-  
+  simError.value = ''
+
   try {
     const res = await createSimulation({
       project_id: props.projectData.project_id,
@@ -232,7 +235,7 @@ const handleEnterEnvSetup = async () => {
       enable_twitter: true,
       enable_reddit: true
     })
-    
+
     if (res.success && res.data?.simulation_id) {
       // Navigate to simulation page
       router.push({
@@ -241,11 +244,11 @@ const handleEnterEnvSetup = async () => {
       })
     } else {
       console.error('Failed to create simulation:', res.error)
-      alert('Failed to create simulation: ' + (res.error || 'Unknown error'))
+      simError.value = 'Failed to create simulation: ' + (res.error || 'Unknown error')
     }
   } catch (err) {
     console.error('Simulation creation error:', err)
-    alert('Simulation creation error: ' + err.message)
+    simError.value = 'Simulation creation error: ' + err.message
   } finally {
     creatingSimulation.value = false
   }
@@ -618,6 +621,13 @@ watch(() => props.systemLogs.length, () => {
   font-weight: 600;
   cursor: pointer;
   transition: opacity 0.2s;
+}
+
+.sim-error {
+  margin-top: 10px;
+  color: #B91C1C;
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .action-btn:hover:not(:disabled) {
