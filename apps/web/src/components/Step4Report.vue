@@ -16,17 +16,12 @@
             <div class="header-divider"></div>
           </div>
 
-          <!-- Credibility & Limits: surfaced above the prose so the reader
-               calibrates trust before consuming conclusions -->
-          <CredibilityPanel v-if="simulationId" :simulation-id="simulationId" />
-
+          <!-- Credibility & Trust-checks moved to the Run header (RunView) so
+               trust is visible on any Run, not buried behind a generated report.
+               RehearsalPanel stays here until its compare surface lands. -->
           <!-- Scenario A/B rehearsal: run an alternative event against the same
                population + seed and see if the delta beats the noise floor -->
           <RehearsalPanel v-if="simulationId" :simulation-id="simulationId" />
-
-          <!-- Trust checks: measure the sim's own noise floor (rerun variance)
-               and whether the grounded personas drive the result (ablation) -->
-          <TrustChecksPanel v-if="simulationId" :simulation-id="simulationId" />
 
           <!-- Sections List -->
           <div class="sections-list">
@@ -407,9 +402,7 @@
 import { ref, computed, watch, onMounted, onUnmounted, nextTick, h, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { getAgentLog, getConsoleLog } from '../api/report'
-import CredibilityPanel from './CredibilityPanel.vue'
 import RehearsalPanel from './RehearsalPanel.vue'
-import TrustChecksPanel from './TrustChecksPanel.vue'
 
 const router = useRouter()
 

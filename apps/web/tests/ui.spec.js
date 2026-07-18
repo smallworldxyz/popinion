@@ -142,6 +142,25 @@ test.describe('Worlds — saved runs are grouped and reachable', () => {
     await expect(page.locator('.field')).toHaveCount(0)
   })
 
+  test('trust panels live in the Run header, present without a generated report', async ({ page }) => {
+    stubWorlds(page)
+    page.route('**/api/simulation/s7', (route) =>
+      route.fulfill({ json: { success: true, data: { simulation_id: 's7', name: 'Fuel base', num_agents: 0, noise_floor: 0.12 } } })
+    )
+    page.route('**/api/simulation/s7/profiles*', (route) =>
+      route.fulfill({ json: { success: true, data: { profiles: [] } } })
+    )
+    page.route('**/api/simulation/s7/credibility', (route) =>
+      route.fulfill({ json: { success: true, data: { total: 2, grounded: 2, synthetic: 0, agent_weighted: [], post_weighted: [] } } })
+    )
+    await page.goto('/world/g-fuel/run/s7')
+    // No report anywhere on this Run, yet both trust panels are in the DOM.
+    await expect(page.locator('.trust-header .credibility-panel')).toBeVisible()
+    await expect(page.locator('.trust-header .trust-panel')).toBeVisible()
+    // The floor comes from the persisted Run property, not a rerun this session.
+    await expect(page.locator('.trust-panel')).toContainText('12 points')
+  })
+
   test('a prepared run paints real stance-coloured marks and hollows the refused', async ({ page }) => {
     stubWorlds(page)
     page.route('**/api/simulation/s5', (route) =>
