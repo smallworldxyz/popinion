@@ -291,5 +291,16 @@ export const getSurvey = (surveyId) => {
   return service.get(`/api/simulation/survey/${surveyId}`)
 }
 
+/**
+ * Preview the population at an explicit evidence bar. Same synchronous endpoint
+ * as preparePreview, with min_evidence made a first-class argument so the prepare
+ * surface can drive it live and repaint as entities cross the bar. The backend
+ * already accepts min_evidence (Option<usize>, clamped to >=1); this just names it.
+ * @param {string} simulationId
+ * @param {number} minEvidence - minimum evidence_score for an entity to stay eligible
+ * @returns {Promise} { groups, eligible_count, below_bar_count, min_evidence }
+ */
+export const preparePreviewAtBar = (simulationId, minEvidence) =>
+  service.post('/api/simulation/prepare/preview', { simulation_id: simulationId, min_evidence: minEvidence })
 
 
