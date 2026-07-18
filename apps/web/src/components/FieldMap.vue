@@ -2,7 +2,28 @@
   <div class="field">
     <div class="stage">
       <div class="canvas-wrap" ref="wrap">
-        <canvas ref="canvas" @mousemove="onMove" @mouseleave="clearHover"></canvas>
+        <svg class="vector" :viewBox="`0 0 ${W} ${H}`" :width="W" :height="H" aria-hidden="true">
+          <defs>
+            <marker id="flow-head" markerWidth="5" markerHeight="5" refX="4" refY="2.5" orient="auto">
+              <path d="M0,0 L5,2.5 L0,5 Z" fill="oklch(0.72 0.13 74)" />
+            </marker>
+          </defs>
+          <g class="grid">
+            <line v-for="(gx, i) in gridX" :key="'vx' + i" :x1="gx" y1="0" :x2="gx" :y2="H" />
+            <line v-for="(gy, i) in gridY" :key="'hy' + i" x1="0" :y1="gy" :x2="W" :y2="gy" />
+          </g>
+          <g class="iso">
+            <path v-for="(d, i) in layers.iso.con" :key="'c' + i" :d="d" :style="{ stroke: `rgba(70,120,224,${0.1 + i * 0.06})` }" />
+            <path v-for="(d, i) in layers.iso.pro" :key="'p' + i" :d="d" :style="{ stroke: `rgba(212,158,60,${0.1 + i * 0.06})` }" />
+          </g>
+          <path v-if="layers.fracture" class="fracture" :class="{ strong: layers.fracture.strong }" :d="layers.fracture.d" />
+          <g class="flow">
+            <line v-for="(f, i) in layers.flow" :key="'f' + i" :x1="f.x1" :y1="f.y1" :x2="f.x2" :y2="f.y2"
+                  :style="{ opacity: 0.18 + Math.min(1, f.mag) * 0.6 }" marker-end="url(#flow-head)" />
+          </g>
+        </svg>
+        <canvas ref="canvas" class="marks" @mousemove="onMove" @mouseleave="clearHover"></canvas>
+        <div v-if="selected" class="sel-ring" :style="{ left: mx(selected) + 'px', top: my(selected) + 'px' }"></div>
         <div class="axis oppose">OPPOSE</div>
         <div class="axis support">SUPPORT</div>
         <div class="count">{{ shownCount }} personas<span v-if="refusedCount" class="refused"> · {{ refusedCount }} refused</span></div>
@@ -38,7 +59,9 @@
 
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
-import { contourDensity, geoPath } from 'd3'
+import { createMarkRenderer } from './field/markRenderer'
+import { computeLayers } from './field/layers'
+import { isRefused, easeOutQuint, scalarClass, scalarLabel, SWEEP_MS, STAGGER_MS } from './field/marks'
 
 const props = defineProps({
   personas: { type: Array, default: () => [] },
@@ -49,31 +72,28 @@ const canvas = ref(null)
 const selected = ref(null)
 const round = ref(0)
 const playing = ref(false)
+const shownCount = ref(0)
+const refusedCount = ref(0)
+const layers = ref({ iso: { con: [], pro: [] }, fracture: null, flow: [] })
+const W = ref(0)
+const H = ref(0)
+const PAD = 28
 
-// Stance colour anchors (approx RGB of the DESIGN.md oklch values), lerped by a
-// scalar in [-1,1]: oppose (blue) -> neutral (pale) -> support (amber).
-const OPPOSE = [70, 120, 224]
-const NEUTRAL = [176, 178, 190]
-const SUPPORT = [212, 158, 60]
-const lerp = (a, b, t) => a + (b - a) * t
-const stanceColor = (s) => {
-  const t = Math.max(-1, Math.min(1, s))
-  const [r, g, b] = t < 0
-    ? [0, 1, 2].map(i => lerp(NEUTRAL[i], OPPOSE[i], -t))
-    : [0, 1, 2].map(i => lerp(NEUTRAL[i], SUPPORT[i], t))
-  return `rgb(${r | 0}, ${g | 0}, ${b | 0})`
-}
-const scalarClass = (s) => (s < -0.15 ? 'oppose' : s > 0.15 ? 'support' : 'neutral')
-const scalarLabel = (s) => (s < -0.15 ? 'Opposes' : s > 0.15 ? 'Supports' : 'Neutral')
+// The 1000 marks are held in a plain array, deliberately out of Vue's reactivity
+// (redesign-plan §10): the render loop owns them, Vue owns the DOM chrome.
+let marks = []
+let fromArr = new Float32Array(0)
+let toArr = new Float32Array(0)
+let delayArr = new Float32Array(0)
+let renderer = null
+let raf = null
+let startMs = -1e9
+let dpr = 1
+let selIdx = -1
+let playTimer
 
-// Mark radius grows with how much the graph actually knows (evidence_score:
-// facts + summary). Demo personas carry no score, so they keep the fixed size.
-const markSize = (m) =>
-  m.evidence_score != null ? Math.max(3.5, Math.min(9, 3.5 + Math.sqrt(m.evidence_score) * 1.3)) : 5
-
-// A mark for an entity below the evidence bar: real, shown at true scale, but
-// never coloured, sized, contoured, or counted (see redesign-plan.md §3.5).
-const isRefused = (m) => m.eligible === false
+const gridX = computed(() => Array.from({ length: 7 }, (_, i) => ((i + 1) / 8) * W.value))
+const gridY = computed(() => Array.from({ length: 5 }, (_, i) => ((i + 1) / 6) * H.value))
 
 const factionScalar = (p) => (p.faction === 'con' ? -0.7 : p.faction === 'pro' ? 0.7 : 0)
 const roundCount = computed(() => {
@@ -83,10 +103,13 @@ const roundCount = computed(() => {
 })
 const stanceAt = (p, r) =>
   Array.isArray(p.trajectory) && p.trajectory.length ? p.trajectory[Math.min(r, p.trajectory.length - 1)] : factionScalar(p)
+const deltaAt = (p, r) => stanceAt(p, r) - (r > 0 ? stanceAt(p, r - 1) : stanceAt(p, 0))
 
 const selectedStance = computed(() => (selected.value ? stanceAt(selected.value, round.value) : 0))
-const shownCount = computed(() => marks.value.filter((m) => !isRefused(m)).length)
-const refusedCount = computed(() => marks.value.filter(isRefused).length)
+const px = (v) => PAD + v * (W.value - 2 * PAD)
+const py = (v) => (H.value - PAD) - v * (H.value - 2 * PAD)
+const mx = (m) => px(m._x)
+const my = (m) => py(m._y)
 
 // ---- layout (mirror of the backend; used when a Persona has no position) ----
 function jitter(id) {
@@ -100,132 +123,64 @@ function layout(personas) {
   for (const p of personas) { const t = p.source_entity_type || 'Entity'; if (!types.includes(t)) types.push(t) }
   const bands = Math.max(types.length, 1)
   return personas.map((p) => {
-    const base = { ...p, cs: factionScalar(p), ts: factionScalar(p) }
-    if (Array.isArray(p.position)) return { ...base, _x: p.position[0], _y: p.position[1] }
+    if (Array.isArray(p.position)) return { ...p, _x: p.position[0], _y: p.position[1] }
     const sx = p.faction === 'con' ? 0.2 : p.faction === 'pro' ? 0.8 : 0.5
     const band = types.indexOf(p.source_entity_type || 'Entity')
     const by = (band + 0.5) / bands
     const [jx, jy] = jitter(p.user_id ?? 0)
-    return { ...base, _x: Math.min(0.98, Math.max(0.02, sx + jx * 0.12)), _y: Math.min(0.98, Math.max(0.02, by + jy * (0.8 / bands))) }
+    return { ...p, _x: Math.min(0.98, Math.max(0.02, sx + jx * 0.12)), _y: Math.min(0.98, Math.max(0.02, by + jy * (0.8 / bands))) }
   })
 }
 
-const marks = ref([])
-let ctx, dpr, W, H, ro, raf, animT0, iso = { con: [], pro: [] }
-const PAD = 28
-const px = (v) => PAD + v * (W - 2 * PAD)
-const py = (v) => (H - PAD) - v * (H - 2 * PAD)
-
-// Isopleths: density contours of where opposition and support concentrate at the
-// current round, drawn like isobars. Recomputed per round (membership shifts as
-// stance moves), so the ridges themselves drift, which is the weather-map read.
-function computeIso() {
-  if (!W || !marks.value.length) { iso = { con: [], pro: [] }; return }
-  const density = (pred) =>
-    contourDensity()
-      .x((m) => px(m._x))
-      .y((m) => py(m._y))
-      .size([Math.round(W), Math.round(H)])
-      .bandwidth(26)
-      .thresholds(5)(marks.value.filter(pred))
-  iso = {
-    con: density((m) => m.ts < -0.2),
-    pro: density((m) => m.ts > 0.2),
-  }
+function recomputeLayers() {
+  layers.value = computeLayers(marks, (m) => stanceAt(m, round.value), (m) => deltaAt(m, round.value), W.value, H.value, PAD)
 }
 
-function resize() {
-  if (!canvas.value || !wrap.value) return
-  dpr = window.devicePixelRatio || 1
-  const r = wrap.value.getBoundingClientRect()
-  W = r.width; H = r.height
-  canvas.value.width = W * dpr; canvas.value.height = H * dpr
-  canvas.value.style.width = W + 'px'; canvas.value.style.height = H + 'px'
-  ctx = canvas.value.getContext('2d')
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-  computeIso()
-  draw()
-}
-
-function chevron(x, y, s, kind) {
-  ctx.beginPath()
-  if (kind === 'oppose') { ctx.moveTo(x - s, y - s * 0.6); ctx.lineTo(x, y + s * 0.7); ctx.lineTo(x + s, y - s * 0.6) }
-  else if (kind === 'support') { ctx.moveTo(x - s, y + s * 0.6); ctx.lineTo(x, y - s * 0.7); ctx.lineTo(x + s, y + s * 0.6) }
-  else { ctx.moveTo(x - s, y); ctx.lineTo(x + s, y) }
-}
-
-function draw() {
-  if (!ctx) return
-  ctx.fillStyle = 'oklch(0.245 0.026 265)'
-  ctx.fillRect(0, 0, W, H)
-  ctx.strokeStyle = 'oklch(0.38 0.022 265 / 0.35)'
-  ctx.lineWidth = 1
-  for (let i = 1; i < 8; i++) { const g = (i / 8) * W; ctx.beginPath(); ctx.moveTo(g, 0); ctx.lineTo(g, H); ctx.stroke() }
-  for (let i = 1; i < 6; i++) { const g = (i / 6) * H; ctx.beginPath(); ctx.moveTo(0, g); ctx.lineTo(W, g); ctx.stroke() }
-
-  // Isopleths under the marks.
-  const path = geoPath(null, ctx)
-  for (const [rings, color] of [[iso.con, '70, 120, 224'], [iso.pro, '212, 158, 60']]) {
-    rings.forEach((c, i) => {
-      ctx.beginPath()
-      path(c)
-      ctx.strokeStyle = `rgba(${color}, ${0.1 + i * 0.06})`
-      ctx.lineWidth = 1
-      ctx.stroke()
-    })
-  }
-
-  for (const m of marks.value) {
-    const x = px(m._x), y = py(m._y)
-    const sel = m === selected.value
-    if (isRefused(m)) {
-      // Hollow outline, uncoloured: what the world refused to invent, kept visible.
-      ctx.strokeStyle = 'oklch(0.5 0.02 265)'
-      ctx.globalAlpha = sel ? 0.7 : 0.45
-      ctx.lineWidth = 1
-      ctx.beginPath(); ctx.arc(x, y, sel ? 5 : 3.5, 0, Math.PI * 2); ctx.stroke()
-      continue
-    }
-    ctx.strokeStyle = stanceColor(m.cs)
-    ctx.globalAlpha = m.synthetic ? 0.5 : 1
-    ctx.lineWidth = sel ? 3 : 2
-    chevron(x, y, markSize(m) + (sel ? 2 : 0), scalarClass(m.cs))
-    ctx.stroke()
-  }
-  ctx.globalAlpha = 1
-  if (selected.value) {
-    ctx.strokeStyle = 'oklch(0.92 0.012 265)'; ctx.globalAlpha = 0.6; ctx.lineWidth = 1
-    ctx.beginPath(); ctx.arc(px(selected.value._x), py(selected.value._y), 12, 0, Math.PI * 2); ctx.stroke()
-    ctx.globalAlpha = 1
-  }
-}
-
-// Recolour sweep: marks ease toward the round's target stance, staggered left to
-// right so influence visibly travels across the field. Colour only, no layout.
-const SWEEP_MS = 850
-function animate(ts) {
-  if (!animT0) animT0 = ts
-  const elapsed = ts - animT0
-  let moving = false
-  for (const m of marks.value) {
-    const delay = m._x * 350 // left edge moves first
-    const p = Math.max(0, Math.min(1, (elapsed - delay) / (SWEEP_MS - 350)))
-    const e = 1 - Math.pow(1 - p, 4) // ease-out-quart
-    const next = m.cs + (m.ts - m.cs) * (p >= 1 ? 1 : e * 0.35)
-    if (Math.abs(m.ts - next) > 0.002) moving = true
-    m.cs = p >= 1 ? m.ts : next
-  }
-  draw()
-  if (moving) raf = requestAnimationFrame(animate)
+function frame() {
+  const elapsed = (performance.now() - startMs) / 1000
+  renderer.render(elapsed, SWEEP_MS / 1000, selIdx)
+  if (elapsed * 1000 < STAGGER_MS + SWEEP_MS) raf = requestAnimationFrame(frame)
   else raf = null
 }
-function retarget() {
-  for (const m of marks.value) m.ts = stanceAt(m, round.value)
-  computeIso()
-  animT0 = 0
-  if (!raf) raf = requestAnimationFrame(animate)
+function paint() {
+  if (!renderer) return
+  if (raf) return // the loop is already painting
+  renderer.render((performance.now() - startMs) / 1000, SWEEP_MS / 1000, selIdx)
 }
-function seek(r) { round.value = r; retarget() }
+
+// Advance to round r: freeze each mark's currently-shown colour as the sweep's
+// start, retarget to round r, and stagger the delays outward from the biggest
+// mover (the Persona whose stance shifted most). Colour only, layout never moves.
+function retarget(r) {
+  const n = marks.length
+  const now = performance.now()
+  const prevElapsed = (now - startMs) / 1000
+  const dur = SWEEP_MS / 1000
+  const from = new Float32Array(n)
+  const to = new Float32Array(n)
+  for (let i = 0; i < n; i++) {
+    const t = Math.max(0, Math.min(1, (prevElapsed - delayArr[i]) / dur))
+    from[i] = fromArr[i] + (toArr[i] - fromArr[i]) * easeOutQuint(t)
+    to[i] = stanceAt(marks[i], r)
+  }
+  let oi = -1, best = 0
+  for (let i = 0; i < n; i++) { const d = Math.abs(to[i] - from[i]); if (d > best) { best = d; oi = i } }
+  const delay = new Float32Array(n)
+  if (oi >= 0 && best > 1e-3) {
+    const ox = marks[oi]._x, oy = marks[oi]._y
+    let maxD = 1e-6
+    for (let i = 0; i < n; i++) { const d = Math.hypot(marks[i]._x - ox, marks[i]._y - oy); if (d > maxD) maxD = d }
+    for (let i = 0; i < n; i++) delay[i] = (Math.hypot(marks[i]._x - ox, marks[i]._y - oy) / maxD) * (STAGGER_MS / 1000)
+  }
+  fromArr = from; toArr = to; delayArr = delay
+  renderer.setRound(from, to, delay)
+  startMs = now
+  round.value = r
+  recomputeLayers()
+  if (!raf) raf = requestAnimationFrame(frame)
+}
+function seek(r) { retarget(r) }
+
 function toggle() { playing.value = !playing.value; if (playing.value) tick() }
 function tick() {
   if (!playing.value) return
@@ -233,37 +188,85 @@ function tick() {
   seek(round.value + 1)
   playTimer = setTimeout(tick, 900)
 }
-let playTimer
 
-function onMove(e) {
+// Picking reads a 1px offscreen ID buffer, which forces a GPU sync. Coalesce to
+// at most one read per frame so a fast drag can't stall the pipeline repeatedly
+// (the WebKitGTK/Tauri target is the sensitive one).
+let pendingPick = null
+let pickRaf = null
+function runPick() {
+  pickRaf = null
+  if (!pendingPick || !renderer) return
   const r = canvas.value.getBoundingClientRect()
-  const mx = e.clientX - r.left, my = e.clientY - r.top
-  let best = null, bestD = 16 * 16
-  for (const m of marks.value) {
-    const dx = px(m._x) - mx, dy = py(m._y) - my, d = dx * dx + dy * dy
-    if (d < bestD) { bestD = d; best = m }
-  }
-  if (best !== selected.value) { selected.value = best; draw() }
+  const idx = renderer.pick(pendingPick.x - r.left, pendingPick.y - r.top)
+  pendingPick = null
+  const next = idx >= 0 ? marks[idx] : null
+  if (next !== selected.value) { selected.value = next; selIdx = idx; paint() }
 }
-function clearHover() { selected.value = null; draw() }
+function onMove(e) {
+  pendingPick = { x: e.clientX, y: e.clientY }
+  if (!pickRaf) pickRaf = requestAnimationFrame(runPick)
+}
+function clearHover() { pendingPick = null; if (selected.value) { selected.value = null; selIdx = -1; paint() } }
 
-watch(() => props.personas, (v) => {
-  marks.value = layout(v || [])
+function rebuild() {
+  marks = layout(props.personas || [])
+  const n = marks.length
+  shownCount.value = marks.filter((m) => !isRefused(m)).length
+  refusedCount.value = marks.filter(isRefused).length
+  selected.value = null; selIdx = -1
   round.value = 0
-  for (const m of marks.value) { m.cs = stanceAt(m, 0); m.ts = m.cs }
-  computeIso()
-  draw()
-}, { immediate: true })
+  fromArr = new Float32Array(n)
+  toArr = new Float32Array(n)
+  delayArr = new Float32Array(n)
+  for (let i = 0; i < n; i++) fromArr[i] = toArr[i] = stanceAt(marks[i], 0)
+  startMs = -1e9 // land on the final frame with no opening animation
+  if (renderer) { renderer.setData(marks); renderer.setRound(fromArr, toArr, delayArr) }
+  recomputeLayers()
+  paint()
+}
 
-onMounted(() => { resize(); ro = new ResizeObserver(resize); ro.observe(wrap.value) })
-onBeforeUnmount(() => { ro && ro.disconnect(); raf && cancelAnimationFrame(raf); clearTimeout(playTimer) })
+function resize() {
+  if (!canvas.value || !wrap.value || !renderer) return
+  dpr = window.devicePixelRatio || 1
+  const r = wrap.value.getBoundingClientRect()
+  W.value = r.width; H.value = r.height
+  renderer.setViewport(r.width, r.height, dpr, PAD)
+  recomputeLayers()
+  paint()
+}
+
+let ro
+watch(() => props.personas, rebuild)
+onMounted(() => {
+  renderer = createMarkRenderer(canvas.value)
+  rebuild()
+  resize()
+  ro = new ResizeObserver(resize)
+  ro.observe(wrap.value)
+})
+onBeforeUnmount(() => {
+  ro && ro.disconnect()
+  raf && cancelAnimationFrame(raf)
+  pickRaf && cancelAnimationFrame(pickRaf)
+  clearTimeout(playTimer)
+  renderer && renderer.dispose()
+})
 </script>
 
 <style scoped>
 .field { display: flex; height: 100%; min-height: 520px; background: oklch(0.19 0.021 265); color: oklch(0.88 0.012 265); }
 .stage { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.canvas-wrap { position: relative; flex: 1; min-height: 0; }
-canvas { display: block; }
+.canvas-wrap { position: relative; flex: 1; min-height: 0; background: oklch(0.245 0.026 265); overflow: hidden; }
+.vector, .marks { position: absolute; inset: 0; display: block; }
+.vector { pointer-events: none; }
+.vector .grid line { stroke: oklch(0.38 0.022 265 / 0.35); stroke-width: 1; }
+.vector .iso path { fill: none; stroke-width: 1; }
+.vector .fracture { fill: none; stroke: oklch(0.7 0.02 265 / 0.28); stroke-width: 1; stroke-dasharray: 3 5; }
+.vector .fracture.strong { stroke: oklch(0.82 0.14 32 / 0.65); stroke-width: 1.6; stroke-dasharray: none; }
+.vector .flow line { stroke: oklch(0.72 0.13 74); stroke-width: 1.4; }
+.sel-ring { position: absolute; width: 26px; height: 26px; margin: -13px 0 0 -13px; border: 1px solid oklch(0.92 0.012 265 / 0.6); border-radius: 50%; pointer-events: none; }
+.marks { cursor: crosshair; }
 .axis { position: absolute; bottom: 8px; font: 600 11px/1 ui-monospace, monospace; letter-spacing: .1em; color: oklch(0.6 0.02 265); }
 .axis.oppose { left: 12px; }
 .axis.support { right: 12px; }

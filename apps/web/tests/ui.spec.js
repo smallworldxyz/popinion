@@ -196,6 +196,16 @@ test.describe('FIELD map', () => {
     await scrub.fill('15')
     await expect(page.locator('.round')).toContainText('r15')
   })
+
+  test('draws the fracture divide and flow ribbons once stance moves', async ({ page }) => {
+    await page.goto('/field-demo')
+    await expect(page.locator('canvas')).toBeVisible()
+    // The stance field opens a fault between the con and pro basins.
+    await expect(page.locator('svg .fracture')).toHaveCount(1)
+    // Advancing past the mid-run event moves opponents, so flow ribbons appear.
+    await page.locator('.scrub').fill('10')
+    await expect(page.locator('svg .flow line').first()).toBeVisible()
+  })
 })
 
 test.describe('Settings — model selection', () => {
