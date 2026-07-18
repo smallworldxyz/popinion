@@ -9,6 +9,14 @@
       <a :href="`/simulation/${simId}`" class="classic">Open classic controls</a>
     </header>
 
+    <!-- Trust is a property of the Run, not of a generated report: the
+         credibility and honesty panels live in the header so they're present on
+         any Run, with no report required. -->
+    <div class="trust-header">
+      <CredibilityPanel :simulation-id="simId" />
+      <TrustChecksPanel :simulation-id="simId" />
+    </div>
+
     <div v-if="loading" class="state">Loading the population…</div>
 
     <div v-else-if="!personas.length" class="state empty">
@@ -28,6 +36,8 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import FieldMap from '../components/FieldMap.vue'
+import CredibilityPanel from '../components/CredibilityPanel.vue'
+import TrustChecksPanel from '../components/TrustChecksPanel.vue'
 import { getSimulation, getSimulationProfiles, preparePreview } from '../api/simulation'
 
 const props = defineProps({
@@ -97,6 +107,7 @@ onMounted(async () => {
 <style scoped>
 .run { display: flex; flex-direction: column; height: 100vh; background: oklch(0.19 0.021 265); color: oklch(0.88 0.012 265); }
 .run-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px; flex: none; }
+.trust-header { flex: none; padding: 0 20px; overflow-y: auto; max-height: 42vh; }
 .crumbs { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .crumb { color: oklch(0.7 0.05 250); text-decoration: none; font-size: 13px; }
 .crumb:hover { text-decoration: underline; }

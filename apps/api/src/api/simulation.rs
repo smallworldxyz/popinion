@@ -407,6 +407,14 @@ async fn validate(State(st): State<AppState>, Json(req): Json<ValidateReq>) -> A
         run_shares.push(s);
     }
     let floor = crate::sim::validate::noise_floor(&run_shares);
+    // Persist the measured floor onto the baseline Run (the first id) so it's an
+    // authoritative Run property, not a per-session frontend secret. Only when
+    // it's actually measured (>= 2 reruns give a non-zero floor).
+    if run_shares.len() >= 2 {
+        if let Some(baseline) = req.simulation_ids.first() {
+            let _ = manager.set_noise_floor(baseline, floor);
+        }
+    }
 
     let mut out = json!({
         "runs": runs,
@@ -478,11 +486,19 @@ async fn compare(State(st): State<AppState>, Query(q): Query<CompareQ>) -> AppRe
     let (dist_b, shares_b) = side(&q.b)?;
     let tv = crate::sim::validate::total_variation(&shares_a, &shares_b);
 
-    let mut rerun_shares = vec![shares_a.clone()];
-    for id in q.runs.as_deref().unwrap_or("").split(',').map(str::trim).filter(|s| !s.is_empty()) {
-        rerun_shares.push(side(id)?.1);
-    }
-    let floor = crate::sim::validate::noise_floor(&rerun_shares);
+    // The noise floor is a persisted property of run A (set by /validate). Read
+    // it from there so the verdict is authoritative and needs no per-session
+    // rerun ids. Explicit `runs=` still overrides, recomputing from those.
+    let floor = match q.runs.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        Some(runs) => {
+            let mut rerun_shares = vec![shares_a.clone()];
+            for id in runs.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+                rerun_shares.push(side(id)?.1);
+            }
+            crate::sim::validate::noise_floor(&rerun_shares)
+        }
+        None => manager.meta(&q.a).ok().and_then(|m| m.noise_floor).unwrap_or(0.0),
+    };
     let threshold = crate::sim::validate::noise_threshold(floor);
 
     // The scenario each side reacted to, for labelling the comparison.

@@ -42,6 +42,12 @@ pub struct SimMeta {
     /// The Run this one was duplicated from, if any (fork/rehearsal lineage).
     #[serde(default)]
     pub parent_id: Option<String>,
+    /// Measured seed-variance noise floor for this Run (mean pairwise TV across
+    /// identical reruns). Persisted by /validate so the floor is authoritative
+    /// on the Run itself, not a per-session frontend secret. `None` until the
+    /// variance check has been run.
+    #[serde(default)]
+    pub noise_floor: Option<f64>,
 }
 
 fn default_kind() -> String {
@@ -104,6 +110,7 @@ impl Manager {
             project_id,
             kind: default_kind(),
             parent_id: None,
+            noise_floor: None,
         };
         self.write_profiles_and_config(&id, &profiles, config)?;
         self.write_meta(&meta)?;
@@ -198,6 +205,17 @@ impl Manager {
                 let _ = self.write_meta(&m);
             }
         }
+    }
+
+    /// Persist the measured noise floor onto a Run. Reads the raw persisted meta
+    /// (like `persist_status`) so it does not clobber other fields with the
+    /// live-status-merged view.
+    pub fn set_noise_floor(&self, id: &str, floor: f64) -> Result<()> {
+        let path = self.dir(id).join("metadata.json");
+        let raw = std::fs::read(&path).with_context(|| format!("simulation {id} not found"))?;
+        let mut m: SimMeta = serde_json::from_slice(&raw)?;
+        m.noise_floor = Some(floor);
+        self.write_meta(&m)
     }
 
     pub fn meta(&self, id: &str) -> Result<SimMeta> {
@@ -354,6 +372,19 @@ mod tests {
 
         m.persist_status(&id, "completed");
         assert_eq!(m.meta(&id).unwrap().status, "completed");
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn noise_floor_persists_on_the_run() {
+        // The floor is an authoritative Run property, not a per-session secret.
+        let (m, dir) = test_manager();
+        let id = m.create("Fuel Levy", personas(2), SimConfig::default(), None, None).unwrap();
+        assert_eq!(m.meta(&id).unwrap().noise_floor, None);
+
+        m.set_noise_floor(&id, 0.12).unwrap();
+        assert_eq!(m.meta(&id).unwrap().noise_floor, Some(0.12));
 
         let _ = std::fs::remove_dir_all(dir);
     }
