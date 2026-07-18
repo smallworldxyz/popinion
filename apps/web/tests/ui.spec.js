@@ -290,6 +290,58 @@ test.describe('Prepare — the evidence bar is a live control', () => {
   })
 })
 
+test.describe('Environment Setup — an already-prepared sim can start', () => {
+  // Regression: GET /api/simulation/:id/config returns the config *flat* (with
+  // agent_configs), but Step2 once gated the Start button on a { config_generated,
+  // config } shape the endpoint never sends — so phase never reached 4 and the
+  // button stayed disabled, dead-ending every simulation. Stub the real flat
+  // shape and assert the button enables.
+  // The real flat shape GET /api/simulation/:id/config returns once prepared.
+  const FLAT_CONFIG = {
+    success: true,
+    data: {
+      simulation_id: 's9',
+      agent_configs: [
+        { agent_id: 0, activity_level: 0.5, active_hours: [8, 9, 10, 11, 12] },
+        { agent_id: 1, activity_level: 0.5, active_hours: [8, 9, 10, 11, 12] },
+      ],
+      time_config: {
+        minutes_per_round: 30, total_simulation_hours: 72,
+        agents_per_hour_min: 5, agents_per_hour_max: 20,
+        peak_hours: [9, 10, 11], peak_activity_multiplier: 1.5,
+        off_peak_hours: [0, 1, 2], off_peak_activity_multiplier: 0.3,
+      },
+      event_config: { initial_posts: [{ content: 'Opening post', poster_agent_id: -1 }] },
+      platform: 'reddit',
+    },
+  }
+
+  test('the flat /config response with agent_configs enables Start', async ({ page }) => {
+    // No project_id -> the shell skips project/graph loading. Not running, so the
+    // stopFirst check is a no-op.
+    page.route('**/api/simulation/env-status', (route) =>
+      route.fulfill({ json: { success: true, data: { env_alive: false } } })
+    )
+    page.route('**/api/simulation/s9', (route) =>
+      route.fulfill({ json: { success: true, data: { simulation_id: 's9', name: 'Prepared sim', num_agents: 2, status: 'prepared' } } })
+    )
+    // The completion signal the fix keys on, served to both the shell and Step2.
+    page.route('**/api/simulation/s9/config', (route) => route.fulfill({ json: FLAT_CONFIG }))
+    page.route('**/api/simulation/s9/profiles*', (route) =>
+      route.fulfill({ json: { success: true, data: { profiles: [
+        { user_id: 0, name: 'Rider', user_name: 'rider_0', faction: 'con', profession: 'commuter', synthetic: false, evidence: [], interested_topics: [], position: [0.2, 0.5] },
+      ] } } })
+    )
+
+    await page.goto('/simulation/s9')
+
+    // Before the fix the button was gated on a { config_generated, config } shape
+    // the endpoint never sends, so phase never reached 4 and it stayed disabled.
+    const start = page.getByRole('button', { name: /Start Dual-World Parallel Simulation/ })
+    await expect(start).toBeEnabled()
+  })
+})
+
 test.describe('Settings — model selection', () => {
   test.beforeEach(async ({ page }) => {
     await stubModelReady(page)
