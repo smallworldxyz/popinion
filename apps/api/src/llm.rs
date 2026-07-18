@@ -73,6 +73,12 @@ impl Llm {
         &self.model
     }
 
+    /// True when this client speaks the ChatGPT subscription backend (Codex
+    /// `/responses` over OAuth) rather than an OpenAI-compatible `/chat/completions`.
+    pub fn is_chatgpt(&self) -> bool {
+        self.chatgpt.is_some()
+    }
+
     async fn call(
         &self,
         messages: &[Msg],
@@ -342,6 +348,16 @@ pub fn repair_truncated_json(content: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn constructor_selects_wire_format() {
+        // OpenAI-compatible providers speak /chat/completions...
+        assert!(!Llm::new("sk-x", "https://api.openai.com/v1", "gpt-4o").is_chatgpt());
+        // ...while the ChatGPT-subscription client speaks the Codex /responses path.
+        let auth = Arc::new(ChatGptAuth::load("/nonexistent/creds.json"));
+        assert!(Llm::chatgpt("gpt-5.6-terra", auth).is_chatgpt());
+    }
+
     #[test]
     fn repairs_truncated_object() {
         let broken = r#"{"a": 1, "b": [1, 2"#;
