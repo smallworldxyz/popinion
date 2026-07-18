@@ -1,5 +1,5 @@
 <template>
-  <router-link v-if="!['Settings', 'Home'].includes($route.name)" to="/settings" class="settings-fab" title="Model settings">⚙ Models</router-link>
+  <router-link v-if="!['Settings', 'Home', 'Run'].includes($route.name)" to="/settings" class="settings-fab" title="Model settings">⚙ Models</router-link>
   <router-view />
 </template>
 
@@ -16,17 +16,14 @@
 }
 
 #app {
-  /* Publication (editorial) typography — a warm, readable system serif stack,
-     no external fonts so it works offline and in the desktop shell. */
-  font-family: 'Iowan Old Style', 'Palatino Linotype', 'Palatino', 'Book Antiqua',
-    Georgia, Cambria, 'Times New Roman', Times, serif;
+  /* Riverbase: Inter for body/UI, Fraunces for display (loaded in index.html). */
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  color: #111111;
-  background-color: #ffffff;
-  font-size: 16px;
+  color: var(--text-strong);
+  background-color: var(--subtle);
+  font-size: 15px;
   line-height: 1.6;
-  letter-spacing: 0.005em;
 }
 
 /* Scrollbar styles */
@@ -36,15 +33,16 @@
 }
 
 ::-webkit-scrollbar-track {
-  background: #f1f1f1;
+  background: var(--subtle);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #000000;
+  background: var(--border);
+  border-radius: var(--r-pill);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #333333;
+  background: var(--text-muted);
 }
 
 /* Global button styles */
@@ -63,16 +61,18 @@ button {
   gap: 6px;
   padding: 7px 12px;
   font-size: 13px;
+  font-weight: 500;
   font-family: inherit;
-  color: #000;
-  background: #fff;
-  border: 1px solid #000;
-  border-radius: 8px;
+  color: var(--text-strong);
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
   text-decoration: none;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+  box-shadow: var(--elev-1);
 }
 .settings-fab:hover {
-  background: #000;
-  color: #fff;
+  background: var(--navy);
+  color: var(--on-dark);
+  border-color: var(--navy);
 }
 </style>

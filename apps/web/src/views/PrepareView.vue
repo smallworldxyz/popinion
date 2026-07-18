@@ -74,9 +74,9 @@ const hover = ref(null)
 // Neutral stance ramp is wired for the day /prepare/preview carries a stance
 // sign per entity; the payload only exposes evidence_score + eligible today, so
 // marks render near-achromatic (honest: stance isn't classified until the run).
-const OPPOSE = [70, 120, 224]
-const NEUTRAL = [176, 178, 190]
-const SUPPORT = [212, 158, 60]
+const OPPOSE = [245, 144, 120]
+const NEUTRAL = [201, 214, 229]
+const SUPPORT = [31, 176, 163]
 const lerp = (a, b, t) => a + (b - a) * t
 const stanceColor = (s) => {
   const t = Math.max(-1, Math.min(1, s || 0))
@@ -141,11 +141,11 @@ function relayout() {
 
 function draw() {
   if (!ctx) return
-  ctx.fillStyle = 'oklch(0.245 0.026 265)'
+  ctx.fillStyle = '#0E2340'
   ctx.fillRect(0, 0, W, H)
 
   // Graticule.
-  ctx.strokeStyle = 'oklch(0.38 0.022 265 / 0.3)'
+  ctx.strokeStyle = 'rgba(201,214,229,.14)'
   ctx.lineWidth = 1
   for (let i = 1; i < 8; i++) {
     const g = (i / 8) * W
@@ -158,7 +158,7 @@ function draw() {
 
   // The refused zone below the bar, washed a touch darker so it reads as a gutter.
   const by = barY()
-  ctx.fillStyle = 'oklch(0.21 0.02 265 / 0.55)'
+  ctx.fillStyle = 'rgba(8,18,34,.55)'
   ctx.fillRect(0, by, W, H - by)
 
   // Marks: eligible are filled and stance-coloured; below-bar are hollow, refused.
@@ -171,7 +171,7 @@ function draw() {
       ctx.globalAlpha = m === hover.value ? 1 : 0.92
       ctx.fill()
     } else {
-      ctx.strokeStyle = 'oklch(0.55 0.03 265)'
+      ctx.strokeStyle = 'rgba(201,214,229,.6)'
       ctx.globalAlpha = m === hover.value ? 1 : 0.75
       ctx.lineWidth = 1.5
       ctx.stroke()
@@ -180,13 +180,13 @@ function draw() {
   }
 
   // The bar itself: a bright hairline that carries its own value.
-  ctx.strokeStyle = 'oklch(0.82 0.05 74)'
+  ctx.strokeStyle = '#F3D096'
   ctx.lineWidth = 1.5
   ctx.setLineDash([6, 4])
   ctx.beginPath(); ctx.moveTo(0, by); ctx.lineTo(W, by); ctx.stroke()
   ctx.setLineDash([])
-  ctx.fillStyle = 'oklch(0.82 0.05 74)'
-  ctx.font = '600 11px ui-monospace, "IBM Plex Mono", monospace'
+  ctx.fillStyle = '#F3D096'
+  ctx.font = '600 11px Inter, system-ui, sans-serif'
   ctx.fillText(`min_evidence ${minEvidence.value}`, 10, by - 6)
 }
 
@@ -259,41 +259,41 @@ onBeforeUnmount(() => { ro && ro.disconnect(); clearTimeout(debounce) })
 </script>
 
 <style scoped>
-.prepare { display: flex; flex-direction: column; height: 100vh; background: oklch(0.19 0.021 265); color: oklch(0.88 0.012 265); }
+.prepare { display: flex; flex-direction: column; height: 100vh; background: var(--navy); color: var(--on-dark); font-family: var(--font-sans); }
 .prep-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px; padding-right: 108px; flex: none; gap: 16px; }
 .crumbs { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.crumb { color: oklch(0.7 0.05 250); text-decoration: none; font-size: 13px; }
+.crumb { color: var(--on-dark-muted); text-decoration: none; font-size: 13px; }
 .crumb:hover { text-decoration: underline; }
-.sep { color: oklch(0.45 0.02 265); }
-.prep-title { font-weight: 650; font-size: 15px; }
-.note { font-size: 13px; color: oklch(0.6 0.02 265); white-space: nowrap; }
+.sep { color: var(--on-dark-muted); }
+.prep-title { font-family: var(--font-serif); font-weight: 500; font-size: 16px; }
+.note { font-size: 13px; color: var(--on-dark-muted); white-space: nowrap; }
 
 .stage { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .canvas-wrap { position: relative; flex: 1; min-height: 0; }
 canvas { display: block; }
 
-.axis-y { position: absolute; top: 10px; left: 12px; font: 600 11px/1 ui-monospace, monospace; letter-spacing: .08em; color: oklch(0.6 0.02 265); }
-.refused-tag { position: absolute; bottom: 10px; left: 12px; font: 600 11px/1 ui-monospace, monospace; letter-spacing: .06em; color: oklch(0.55 0.03 265); }
+.axis-y { position: absolute; top: 10px; left: 12px; font: 600 11px/1 var(--font-sans); letter-spacing: .08em; color: var(--on-dark-muted); }
+.refused-tag { position: absolute; bottom: 10px; left: 12px; font: 600 11px/1 var(--font-sans); letter-spacing: .06em; color: var(--on-dark-muted); }
 
 .readout { position: absolute; top: 10px; right: 14px; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
-.mono { font-family: ui-monospace, 'IBM Plex Mono', monospace; }
-.bar-val { font-size: 12px; color: oklch(0.82 0.05 74); letter-spacing: .02em; }
-.count { font-size: 12px; color: oklch(0.78 0.02 265); }
-.count b { color: oklch(0.96 0.008 265); }
-.count .of { color: oklch(0.58 0.02 265); }
+.mono { font-family: var(--font-sans); font-variant-numeric: tabular-nums; }
+.bar-val { font-size: 12px; color: #F3D096; letter-spacing: .02em; }
+.count { font-size: 12px; color: var(--on-dark-muted); }
+.count b { color: var(--on-dark); }
+.count .of { color: var(--on-dark-muted); }
 
-.tip { position: absolute; transform: translateY(-50%); pointer-events: none; background: oklch(0.29 0.028 265); border: 1px solid oklch(0.4 0.02 265); border-radius: 6px; padding: 8px 10px; min-width: 150px; box-shadow: 0 8px 24px oklch(0.12 0.02 265 / 0.5); z-index: 5; }
-.tip-name { font-size: 13px; font-weight: 600; color: oklch(0.92 0.012 265); }
-.tip-type { font-size: 11px; color: oklch(0.62 0.02 265); margin-top: 2px; }
+.tip { position: absolute; transform: translateY(-50%); pointer-events: none; background: var(--navy-raised); border: 1px solid rgba(201,214,229,.14); border-radius: var(--r-sm); padding: 8px 10px; min-width: 150px; box-shadow: 0 8px 24px rgba(14,35,64,.5); z-index: 5; }
+.tip-name { font-size: 13px; font-weight: 600; color: var(--on-dark); }
+.tip-type { font-size: 11px; color: var(--on-dark-muted); margin-top: 2px; }
 .tip-ev { font-size: 11px; margin-top: 6px; }
-.tip-ev.ok { color: oklch(0.7 0.05 74); }
-.tip-ev.refused { color: oklch(0.6 0.03 265); }
+.tip-ev.ok { color: var(--emerald-bright); }
+.tip-ev.refused { color: var(--on-dark-muted); }
 
-.overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: oklch(0.6 0.02 265); font-size: 13px; }
-.overlay.err { color: oklch(0.72 0.19 42); }
+.overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--on-dark-muted); font-size: 13px; }
+.overlay.err { color: var(--coral-bright); }
 
-.control { flex: none; display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-top: 1px solid oklch(0.32 0.02 265); background: oklch(0.22 0.024 265); }
-.control .lo, .control .hi { font-size: 11px; color: oklch(0.58 0.02 265); }
-.bar-slider { flex: 1; accent-color: oklch(0.66 0.14 74); cursor: pointer; }
+.control { flex: none; display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-top: 1px solid rgba(201,214,229,.14); background: var(--navy-raised); }
+.control .lo, .control .hi { font-size: 11px; color: var(--on-dark-muted); }
+.bar-slider { flex: 1; accent-color: #F3D096; cursor: pointer; }
 .bar-slider:disabled { opacity: 0.4; cursor: default; }
 </style>

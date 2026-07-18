@@ -107,34 +107,54 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.world { max-width: 900px; margin: 0 auto; padding: 40px 20px; color: #1a1a2e; }
-.back { display: inline-block; color: #2563eb; text-decoration: none; font-size: 14px; margin-bottom: 10px; }
+.world {
+  max-width: 900px; margin: 0 auto; padding: 40px 20px;
+  font-family: var(--font-sans); color: var(--text-strong);
+  background: var(--subtle); min-height: 100vh;
+}
+.back {
+  display: inline-block; color: var(--emerald); text-decoration: none;
+  font-size: 14px; font-weight: 500; margin-bottom: 10px;
+}
 .back:hover { text-decoration: underline; }
-.head h1 { margin: 0 0 6px; font-size: 26px; }
-.sub { color: #6b7280; margin: 0; font-size: 14px; }
-.note { margin-top: 32px; color: #6b7280; }
-.runs { width: 100%; border-collapse: collapse; margin-top: 28px; font-size: 14px; }
+.head h1 {
+  margin: 0 0 6px; font-family: var(--font-serif); font-weight: 500;
+  font-size: 26px; color: var(--text-strong);
+}
+.sub { color: var(--text-muted); margin: 0; font-size: 14px; font-variant-numeric: tabular-nums; }
+.note { margin-top: 32px; color: var(--text-muted); }
+.runs {
+  width: 100%; border-collapse: collapse; margin-top: 28px; font-size: 14px;
+  background: var(--white); border: 1px solid var(--border);
+  border-radius: var(--r-lg); overflow: hidden; box-shadow: var(--elev-1);
+}
 .runs th {
-  text-align: left; font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em;
-  color: #9ca3af; font-weight: 600; padding: 0 12px 8px; border-bottom: 1px solid #e5e7eb;
+  text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .14em;
+  color: var(--text-muted); font-weight: 700; padding: 14px 16px 10px;
+  border-bottom: 1px solid var(--border);
 }
 .runs th.num, td.num { text-align: right; }
 .run { cursor: pointer; transition: background .12s; }
-.run:hover { background: #fafbff; }
-.run td { padding: 12px; border-bottom: 1px solid #f1f2f4; }
-.name { font-weight: 550; }
-.from { margin-left: 8px; font-size: 12px; color: #9ca3af; font-weight: 400; }
-.kind { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: #eef2ff; color: #4338ca; text-transform: capitalize; }
-.kind.canonical { background: #eef2ff; color: #4338ca; }
-.kind.alt, .kind.replicate, .kind.ablation { background: #f3f4f6; color: #6b7280; }
-.badge { font-size: 11px; padding: 2px 9px; border-radius: 999px; font-weight: 600; }
-.badge.running { background: #fef3c7; color: #92400e; }
-.badge.completed { background: #d1fae5; color: #065f46; }
-.badge.ready { background: #dbeafe; color: #1e40af; }
-.badge.stopped, .badge.draft { background: #f3f4f6; color: #6b7280; }
-.badge.failed { background: #fee2e2; color: #b91c1c; }
-.date { color: #9ca3af; white-space: nowrap; }
+.run:hover { background: var(--subtle); }
+.run td { padding: 14px 16px; border-bottom: 1px solid var(--border); }
+.run:last-child td { border-bottom: none; }
+.name { font-family: var(--font-serif); font-weight: 500; color: var(--text-strong); }
+.from { margin-left: 8px; font-size: 12px; color: var(--text-muted); font-weight: 400; }
+.kind {
+  font-size: 11px; padding: 2px 9px; border-radius: var(--r-pill);
+  background: rgba(12,133,119,.1); color: var(--emerald); text-transform: capitalize; font-weight: 600;
+}
+.kind.canonical { background: rgba(12,133,119,.1); color: var(--emerald); }
+.kind.alt, .kind.replicate, .kind.ablation { background: var(--subtle); color: var(--text-muted); }
+.badge { font-size: 11px; padding: 2px 10px; border-radius: var(--r-pill); font-weight: 600; }
+.badge.running { background: rgba(232,106,76,.14); color: var(--coral-on-light); }
+.badge.completed { background: rgba(12,133,119,.1); color: var(--emerald); }
+.badge.ready { background: rgba(12,133,119,.1); color: var(--emerald); }
+.badge.stopped, .badge.draft { background: var(--subtle); color: var(--text-muted); }
+.badge.failed { background: rgba(199,78,51,.12); color: var(--coral-on-light); }
+.date { color: var(--text-muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.num { font-variant-numeric: tabular-nums; color: var(--text-muted); }
 .act { text-align: right; white-space: nowrap; }
-.bar-link { font-size: 12.5px; color: oklch(0.62 0.13 265); text-decoration: none; }
+.bar-link { font-size: 12.5px; color: var(--emerald); text-decoration: none; font-weight: 500; }
 .bar-link:hover { text-decoration: underline; }
 </style>
