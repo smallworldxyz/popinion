@@ -35,8 +35,12 @@ impl<T> Registry<T> {
 
 impl<T: Clone> Registry<T> {
 
+    /// Recovers from poisoning rather than propagating it. These registries live
+    /// for the process, so one panic under the lock would otherwise brick every
+    /// later read and write - a far worse outcome than reading state a panicking
+    /// writer left behind.
     fn map(&self) -> MutexGuard<'_, HashMap<String, T>> {
-        self.0.get_or_init(Default::default).lock().unwrap()
+        self.0.get_or_init(Default::default).lock().unwrap_or_else(|e| e.into_inner())
     }
 
     pub fn insert(&self, id: String, value: T) {

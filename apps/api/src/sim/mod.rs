@@ -39,7 +39,7 @@ pub struct SimHandle {
 
 impl SimHandle {
     pub fn status(&self) -> String {
-        self.status.lock().unwrap().clone()
+        self.status.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 }
 
@@ -55,15 +55,15 @@ impl SimRegistry {
     }
 
     pub fn get(&self, id: &str) -> Option<SimHandle> {
-        self.inner.lock().unwrap().get(id).cloned()
+        self.inner.lock().unwrap_or_else(|e| e.into_inner()).get(id).cloned()
     }
 
     pub fn insert(&self, handle: SimHandle) {
-        self.inner.lock().unwrap().insert(handle.simulation_id.clone(), handle);
+        self.inner.lock().unwrap_or_else(|e| e.into_inner()).insert(handle.simulation_id.clone(), handle);
     }
 
     pub fn remove(&self, id: &str) -> Option<SimHandle> {
-        self.inner.lock().unwrap().remove(id)
+        self.inner.lock().unwrap_or_else(|e| e.into_inner()).remove(id)
     }
 }
 
