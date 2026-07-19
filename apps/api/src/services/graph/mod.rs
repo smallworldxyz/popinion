@@ -4,6 +4,7 @@
 
 pub mod builder;
 pub mod db;
+pub mod dedupe;
 pub mod entity_extractor;
 pub mod file_parser;
 pub mod ontology;

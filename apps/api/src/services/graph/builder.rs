@@ -4,7 +4,7 @@
 //! No fixed per-chunk rate-limit sleep is needed: the Llm client already
 //! retries 429s with backoff.
 
-use super::{db, entity_extractor, projects, tasks};
+use super::{db, dedupe, entity_extractor, projects, tasks};
 use crate::llm::Llm;
 use serde_json::{json, Value};
 
@@ -93,14 +93,28 @@ async fn run_build(
         );
     }
 
-    // 5. Collect graph info; refuse to complete on an empty graph.
+    // 5. Fold alias entities together. Runs here, once, with every name visible
+    //    at the same time: "EDC" is only resolvable against the full roster, and
+    //    leaving it to persona compilation would leave the graph itself showing
+    //    one actor three times for every later reader.
+    tasks::update(task_id, 92, "Merging duplicate entities...");
+    let merged = match dedupe::run(graph, &graph_id, llm).await {
+        Ok(m) => m,
+        Err(e) => {
+            // A graph with aliases still beats no graph at all.
+            tracing::warn!("dedupe pass failed for {graph_id}, keeping duplicates: {e:#}");
+            Vec::new()
+        }
+    };
+
+    // 6. Collect graph info; refuse to complete on an empty graph.
     tasks::update(task_id, 95, "Getting graph information...");
     let info = db::graph_info(graph, &graph_id).await?;
     if info.node_count == 0 {
         anyhow::bail!("Graph build failed: no entities were extracted. Please try again later.");
     }
 
-    // 6. Persist graph info onto the project.
+    // 7. Persist graph info onto the project.
     if let Some(mut project) = projects::get(&params.project_id) {
         project.graph_id = Some(graph_id.clone());
         project.node_count = Some(info.node_count);
@@ -115,6 +129,10 @@ async fn run_build(
         task_id,
         json!({
             "graph_id": graph_id,
+            // Every merge is reported: a pass that quietly rewrites who is in
+            // the population should be inspectable, and reversible from the
+            // `aliases` recorded on each survivor.
+            "merged_entities": merged.iter().map(|(k, a)| json!({"kept": k, "absorbed": a})).collect::<Vec<_>>(),
             "graph_information": {
                 "graph_id": graph_id,
                 "node_count": info.node_count,

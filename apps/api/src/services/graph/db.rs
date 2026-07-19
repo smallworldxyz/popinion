@@ -289,6 +289,80 @@ pub async fn graph_info(db: &GraphDb, graph_id: &str) -> Result<GraphInfo> {
     Ok(GraphInfo { node_count, edge_count, entity_types })
 }
 
+/// Fold `alias` into `keep`: rewire its edges, union its types and attributes,
+/// and delete it. Recorded on the survivor as `aliases` so a merge is visible
+/// in the graph rather than silently rewriting history.
+///
+/// Edges are keyed by name, so rewiring is an UPDATE — but that can collide
+/// with an edge the survivor already had, and can bend an edge between the two
+/// names into a self-loop. Both are dropped rather than kept: a merged entity
+/// supporting itself is exactly the artefact the actor filter exists to remove.
+pub async fn merge_nodes(db: &GraphDb, graph_id: &str, keep: &str, alias: &str) -> Result<()> {
+    if keep == alias {
+        return Ok(());
+    }
+    let c = db.conn.lock().unwrap_or_else(|e| e.into_inner());
+
+    let row: Option<(String, String)> = c
+        .query_row(
+            "SELECT entity_types, properties FROM graph_node WHERE graph_id = ?1 AND name = ?2",
+            params![graph_id, alias],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()?;
+    let Some((alias_types, alias_props)) = row else { return Ok(()) };
+
+    let (keep_types, keep_props): (String, String) = c.query_row(
+        "SELECT entity_types, properties FROM graph_node WHERE graph_id = ?1 AND name = ?2",
+        params![graph_id, keep],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )?;
+
+    let mut types: Vec<String> = serde_json::from_str(&keep_types).unwrap_or_default();
+    for t in serde_json::from_str::<Vec<String>>(&alias_types).unwrap_or_default() {
+        if !types.contains(&t) {
+            types.push(t);
+        }
+    }
+    // The survivor's own values win: it is the better-attested spelling.
+    let mut props: Map<String, Value> = serde_json::from_str(&alias_props).unwrap_or_default();
+    let kept: Map<String, Value> = serde_json::from_str(&keep_props).unwrap_or_default();
+    props.extend(kept);
+    let mut aliases: Vec<String> = props
+        .get("aliases")
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .unwrap_or_default();
+    if !aliases.contains(&alias.to_string()) {
+        aliases.push(alias.to_string());
+    }
+    props.insert("aliases".into(), json!(aliases));
+
+    c.execute(
+        "UPDATE graph_node SET entity_types = ?1, properties = ?2 WHERE graph_id = ?3 AND name = ?4",
+        params![json!(types).to_string(), Value::Object(props).to_string(), graph_id, keep],
+    )?;
+
+    // Rewire, then clear what rewiring made redundant or nonsensical.
+    c.execute(
+        "UPDATE OR IGNORE graph_edge SET source_name = ?1 WHERE graph_id = ?2 AND source_name = ?3",
+        params![keep, graph_id, alias],
+    )?;
+    c.execute(
+        "UPDATE OR IGNORE graph_edge SET target_name = ?1 WHERE graph_id = ?2 AND target_name = ?3",
+        params![keep, graph_id, alias],
+    )?;
+    c.execute(
+        "DELETE FROM graph_edge WHERE graph_id = ?1 AND (source_name = ?2 OR target_name = ?2)",
+        params![graph_id, alias],
+    )?;
+    c.execute(
+        "DELETE FROM graph_edge WHERE graph_id = ?1 AND source_name = ?2 AND target_name = ?2",
+        params![graph_id, keep],
+    )?;
+    c.execute("DELETE FROM graph_node WHERE graph_id = ?1 AND name = ?2", params![graph_id, alias])?;
+    Ok(())
+}
+
 /// Read the whole graph back as typed `GraphData` — the shape the frontend
 /// d3 viz and `sim::persona::build_bundles` consume.
 pub async fn get_graph_data(db: &GraphDb, graph_id: &str) -> Result<GraphData> {
