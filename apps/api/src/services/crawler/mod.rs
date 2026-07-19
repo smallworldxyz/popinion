@@ -6,8 +6,12 @@
 pub mod bridge;
 pub mod facebook;
 pub mod fetch;
+pub mod google_trends;
+pub mod reddit;
 pub mod storage;
 pub mod telegram;
+pub mod threads;
+pub mod tiktok;
 pub mod twitter;
 
 /// Parse a count string like "1.2K", "3.5M" or "1,234" into an integer.

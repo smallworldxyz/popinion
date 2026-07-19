@@ -1,6 +1,8 @@
 use crate::error::{AppError, AppResult, Success};
 use crate::models::CrawlResult;
-use crate::services::crawler::{bridge, facebook, storage, telegram, twitter};
+use crate::services::crawler::{
+    bridge, facebook, google_trends, reddit, storage, telegram, threads, tiktok, twitter,
+};
 use crate::state::AppState;
 use axum::extract::{Path, Query};
 use axum::routing::{get, post};
@@ -9,13 +11,18 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 /// Crawl endpoints:
-///   POST /telegram  /twitter  /facebook  /bridge
+///   POST /telegram  /twitter  /facebook  /reddit  /google-trends  /tiktok
+///        /threads  /bridge
 ///   GET  /results  /results/:filename
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/telegram", post(crawl_telegram))
         .route("/twitter", post(crawl_twitter))
         .route("/facebook", post(crawl_facebook))
+        .route("/reddit", post(crawl_reddit))
+        .route("/google-trends", post(crawl_google_trends))
+        .route("/tiktok", post(crawl_tiktok))
+        .route("/threads", post(crawl_threads))
         .route("/results", get(list_results))
         .route("/results/:filename", get(get_result))
         .route("/bridge", post(bridge_to_simulation))
@@ -109,6 +116,88 @@ async fn crawl_facebook(Json(req): Json<FacebookReq>) -> AppResult<Success<Value
     let result = facebook::crawl_page(&page, req.max_posts).await;
     let mut resp = crawl_response(&result, req.save_result, &page)?;
     resp["page"] = json!(page);
+    Ok(Success(resp))
+}
+
+#[derive(Deserialize)]
+struct RedditReq {
+    subreddit: Option<String>,
+    query: Option<String>,
+    #[serde(default = "d50")]
+    max_posts: usize,
+    #[serde(default = "dtrue")]
+    save_result: bool,
+}
+
+async fn crawl_reddit(Json(req): Json<RedditReq>) -> AppResult<Success<Value>> {
+    let (result, hint) = if let Some(subreddit) = req.subreddit.filter(|s| !s.trim().is_empty()) {
+        (reddit::crawl_subreddit(&subreddit, req.max_posts).await, subreddit)
+    } else if let Some(query) = req.query.filter(|q| !q.trim().is_empty()) {
+        (reddit::crawl_query(&query, req.max_posts).await, query)
+    } else {
+        return Err(AppError::BadRequest("subreddit or query is required".into()));
+    };
+    Ok(Success(crawl_response(&result, req.save_result, &hint)?))
+}
+
+#[derive(Deserialize)]
+struct GoogleTrendsReq {
+    geo: Option<String>,
+    #[serde(default = "d50")]
+    max_posts: usize,
+    #[serde(default = "dtrue")]
+    save_result: bool,
+}
+
+async fn crawl_google_trends(Json(req): Json<GoogleTrendsReq>) -> AppResult<Success<Value>> {
+    let geo = req
+        .geo
+        .filter(|g| !g.trim().is_empty())
+        .unwrap_or_else(|| "US".into());
+    let result = google_trends::crawl_trends(&geo, req.max_posts).await;
+    let mut resp = crawl_response(&result, req.save_result, &geo)?;
+    resp["geo"] = json!(geo);
+    Ok(Success(resp))
+}
+
+#[derive(Deserialize)]
+struct TiktokReq {
+    username: Option<String>,
+    query: Option<String>,
+    #[serde(default = "d50")]
+    max_posts: usize,
+    #[serde(default = "dtrue")]
+    save_result: bool,
+}
+
+async fn crawl_tiktok(Json(req): Json<TiktokReq>) -> AppResult<Success<Value>> {
+    let (result, hint) = if let Some(username) = req.username.filter(|u| !u.trim().is_empty()) {
+        (tiktok::crawl_user(&username, req.max_posts).await, username)
+    } else if let Some(query) = req.query.filter(|q| !q.trim().is_empty()) {
+        (tiktok::crawl_query(&query, req.max_posts).await, query)
+    } else {
+        return Err(AppError::BadRequest("username or query is required".into()));
+    };
+    Ok(Success(crawl_response(&result, req.save_result, &hint)?))
+}
+
+#[derive(Deserialize)]
+struct ThreadsReq {
+    username: Option<String>,
+    #[serde(default = "d50")]
+    max_posts: usize,
+    #[serde(default = "dtrue")]
+    save_result: bool,
+}
+
+async fn crawl_threads(Json(req): Json<ThreadsReq>) -> AppResult<Success<Value>> {
+    let username = req
+        .username
+        .filter(|u| !u.trim().is_empty())
+        .ok_or_else(|| AppError::BadRequest("username is required".into()))?;
+    let result = threads::crawl_user(&username, req.max_posts).await;
+    let mut resp = crawl_response(&result, req.save_result, &username)?;
+    resp["username"] = json!(username);
     Ok(Success(resp))
 }
 
