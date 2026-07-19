@@ -101,6 +101,22 @@ B. **Specific types (8 types, designed according to text content)**:
 - Relationships should reflect real connections in social media interactions
 - Ensure relationship source_targets cover your defined entity types
 
+**MANDATORY: stance relationships.** This is an opinion simulation, so the
+graph must record WHO TAKES WHICH SIDE, not only who is structurally connected
+to whom. You MUST include at least these two relationship types verbatim:
+
+- `SUPPORTS` - the source entity backs the policy, decision or event in question
+- `OPPOSES` - the source entity is against it, doubts it, warns about it, or
+  demands conditions before accepting it
+
+Use these exact names for stance, never invented synonyms such as
+`QUESTIONS_BENEFITS_FROM` or `APPROVES_INVESTMENT_FOR`. Structural relations
+(regulating, supplying, employing, commenting) are separate and must NOT be
+used to carry a position. An entity that objects in the source text must end up
+as the SOURCE of an `OPPOSES` edge; if the text contains any criticism, doubt
+or unmet demand at all, that opposition MUST be represented. A graph in which
+nobody opposes anything describes a debate that does not exist.
+
 ### 3. Attribute Design
 
 - Each entity type should have 1-3 key attributes

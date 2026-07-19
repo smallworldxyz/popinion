@@ -118,6 +118,15 @@ Extract ALL entities and relationships from the text below.
    - attributes: Extract ALL attributes defined in the schema above!
 3. Extract ALL relationships between entities
 4. For relationships, include a "fact" attribute describing the relationship
+5. STANCE IS MANDATORY. This graph drives an opinion simulation, so a position
+   taken in the text must become an edge, not just prose in a summary. Whenever
+   an entity backs, welcomes or defends the matter at hand, emit a `SUPPORTS`
+   edge from that entity. Whenever an entity criticises, doubts, questions,
+   warns about, or demands conditions on it, emit an `OPPOSES` edge from that
+   entity. Use these exact relation names for positions; do not soften them
+   into structural verbs such as COMMENTS_ON or QUESTIONS_BENEFITS_FROM. If the
+   text contains disagreement and you emit no `OPPOSES` edge, the extraction is
+   wrong.
 
 **Text to Analyze:**
 {text}
