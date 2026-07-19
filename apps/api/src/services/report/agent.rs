@@ -2,9 +2,10 @@
 //! store, followed by a boosted-model synthesis pass and reflection rounds.
 //!
 //! Uses a ReACT loop with a section writer and reflection, grounding the tools
-//! in `sim::store::Store` instead of Neo4j, and produces a fixed six-section
-//! report instead of an LLM-planned outline, so every report has a predictable
-//! shape the frontend can render.
+//! in `sim::store::Store` instead of Neo4j, and produces a fixed five-section
+//! analyst report (Executive Summary, Sentiment Breakdown, Theme Analysis,
+//! Trend Alert, Recommendations) instead of an LLM-planned outline, so every
+//! report has a predictable shape the frontend can render.
 
 use crate::error::{AppError, AppResult};
 use crate::llm::Msg;
@@ -16,13 +17,12 @@ use std::path::Path;
 use super::registry::{self, ReportEntry, ReportSection};
 use crate::services::registry::JobStatus;
 
-pub const SECTION_TITLES: [&str; 6] = [
+pub const SECTION_TITLES: [&str; 5] = [
     "Executive Summary",
-    "Stance Distribution",
-    "Key Arguments by Stance",
-    "Sentiment Trend",
-    "Notable Personas & Influencers",
-    "Risks & Outlook",
+    "Sentiment Breakdown",
+    "Theme Analysis",
+    "Trend Alert",
+    "Recommendations",
 ];
 
 const MAX_CHAT_TOOL_CALLS: usize = 2;
@@ -337,15 +337,34 @@ async fn generate(st: &AppState, report_id: &str) -> anyhow::Result<()> {
         .collect::<Vec<_>>()
         .join("\n");
     let writer_system = format!(
-        "You are an expert public-opinion analyst writing a simulation analysis report.\n\
-         Simulation topic: {topic}\n\n\
-         Write the report in Markdown with EXACTLY these section headings, in this order:\n{section_list}\n\n\
+        "You are an expert public-opinion analyst. Analyze the simulated public discussion about \
+         \"{topic}\" to determine sentiment, identify key themes, and detect emerging trends.\n\n\
+         Data source: a Popinion multi-agent simulation - AI personas grounded in real evidence, each \
+         posting or replying with a recorded STANCE toward the topic (support / oppose / neutral) and a \
+         SENTIMENT value from -1 to 1. Read stance as the primary opinion signal (support = favorable, \
+         oppose = unfavorable, neutral = undecided/mixed) and the sentiment value as emotional intensity. \
+         The discussion runs over rounds; treat later rounds as more recent.\n\n\
+         Write the report in Markdown with EXACTLY these five section headings, in this order:\n{section_list}\n\n\
+         Section requirements:\n\
+         - Executive Summary: a 3-sentence overview of the general public mood.\n\
+         - Sentiment Breakdown: the distribution across Favorable, Unfavorable, Neutral (and Mixed if warranted) \
+           with PERCENTAGES computed from the evidence counts; for each category name the top 2-3 emotional \
+           drivers (anger, fear, hope, satisfaction, distrust, etc.) inferred from the actual arguments.\n\
+         - Theme Analysis: extract the top ~5 recurring themes as a Markdown TABLE with columns \
+           `Theme | Sentiment Association | Key Keywords`, where sentiment association is mostly favorable, \
+           mostly unfavorable, or divided.\n\
+         - Trend Alert: describe any significant shift in sentiment/stance across the rounds (use the per-round \
+           trend), and flag minority or outlier positions and any emerging narrative that contradicts the majority.\n\
+         - Recommendations: exactly 3 actionable insights for stakeholders, each a **bold lead-in** followed by \
+           one sentence.\n\n\
          Rules:\n\
-         - Every claim must be grounded in the evidence provided; cite numbers from it.\n\
-         - Quote representative posts as standalone `>` blockquotes, attributed to their user_name.\n\
+         - Every claim must be grounded in the evidence provided; cite the numbers.\n\
+         - Quote 1-2 representative posts for the major stances as `>` blockquotes, attributed to their user_name.\n\
+         - Bias check: conversation volume is not the same as number of people - a few hyperactive agents can \
+           dominate the post count, so do not amplify extreme or repetitive voices disproportionately, and note \
+           sampling/representativeness caveats where relevant.\n\
          - Do not invent data. If the evidence is insufficient for a section, say so explicitly.\n\
-         - No headings other than the six `##` sections above. Use **bold** for emphasis.\n\
-         - Write in English."
+         - No headings other than the five `##` sections above. Use **bold** for emphasis. Write in English."
     );
     let mut draft = st
         .llm_boost()
@@ -403,7 +422,7 @@ async fn generate(st: &AppState, report_id: &str) -> anyhow::Result<()> {
                     Msg::user(format!(
                         "Evidence gathered from the simulation:\n\n{evidence_text}\n\n\
                          Previous draft:\n{draft}\n\nReviewer feedback:\n{critique}\n\n\
-                         Rewrite the full report fixing every issue. Keep the exact same six section headings."
+                         Rewrite the full report fixing every issue. Keep the exact same five section headings."
                     )),
                 ],
                 st.cfg.report_temperature,
