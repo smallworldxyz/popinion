@@ -234,6 +234,7 @@ pub fn start(st: &AppState, simulation_id: String, db_path: String, topic: Strin
 
     let st = st.clone();
     let id = report_id.clone();
+    let sim_id = registry::get(&report_id).map(|r| r.simulation_id).unwrap_or_default();
     tokio::spawn(async move {
         registry::agent_log(&id, "report_start", "pending", json!({}));
         if let Err(e) = generate(&st, &id).await {
@@ -247,6 +248,8 @@ pub fn start(st: &AppState, simulation_id: String, db_path: String, topic: Strin
             registry::agent_log(&id, "report_failed", "failed", json!({"error": format!("{e:#}")}));
             registry::console_log(&id, "ERROR", &format!("Report generation failed: {e:#}"));
         }
+        // Terminal either way; persist so a restart doesn't cost a regeneration.
+        registry::persist(&id, &st.sim_manager().report_path(&sim_id));
     });
     report_id
 }

@@ -3,14 +3,14 @@
 //! reports, and survey templates each hold their own typed static instance;
 //! the locking/lifecycle logic lives only here.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
 /// Shared lifecycle vocabulary for registry entries. `Running` replaces the
 /// old `Processing`/`Generating` synonyms; wire value is `"running"` (the
 /// frontend only branches on `"completed"`/`"failed"`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum JobStatus {
     Pending,

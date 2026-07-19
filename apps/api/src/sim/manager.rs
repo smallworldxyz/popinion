@@ -68,6 +68,11 @@ impl Manager {
     pub fn config_path(&self, id: &str) -> PathBuf {
         self.dir(id).join("config.json")
     }
+    /// The generated report for a sim. One per run: regenerating replaces it,
+    /// which is what `force_regenerate` means to the caller.
+    pub fn report_path(&self, id: &str) -> PathBuf {
+        self.dir(id).join("report.json")
+    }
 
     pub fn load_personas(&self, id: &str) -> Result<Vec<Persona>> {
         let raw = std::fs::read(self.profiles_path(id))
