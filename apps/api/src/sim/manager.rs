@@ -153,7 +153,13 @@ impl Manager {
             content: event.to_string(),
         }];
         let src = self.meta(src_id)?;
-        let id = self.create(&format!("{} — alternative", src.name), profiles, config, src.graph_id, src.project_id)?;
+        // Name the alternative by the event it tests, so a World's run list reads
+        // "Baseline run" / "Alt: <the alternative scenario>" instead of duplicates.
+        let alt_name = {
+            let e: String = event.trim().chars().take(48).collect();
+            if e.is_empty() { format!("{} - alternative", src.name) } else { format!("Alt: {e}") }
+        };
+        let id = self.create(&alt_name, profiles, config, src.graph_id, src.project_id)?;
         let mut meta = self.meta(&id)?;
         meta.status = "prepared".into();
         // A duplicate is a derived Run in the same World: record the lineage so

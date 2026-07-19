@@ -45,7 +45,8 @@ onMounted(async () => {
       getSimulation(props.simId).catch(() => null),
       getSimulationProfiles(props.simId).catch(() => null),
     ])
-    name.value = meta?.data?.name || 'Run'
+    const n = meta?.data?.name
+    name.value = (n && n !== 'Untitled Simulation') ? n : 'Baseline run'
     personas.value = profs?.data?.profiles || []
   } finally {
     loading.value = false

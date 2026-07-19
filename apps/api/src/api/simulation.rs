@@ -93,7 +93,7 @@ struct CreateReq {
     project_id: Option<String>,
 }
 fn default_name() -> String {
-    "Untitled Simulation".into()
+    "Baseline run".into()
 }
 
 async fn create(State(st): State<AppState>, Json(req): Json<CreateReq>) -> AppResult<Success<Value>> {

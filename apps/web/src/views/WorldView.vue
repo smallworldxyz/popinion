@@ -4,6 +4,7 @@
       <router-link class="back" to="/worlds">← Worlds</router-link>
       <h1>{{ world.name }}</h1>
       <p class="sub">{{ world.metaText }}</p>
+      <p class="hint">A <b>World</b> is a population built from real evidence. Each <b>run</b> below tests a scenario against that same population - the baseline, plus any alternatives you rehearse.</p>
     </header>
 
     <div v-if="loading" class="note">Loading…</div>
@@ -25,7 +26,7 @@
       <tbody>
         <tr v-for="r in runs" :key="r.simulation_id" class="run" @click="open(r)">
           <td class="name">
-            {{ r.name || 'Untitled run' }}
+            {{ (r.name && r.name !== 'Untitled Simulation') ? r.name : 'Baseline run' }}
             <span v-if="r.parent_id" class="from" :title="'forked from ' + r.parent_id">↳ derived</span>
           </td>
           <td><span class="kind" :class="r.kind">{{ r.kind }}</span></td>
@@ -138,6 +139,8 @@ onMounted(async () => {
 .back:hover { text-decoration: underline; }
 .head h1 { margin: 0 0 6px; font-size: 26px; }
 .sub { color: #6b7280; margin: 0; font-size: 14px; }
+.hint { color: #9ca3af; margin: 10px 0 0; font-size: 13px; line-height: 1.55; max-width: 640px; }
+.hint b { color: #6b7280; font-weight: 600; }
 .note { margin-top: 32px; color: #6b7280; }
 .runs { width: 100%; border-collapse: collapse; margin-top: 28px; font-size: 14px; }
 .runs th {

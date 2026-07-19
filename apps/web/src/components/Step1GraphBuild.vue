@@ -174,6 +174,7 @@
             <span v-if="creatingSimulation" class="spinner-sm"></span>
             {{ creatingSimulation ? 'Creating...' : 'Enter Environment Setup ➝' }}
           </button>
+          <p v-if="createErr" class="create-err">{{ createErr }}</p>
         </div>
       </div>
     </div>
@@ -215,6 +216,7 @@ defineEmits(['next-step'])
 const selectedOntologyItem = ref(null)
 const logContent = ref(null)
 const creatingSimulation = ref(false)
+const createErr = ref('')
 
 // Enter Environment Setup - Create simulation and navigate
 const handleEnterEnvSetup = async () => {
@@ -229,10 +231,13 @@ const handleEnterEnvSetup = async () => {
     const res = await createSimulation({
       project_id: props.projectData.project_id,
       graph_id: props.projectData.graph_id,
+      // The first run of a World is its baseline; alternatives (A/B rehearsal)
+      // are named by their event. This makes the World's run list self-explanatory.
+      name: 'Baseline run',
       enable_twitter: true,
       enable_reddit: true
     })
-    
+
     if (res.success && res.data?.simulation_id) {
       // Navigate to simulation page
       router.push({
@@ -240,12 +245,10 @@ const handleEnterEnvSetup = async () => {
         params: { simulationId: res.data.simulation_id }
       })
     } else {
-      console.error('Failed to create simulation:', res.error)
-      alert('Failed to create simulation: ' + (res.error || 'Unknown error'))
+      createErr.value = 'Could not create the run: ' + (res.error || 'unknown error')
     }
   } catch (err) {
-    console.error('Simulation creation error:', err)
-    alert('Simulation creation error: ' + err.message)
+    createErr.value = 'Could not create the run: ' + err.message
   } finally {
     creatingSimulation.value = false
   }
@@ -368,6 +371,11 @@ watch(() => props.systemLogs.length, () => {
   color: #666;
   line-height: 1.5;
   margin-bottom: 16px;
+}
+.create-err {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: #b91c1c;
 }
 
 /* Step 01 Tags */
