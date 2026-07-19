@@ -138,40 +138,52 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.world { max-width: 900px; margin: 0 auto; padding: 40px 20px; color: #1a1a2e; }
-.back { display: inline-block; color: #2563eb; text-decoration: none; font-size: 14px; margin-bottom: 10px; }
+.world { min-height: 100vh; background: var(--color-bg); color: var(--color-text); }
+.head, .note, .runs { max-width: 900px; margin-left: auto; margin-right: auto; }
+.head { padding: 40px 20px 0; }
+.back { display: inline-block; color: var(--color-accent-text); text-decoration: none; font-size: var(--fs-sm); margin-bottom: 10px; }
 .back:hover { text-decoration: underline; }
-.head h1 { margin: 0 0 6px; font-size: 26px; }
-.sub { color: #6b7280; margin: 0; font-size: 14px; }
-.hint { color: #9ca3af; margin: 10px 0 0; font-size: 13px; line-height: 1.55; max-width: 640px; }
-.hint b { color: #6b7280; font-weight: 600; }
-.note { margin-top: 32px; color: #6b7280; }
-.runs { width: 100%; border-collapse: collapse; margin-top: 28px; font-size: 14px; }
+.head h1 { margin: 0 0 6px; font-size: var(--fs-lg); }
+.sub { color: var(--color-text-muted); margin: 0; font-size: var(--fs-sm); }
+.hint { color: var(--color-text-muted); margin: 10px 0 0; font-size: var(--fs-xs); line-height: 1.55; max-width: 640px; }
+.hint b { color: var(--color-text); font-weight: 600; }
+.note { padding: 32px 20px; color: var(--color-text-muted); }
+.runs { width: calc(100% - 40px); border-collapse: collapse; margin-top: 28px; margin-bottom: 40px; font-size: var(--fs-sm); }
 .runs th {
-  text-align: left; font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em;
-  color: #9ca3af; font-weight: 600; padding: 0 12px 8px; border-bottom: 1px solid #e5e7eb;
+  text-align: left; font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: .04em;
+  color: var(--color-text-muted); font-weight: 600; padding: 0 12px 8px; border-bottom: 1px solid var(--color-border);
 }
 .runs th.num, td.num { text-align: right; }
 .run { cursor: pointer; transition: background .12s; }
-.run:hover { background: #fafbff; }
-.run td { padding: 12px; border-bottom: 1px solid #f1f2f4; }
+.run:hover { background: color-mix(in srgb, var(--color-accent) 7%, transparent); }
+.run td { padding: 12px; border-bottom: 1px solid var(--color-border); }
 .name { font-weight: 550; }
-.from { margin-left: 8px; font-size: 12px; color: #9ca3af; font-weight: 400; }
-.kind { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: #eef2ff; color: #4338ca; text-transform: capitalize; }
-.kind.canonical { background: #eef2ff; color: #4338ca; }
-.kind.alt, .kind.replicate, .kind.ablation { background: #f3f4f6; color: #6b7280; }
-.badge { font-size: 11px; padding: 2px 9px; border-radius: 999px; font-weight: 600; }
-.badge.running { background: #fef3c7; color: #92400e; }
-.badge.completed { background: #d1fae5; color: #065f46; }
-.badge.ready { background: #dbeafe; color: #1e40af; }
-.badge.stopped, .badge.draft { background: #f3f4f6; color: #6b7280; }
-.badge.failed { background: #fee2e2; color: #b91c1c; }
-.date { color: #9ca3af; white-space: nowrap; }
+.run-link { color: inherit; text-decoration: none; }
+.run-link:hover { text-decoration: underline; }
+.from { margin-left: 8px; font-size: var(--fs-2xs); color: var(--color-text-muted); font-weight: 400; }
+/* Kind and status read as outlined pills; only the meaningful states take a
+   colour, so a table of runs isn't a fruit salad. */
+.kind {
+  font-size: var(--fs-2xs); padding: 2px 8px; border-radius: 999px; text-transform: capitalize;
+  border: 1px solid var(--color-border); color: var(--color-text-muted);
+}
+.kind.canonical { border-color: var(--color-accent-2); color: var(--color-accent-2-text); }
+.badge {
+  font-size: var(--fs-2xs); padding: 2px 9px; border-radius: 999px; font-weight: 600;
+  border: 1px solid var(--color-border); color: var(--color-text-muted);
+}
+/* Chrome only. The stance ramp is the DATA palette (theme.css) - borrowing it
+   for status chips would make a run's lifecycle read as a sentiment reading.
+   Gold marks the one state wanting attention; failure follows .btn-danger. */
+.badge.running { border-color: var(--color-accent); color: var(--color-accent-text); }
+.badge.completed { color: var(--color-text); }
+.badge.failed { border-color: var(--stance-oppose); color: var(--stance-oppose); }
+.date { color: var(--color-text-muted); white-space: nowrap; }
 .act { text-align: right; white-space: nowrap; }
-.del-btn { border: none; background: none; color: #c7ccd4; cursor: pointer; font-size: 14px; padding: 4px 7px; border-radius: 6px; line-height: 1; }
-.del-btn:hover { color: #b91c1c; background: #fee2e2; }
-.del-confirm { border: none; background: #b91c1c; color: #fff; border-radius: 6px; padding: 4px 10px; font-size: 12px; font-weight: 600; cursor: pointer; }
+.del-btn { border: none; background: none; color: var(--color-text-muted); cursor: pointer; font-size: var(--fs-sm); padding: 4px 7px; border-radius: var(--radius-sm); line-height: 1; }
+.del-btn:hover { color: var(--stance-oppose); background: color-mix(in srgb, var(--stance-oppose) 14%, transparent); }
+.del-confirm { border: none; background: var(--stance-oppose-strong); color: #fff; border-radius: var(--radius-sm); padding: 4px 10px; font-size: var(--fs-2xs); font-weight: 600; cursor: pointer; }
 .del-confirm:disabled { opacity: .6; cursor: default; }
-.del-cancel { border: 1px solid #e5e7eb; background: #fff; color: #6b7280; border-radius: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer; margin-left: 4px; }
-.del-cancel:hover { background: #f3f4f6; }
+.del-cancel { border: 1px solid var(--color-border); background: transparent; color: var(--color-text-muted); border-radius: var(--radius-sm); padding: 4px 10px; font-size: var(--fs-2xs); cursor: pointer; margin-left: 4px; }
+.del-cancel:hover { color: var(--color-text); border-color: var(--color-text-muted); }
 </style>
