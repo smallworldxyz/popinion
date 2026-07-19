@@ -50,7 +50,7 @@ impl EvidenceBundle {
 
 /// Polarity of a stance relationship: Some(true)=supportive, Some(false)=opposed,
 /// None=not a stance edge.
-fn stance_polarity(rel: &str) -> Option<bool> {
+fn keyword_polarity(rel: &str) -> Option<bool> {
     let r = rel.to_uppercase();
     if ["SUPPORT", "ENDORS", "BACK", "FAVOR"].iter().any(|k| r.contains(k)) {
         Some(true)
@@ -61,10 +61,86 @@ fn stance_polarity(rel: &str) -> Option<bool> {
     }
 }
 
+/// Which relation types carry a stance, and in which direction.
+///
+/// Ontology generation lets the model invent edge type names, so a fixed
+/// keyword list cannot recognise them: a graph whose opposition arrived as
+/// `QUESTIONS_BENEFITS_FROM` scored as having no opponents at all, which left
+/// the synthetic audience one-sided and reported near-unanimous support that
+/// the discussion did not contain. The names are classified by the same kind of
+/// model that invented them, keywords serving only as a free fast path.
+#[derive(Clone, Default, Debug)]
+pub struct StanceLexicon {
+    learned: HashMap<String, bool>,
+}
+
+impl StanceLexicon {
+    /// Keyword matching only. For callers with no LLM to hand; a graph using
+    /// invented stance verbs will read as stanceless.
+    pub fn keywords_only() -> Self {
+        Self::default()
+    }
+
+    /// A lexicon with classifications already known, bypassing the LLM.
+    pub fn from_pairs<I: IntoIterator<Item = (String, bool)>>(pairs: I) -> Self {
+        Self { learned: pairs.into_iter().map(|(k, v)| (k.to_uppercase(), v)).collect() }
+    }
+
+    pub fn polarity(&self, rel: &str) -> Option<bool> {
+        keyword_polarity(rel).or_else(|| self.learned.get(&rel.to_uppercase()).copied())
+    }
+
+    /// Classify the graph's distinct relation types. One call over a handful of
+    /// names, not per edge. On any failure the lexicon degrades to keywords.
+    pub async fn learn(llm: &Llm, graph_data: &GraphData) -> Self {
+        let unknown: Vec<String> = graph_data
+            .edges
+            .iter()
+            .map(|e| e.relation_type.to_uppercase())
+            .filter(|r| keyword_polarity(r).is_none())
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        if unknown.is_empty() {
+            return Self::default();
+        }
+
+        let prompt = format!(
+            "These are relation types from a knowledge graph about a public policy debate. \
+             For each, say whether the SOURCE entity is expressing support for, or opposition \
+             to, the thing at the centre of the debate.\n\n{}\n\n\
+             Reply with JSON only: an object mapping each relation type to \"support\", \
+             \"oppose\", or \"neutral\". Use \"neutral\" for relations that describe a factual \
+             or structural link (regulating, supplying, employing) rather than a position. \
+             Doubt, questioning, warning and demanding conditions all count as \"oppose\".",
+            unknown.iter().map(|r| format!("- {r}")).collect::<Vec<_>>().join("\n")
+        );
+
+        let Ok(v) = llm.chat_json(&[Msg::user(prompt)], 0.0, 600).await else {
+            tracing::warn!("stance lexicon: classification failed, falling back to keywords");
+            return Self::default();
+        };
+        let mut learned = HashMap::new();
+        for rel in unknown {
+            match v.get(&rel).and_then(|s| s.as_str()) {
+                Some("support") => {
+                    learned.insert(rel, true);
+                }
+                Some("oppose") => {
+                    learned.insert(rel, false);
+                }
+                _ => {}
+            }
+        }
+        tracing::info!("stance lexicon: learned {} stance-bearing relation types", learned.len());
+        Self { learned }
+    }
+}
+
 /// Build one evidence bundle per entity from `db::get_graph_data`'s typed
 /// `GraphData` (one struct shared with the producer — a renamed field breaks
 /// the build here instead of silently yielding empty facts).
-pub fn build_bundles(graph_data: &GraphData) -> Vec<EvidenceBundle> {
+pub fn build_bundles(graph_data: &GraphData, lexicon: &StanceLexicon) -> Vec<EvidenceBundle> {
     let mut bundles: HashMap<String, EvidenceBundle> = HashMap::new();
     let mut order: Vec<String> = Vec::new();
     for n in &graph_data.nodes {
@@ -90,7 +166,7 @@ pub fn build_bundles(graph_data: &GraphData) -> Vec<EvidenceBundle> {
 
     for e in &graph_data.edges {
         let fact_text = edge_fact_text(e);
-        let stance = stance_polarity(&e.relation_type);
+        let stance = lexicon.polarity(&e.relation_type);
         for uuid_key in [&e.source_node_uuid, &e.target_node_uuid] {
             if let Some(b) = bundles.get_mut(uuid_key) {
                 b.facts.push(fact_text.clone());
@@ -221,13 +297,18 @@ pub async fn synthesize_persona(llm: &Llm, bundle: &EvidenceBundle) -> String {
 // ponytail: factions split by polarity (single-issue assumption) and weighted
 // equally. Weight by observed audience size (followers/subscribers) and split by
 // target when the graph carries multiple issues.
-pub fn synthesize_audience(graph_data: &GraphData, per_faction: usize, start_id: i64) -> Vec<Persona> {
+pub fn synthesize_audience(
+    graph_data: &GraphData,
+    lexicon: &StanceLexicon,
+    per_faction: usize,
+    start_id: i64,
+) -> Vec<Persona> {
     if per_faction == 0 {
         return vec![];
     }
     let (mut pro, mut con): (Vec<String>, Vec<String>) = (Vec::new(), Vec::new());
     for e in &graph_data.edges {
-        let Some(supports) = stance_polarity(&e.relation_type) else { continue };
+        let Some(supports) = lexicon.polarity(&e.relation_type) else { continue };
         let fact = edge_fact_text(e);
         if supports {
             pro.push(fact);
@@ -238,8 +319,8 @@ pub fn synthesize_audience(graph_data: &GraphData, per_faction: usize, start_id:
 
     let mut out = Vec::new();
     let mut id = start_id;
-    for (label, verb, faction, facts) in
-        [("Supporter", "support", "pro", &pro), ("Opponent", "oppose", "con", &con)]
+    for (label, verb, handle, faction, facts) in
+        [("Supporter", "support", "supporter", "pro", &pro), ("Opponent", "oppose", "opponent", "con", &con)]
     {
         if facts.is_empty() {
             continue;
@@ -254,7 +335,7 @@ pub fn synthesize_audience(graph_data: &GraphData, per_faction: usize, start_id:
             );
             out.push(Persona {
                 user_id: id,
-                user_name: format!("{verb}er_{id}"),
+                user_name: format!("{handle}_{id}"),
                 name: format!("{label} {}", i + 1),
                 bio: String::new(),
                 persona,
@@ -327,8 +408,8 @@ fn jitter(id: i64) -> (f32, f32) {
 }
 
 /// Entities grouped by type with evidence scores, for the /prepare/preview picker.
-pub fn preview(graph_data: &GraphData, min_evidence: usize) -> Value {
-    let bundles = build_bundles(graph_data);
+pub fn preview(graph_data: &GraphData, lexicon: &StanceLexicon, min_evidence: usize) -> Value {
+    let bundles = build_bundles(graph_data, lexicon);
     let mut groups: HashMap<String, Vec<Value>> = HashMap::new();
     let mut group_order: Vec<String> = Vec::new();
     let (mut eligible_count, mut below_bar) = (0usize, 0usize);
@@ -491,9 +572,69 @@ mod tests {
         )
     }
 
+    /// A graph whose opposition arrived as an invented verb. Keywords alone see
+    /// no opponents, so the synthetic public came out entirely pro and the run
+    /// reported near-unanimous support that nobody had argued for.
+    fn invented_verb_graph() -> GraphData {
+        graph(
+            vec![
+                node("r1", "Residents", "Group", "Live near the site."),
+                node("p1", "Project", "Policy", "The approval under debate."),
+                node("m1", "Ministry", "Government", "Approved it."),
+            ],
+            vec![
+                edge(
+                    "QUESTIONS_BENEFITS_FROM",
+                    "Residents question who benefits from the project.",
+                    ("r1", "Residents"),
+                    ("p1", "Project"),
+                ),
+                edge(
+                    "APPROVES_INVESTMENT_FOR",
+                    "The ministry approved investment for the project.",
+                    ("m1", "Ministry"),
+                    ("p1", "Project"),
+                ),
+            ],
+        )
+    }
+
+    #[test]
+    fn invented_stance_verbs_are_invisible_to_keywords_alone() {
+        let data = invented_verb_graph();
+        let bare = StanceLexicon::keywords_only();
+        assert_eq!(bare.polarity("QUESTIONS_BENEFITS_FROM"), None);
+
+        let audience = synthesize_audience(&data, &bare, 5, 0);
+        assert!(audience.is_empty(), "no camp is recognised, so no public is synthesized");
+
+        let residents = build_bundles(&data, &bare).into_iter().find(|b| b.uuid == "r1").unwrap();
+        assert_eq!(residents.faction(), None, "objectors read as neutral");
+    }
+
+    #[test]
+    fn a_learned_lexicon_recovers_both_camps() {
+        let data = invented_verb_graph();
+        let learned = StanceLexicon::from_pairs([
+            ("QUESTIONS_BENEFITS_FROM".to_string(), false),
+            ("APPROVES_INVESTMENT_FOR".to_string(), true),
+        ]);
+        assert_eq!(learned.polarity("questions_benefits_from"), Some(false), "case-insensitive");
+        // Keywords still win where they apply, so learning cannot invert them.
+        assert_eq!(learned.polarity("OPPOSES"), Some(false));
+
+        let audience = synthesize_audience(&data, &learned, 5, 0);
+        let pro = audience.iter().filter(|p| p.faction.as_deref() == Some("pro")).count();
+        let con = audience.iter().filter(|p| p.faction.as_deref() == Some("con")).count();
+        assert_eq!((pro, con), (5, 5), "both camps populated, so the public is not one-sided");
+
+        let residents = build_bundles(&data, &learned).into_iter().find(|b| b.uuid == "r1").unwrap();
+        assert_eq!(residents.faction(), Some("con"), "objectors are counted as opposed");
+    }
+
     #[test]
     fn bundles_gather_summary_and_incident_facts() {
-        let bundles = build_bundles(&fixture());
+        let bundles = build_bundles(&fixture(), &StanceLexicon::keywords_only());
         let u1 = bundles.iter().find(|b| b.uuid == "u1").unwrap();
         assert_eq!(u1.facts.len(), 1);
         assert_eq!(u1.stance_facts.len(), 1, "OPPOSES is a stance edge");
@@ -502,7 +643,7 @@ mod tests {
 
     #[test]
     fn bar_excludes_bare_nodes() {
-        let bundles = build_bundles(&fixture());
+        let bundles = build_bundles(&fixture(), &StanceLexicon::keywords_only());
         let bare = bundles.iter().find(|b| b.uuid == "u3").unwrap();
         assert_eq!(bare.evidence_score(), 0);
         assert!(!eligible(bare, 2), "no summary, no facts -> background population");
@@ -512,7 +653,7 @@ mod tests {
 
     #[test]
     fn profile_is_grounded_and_not_synthetic() {
-        let bundles = build_bundles(&fixture());
+        let bundles = build_bundles(&fixture(), &StanceLexicon::keywords_only());
         let union = bundles.iter().find(|b| b.uuid == "u1").unwrap();
         let p = to_persona(union, 0);
         assert!(!p.synthetic);
@@ -526,7 +667,7 @@ mod tests {
 
     #[test]
     fn faction_from_outgoing_stance_edges() {
-        let bundles = build_bundles(&fixture());
+        let bundles = build_bundles(&fixture(), &StanceLexicon::keywords_only());
         let union = bundles.iter().find(|b| b.uuid == "u1").unwrap();
         assert_eq!(union.faction(), Some("con"), "sources an OPPOSES edge");
         assert_eq!(to_persona(union, 0).faction.as_deref(), Some("con"));
@@ -544,7 +685,7 @@ mod tests {
                 edge("OPPOSES", "rejects part B", ("u1", "Fence Sitter"), ("y", "B")),
             ],
         );
-        let bundles = build_bundles(&g);
+        let bundles = build_bundles(&g, &StanceLexicon::keywords_only());
         assert_eq!(bundles[0].faction(), None, "both camps -> no single faction");
     }
 
@@ -558,7 +699,7 @@ mod tests {
                 edge("AFFILIATED_WITH", "C works for P.", ("", "C"), ("", "P")),
             ],
         );
-        let a = synthesize_audience(&g, 2, 100);
+        let a = synthesize_audience(&g, &StanceLexicon::keywords_only(), 2, 100);
         assert_eq!(a.len(), 4, "2 per faction × 2 factions; non-stance edge ignored");
         assert!(a.iter().all(|p| p.synthetic && p.source_entity_uuid.is_none()));
         assert!(a.iter().any(|p| p.name.starts_with("Supporter")));
@@ -575,13 +716,13 @@ mod tests {
     #[test]
     fn audience_empty_when_no_stance_edges_or_zero_count() {
         let g = graph(vec![], vec![edge("AFFILIATED_WITH", "", ("", "A"), ("", "B"))]);
-        assert!(synthesize_audience(&g, 5, 0).is_empty());
-        assert!(synthesize_audience(&fixture(), 0, 0).is_empty());
+        assert!(synthesize_audience(&g, &StanceLexicon::keywords_only(), 5, 0).is_empty());
+        assert!(synthesize_audience(&fixture(), &StanceLexicon::keywords_only(), 0, 0).is_empty());
     }
 
     #[test]
     fn preview_groups_and_counts() {
-        let out = preview(&fixture(), 2);
+        let out = preview(&fixture(), &StanceLexicon::keywords_only(), 2);
         assert_eq!(out["eligible_count"], 2); // union + minister
         assert_eq!(out["below_bar_count"], 1); // bare node
         let groups = out["groups"].as_array().unwrap();

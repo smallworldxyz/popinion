@@ -149,7 +149,8 @@ struct PreparePreviewReq {
 async fn prepare_preview(State(st): State<AppState>, Json(req): Json<PreparePreviewReq>) -> AppResult<Success<Value>> {
     let graph_id = resolve_graph_id(&st, &req.simulation_id)?;
     let data = db::get_graph_data(st.graph(), &graph_id).await.map_err(AppError::Other)?;
-    Ok(Success(persona::preview(&data, req.min_evidence.unwrap_or(2))))
+    let lexicon = persona::StanceLexicon::learn(&st.llm(), &data).await;
+    Ok(Success(persona::preview(&data, &lexicon, req.min_evidence.unwrap_or(2))))
 }
 
 /// A crash-test should feel like a public, not a boardroom of named elites, so
@@ -229,7 +230,9 @@ async fn run_prepare(
 ) -> anyhow::Result<()> {
     tasks::update(task_id, 10, "Loading graph...");
     let data = db::get_graph_data(graph, graph_id).await?;
-    let bundles = persona::build_bundles(&data);
+    // Classify the graph's own relation verbs before any stance is read from them.
+    let lexicon = persona::StanceLexicon::learn(llm, &data).await;
+    let bundles = persona::build_bundles(&data, &lexicon);
     tasks::update(task_id, 40, format!("{} entities in graph", bundles.len()));
 
     let id_set: std::collections::HashSet<String> = selected.into_iter().collect();
@@ -260,9 +263,21 @@ async fn run_prepare(
     }
 
     // Synthesize a background public from the graph's stance factions.
-    let audience = persona::synthesize_audience(&data, audience_per_faction, profiles.len() as i64);
+    let audience = persona::synthesize_audience(&data, &lexicon, audience_per_faction, profiles.len() as i64);
     let audience_count = audience.len();
     profiles.extend(audience);
+
+    // A population with an empty camp cannot produce a contested result, and a
+    // lopsided stance reading off one would look like consensus rather than the
+    // artefact it is. Say so where the caller can see it.
+    let camp = |f: &str| profiles.iter().filter(|p| p.faction.as_deref() == Some(f)).count();
+    let (pro, con) = (camp("pro"), camp("con"));
+    if pro == 0 || con == 0 {
+        tracing::warn!(
+            "one-sided population for {sim_id}: {pro} pro, {con} con. The graph recorded no \
+             stance for one camp, so any result will read as consensus."
+        );
+    }
 
     // Lay the whole population out on the opinion basemap once, so the FIELD map
     // has a fixed coordinate per Persona that never moves during a run.
@@ -281,6 +296,9 @@ async fn run_prepare(
             "audience_created": audience_count,
             "min_evidence": min_evidence,
             "grounded": true,
+            "pro_count": pro,
+            "con_count": con,
+            "one_sided": pro == 0 || con == 0,
         }),
     );
     Ok(())
