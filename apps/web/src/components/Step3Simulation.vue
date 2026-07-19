@@ -17,6 +17,17 @@
         <div class="rstat"><span class="rstat-num mono">{{ agentCount }}</span><span class="rstat-label">Agents</span></div>
       </div>
 
+      <button
+        v-if="status === 'running' || status === 'initializing'"
+        class="stop-btn"
+        :disabled="stopping"
+        @click="doStop"
+      >
+        <span v-if="stopping" class="spinner spinner-dark"></span>
+        <span v-else class="stop-glyph"></span>
+        {{ stopping ? 'Stopping…' : 'Stop' }}
+      </button>
+
       <button class="report-btn" :disabled="!canReport || isGeneratingReport" @click="handleNextStep">
         <span v-if="isGeneratingReport" class="spinner"></span>
         {{ isGeneratingReport ? 'Starting…' : 'Generate Report' }}
@@ -126,7 +137,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
-import { startSimulation, getRunStatusDetail, getSimulationActions, getAgentStats, injectPost, getSpread } from '../api/simulation'
+import { startSimulation, stopSimulation, getRunStatusDetail, getSimulationActions, getAgentStats, injectPost, getSpread } from '../api/simulation'
 import { generateReport } from '../api/report'
 
 const props = defineProps({
@@ -154,6 +165,10 @@ const injectNote = ref('')
 const injectError = ref(false)
 const spreadRows = ref([])
 const spreadLoading = ref(false)
+const stopping = ref(false)
+// Set once the user stops the run, so a late in-flight poll can't overwrite the
+// "stopped" status with the "not_running" the backend reports after the handle drops.
+const terminated = ref(false)
 let pollTick = 0
 
 const addLog = (msg) => emit('add-log', msg)
@@ -228,7 +243,7 @@ const loadNames = async () => {
 }
 
 const poll = async () => {
-  if (!props.simulationId) return
+  if (!props.simulationId || terminated.value) return
   try {
     const res = await getRunStatusDetail(props.simulationId)
     const prev = status.value
@@ -261,6 +276,29 @@ const poll = async () => {
   // Once the run reaches a terminal state there's nothing left to refresh —
   // stop the 2.5s interval instead of polling forever.
   if (canReport.value) stopPolling()
+}
+
+// ---- stop the run early ----
+// A graceful stop: the engine finishes the round in flight, then halts. The
+// posts already written stay on disk, so the report can be generated from the
+// partial run. We flip the local status to "stopped" (which enables the report
+// action) since the backend drops the live handle once stopped.
+const doStop = async () => {
+  if (stopping.value || terminated.value) return
+  stopping.value = true
+  addLog('Stopping simulation…')
+  try {
+    await stopSimulation({ simulation_id: props.simulationId })
+    terminated.value = true
+    status.value = 'stopped'
+    stopPolling()
+    addLog('✓ Simulation stopped — report can be generated from the partial run')
+    emit('update-status', 'completed')
+  } catch (err) {
+    addLog(`✗ Stop failed: ${err.message}`)
+  } finally {
+    stopping.value = false
+  }
 }
 
 // ---- mid-run injection + spread ----
@@ -382,6 +420,20 @@ onUnmounted(stopPolling)
 .report-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 .report-btn:hover:not(:disabled) { background: #333; }
 
+/* Stop the run early — outline until hover, then the oppose-pole colour so it
+   reads as a halt without shouting. */
+.stop-btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 10px 16px; background: #fff; border: 1px solid var(--color-border, #d9e0e8);
+  border-radius: 8px; color: #4b5563;
+  font-family: inherit; font-size: 0.9rem; font-weight: 600; cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+.stop-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.stop-btn:hover:not(:disabled) { border-color: var(--stance-oppose); color: var(--stance-oppose); }
+.stop-glyph { width: 9px; height: 9px; border-radius: 2px; background: currentColor; }
+.spinner-dark { border: 2px solid rgba(0,0,0,0.2); border-top-color: #666; }
+
 /* stance strip */
 .stance-strip { padding: 12px 24px; border-bottom: 1px solid #f0f0f0; }
 .strip-label { font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: #9ca3af; }
@@ -389,9 +441,10 @@ onUnmounted(stopPolling)
 .seg { height: 100%; }
 .stance-legend { display: flex; gap: 16px; font-size: 0.8rem; color: #4b5563; }
 .leg i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; vertical-align: middle; }
-.st-support { background: #2563eb; } .st-support.act-stance, .st-support.leg { background: none; }
-.st-oppose { background: #dc2626; }
-.st-neutral { background: #9ca3af; }
+/* Functional stance ramp (blue↔amber, tritan-safe) — not the brand pair. */
+.st-support { background: var(--stance-support); } .st-support.act-stance, .st-support.leg { background: none; }
+.st-oppose { background: var(--stance-oppose); }
+.st-neutral { background: var(--stance-neutral); }
 .st-unknown { background: #d1d5db; }
 
 /* inject strip */
@@ -460,9 +513,9 @@ onUnmounted(stopPolling)
 .b-idle { background: #f9fafb; color: #bbb; }
 .b-default { background: #f0f0f0; color: #666; }
 .act-stance { font-size: 0.68rem; padding: 1px 7px; border-radius: 999px; color: #fff; font-weight: 600; }
-.act-stance.st-support { background: #2563eb; }
-.act-stance.st-oppose { background: #dc2626; }
-.act-stance.st-neutral { background: #9ca3af; }
+.act-stance.st-support { background: var(--stance-support); }
+.act-stance.st-oppose { background: var(--stance-oppose); }
+.act-stance.st-neutral { background: var(--stance-neutral); }
 .act-round { margin-left: auto; font-size: 0.72rem; color: #b0b0b0; }
 .act-content { font-size: 0.95rem; line-height: 1.55; color: #1f2937; }
 .act-muted { font-size: 0.85rem; color: #9ca3af; font-style: italic; }
