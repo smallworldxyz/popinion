@@ -32,41 +32,43 @@
       </button>
     </nav>
 
-    <div class="sidebar-divider"></div>
-
-    <!-- Contextual step + status -->
-    <div class="sidebar-context">
-      <div class="workflow-step">
-        <span class="step-num mono">Step {{ stepNum }}/5</span>
-        <span class="step-name">{{ stepName }}</span>
+    <!-- Contextual step + status — only on the workflow shell views -->
+    <template v-if="stepNum">
+      <div class="sidebar-divider"></div>
+      <div class="sidebar-context">
+        <div class="workflow-step">
+          <span class="step-num mono">Step {{ stepNum }}/5</span>
+          <span class="step-name">{{ stepName }}</span>
+        </div>
+        <span class="status-indicator" :class="statusClass">
+          <span class="dot"></span>
+          <span class="status-text">{{ statusText }}</span>
+        </span>
       </div>
-      <span class="status-indicator" :class="statusClass">
-        <span class="dot"></span>
-        <span class="status-text">{{ statusText }}</span>
-      </span>
-    </div>
+    </template>
 
-    <div class="sidebar-divider"></div>
-
-    <!-- View switcher -->
-    <div class="sidebar-views">
-      <span class="views-eyebrow">View</span>
-      <button
-        v-for="mode in ['graph', 'split', 'workbench']"
-        :key="mode"
-        class="view-btn"
-        :class="{ active: modelValue === mode }"
-        @click="$emit('update:modelValue', mode)"
-        :title="viewLabels[mode]"
-      >
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-          <template v-if="mode === 'graph'"><circle cx="6" cy="6" r="2"></circle><circle cx="18" cy="8" r="2"></circle><circle cx="10" cy="17" r="2"></circle><line x1="7.5" y1="7" x2="9" y2="15.5"></line><line x1="8" y1="6.5" x2="16" y2="7.5"></line></template>
-          <template v-else-if="mode === 'split'"><rect x="3" y="4" width="18" height="16" rx="2"></rect><line x1="12" y1="4" x2="12" y2="20"></line></template>
-          <template v-else><rect x="3" y="4" width="18" height="16" rx="2"></rect></template>
-        </svg>
-        <span class="view-label">{{ viewLabels[mode] }}</span>
-      </button>
-    </div>
+    <!-- View switcher — only when a view mode is bound (v-model) -->
+    <template v-if="modelValue">
+      <div class="sidebar-divider"></div>
+      <div class="sidebar-views">
+        <span class="views-eyebrow">View</span>
+        <button
+          v-for="mode in ['graph', 'split', 'workbench']"
+          :key="mode"
+          class="view-btn"
+          :class="{ active: modelValue === mode }"
+          @click="$emit('update:modelValue', mode)"
+          :title="viewLabels[mode]"
+        >
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <template v-if="mode === 'graph'"><circle cx="6" cy="6" r="2"></circle><circle cx="18" cy="8" r="2"></circle><circle cx="10" cy="17" r="2"></circle><line x1="7.5" y1="7" x2="9" y2="15.5"></line><line x1="8" y1="6.5" x2="16" y2="7.5"></line></template>
+            <template v-else-if="mode === 'split'"><rect x="3" y="4" width="18" height="16" rx="2"></rect><line x1="12" y1="4" x2="12" y2="20"></line></template>
+            <template v-else><rect x="3" y="4" width="18" height="16" rx="2"></rect></template>
+          </svg>
+          <span class="view-label">{{ viewLabels[mode] }}</span>
+        </button>
+      </div>
+    </template>
 
     <div class="sidebar-spacer"></div>
 
@@ -102,7 +104,7 @@ defineProps({
   stepName: String,
   statusText: String,
   statusClass: String,
-  modelValue: { type: String, default: 'split' }
+  modelValue: { type: String, default: undefined }
 })
 
 defineEmits(['update:modelValue'])
@@ -326,4 +328,22 @@ const viewLabels = { graph: 'Graph', split: 'Split View', workbench: 'Workbench'
 .collapsed .nav-item,
 .collapsed .view-btn,
 .collapsed .bottom-item { justify-content: center; gap: 0; padding: 9px 0; }
+
+/* Narrow viewports: auto-collapse to the icon rail so content keeps its room. */
+@media (max-width: 760px) {
+  .app-sidebar { width: 60px; }
+  .brand-name,
+  .nav-label,
+  .view-label,
+  .bottom-label,
+  .ext-icon,
+  .status-text,
+  .sidebar-context,
+  .views-eyebrow { display: none; }
+  .sidebar-brand-row { flex-direction: column; gap: 8px; }
+  .brand { justify-content: center; padding: 4px; }
+  .nav-item,
+  .view-btn,
+  .bottom-item { justify-content: center; gap: 0; padding: 9px 0; }
+}
 </style>

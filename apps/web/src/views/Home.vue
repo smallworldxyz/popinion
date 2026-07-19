@@ -1,214 +1,155 @@
 <template>
-  <div class="home-container">
-    <!-- Top navigation bar -->
-    <nav class="navbar">
-      <div class="nav-left">
-        <div class="nav-brand">POPINION</div>
-        <button class="nav-btn" @click="openSettings">⚙ Models</button>
-      </div>
-      <div class="nav-desc">Public Opinion Analysis</div>
-      <div class="nav-links">
-        <router-link to="/worlds" class="nav-btn">Worlds</router-link>
-        <a href="https://github.com/rithythul/popinion" target="_blank" class="nav-btn">
-          GitHub <span class="arrow">↗</span>
-        </a>
-      </div>
-    </nav>
+  <div class="main-view">
+    <!-- Shared app rail - home mode: no step indicator, no view switcher -->
+    <AppSidebar />
 
-    <div class="main-content">
-      <!-- Hero: chat-native simulation prompt with reality-seed attachments -->
-      <section class="hero-section">
-        <div
-          class="chat-box"
-          :class="{ 'drag-over': isDragOver }"
-          @dragover.prevent="handleDragOver"
-          @dragleave.prevent="handleDragLeave"
-          @drop.prevent="handleDrop"
-        >
-          <div class="chat-label">>_ Sim Prompt</div>
-          <textarea
-            v-model="formData.simulationRequirement"
-            class="chat-input"
-            placeholder="Describe the scenario to simulate — a policy, a message, an event.
-e.g. How will the public react to phasing out the national fuel subsidy over 12 months?"
-            rows="5"
-            :disabled="loading"
-          ></textarea>
+    <main class="home-main">
+      <div class="home-scroll">
+        <div class="home-inner">
+          <!-- Hero: the scenario composer is the focal point -->
+          <header class="hero-head">
+            <span class="eyebrow">Popinion · rehearse the future</span>
+            <h1 class="hero-title">Describe a scenario to simulate.</h1>
+            <p class="hero-lead">
+              A policy, a message, an event - grounded in real evidence, then rehearsed
+              across a population of personas before it meets the public.
+            </p>
+          </header>
 
-          <!-- reality seeds attached to the prompt -->
-          <div v-if="files.length" class="seed-chips">
-            <div v-for="(file, index) in files" :key="index" class="seed-chip">
-              <span class="file-icon">📄</span>
-              <span class="chip-name">{{ file.name }}</span>
-              <button @click.stop="removeFile(index)" class="chip-x">×</button>
-            </div>
-          </div>
-
-          <!-- Typed/pasted markdown as a reality seed: becomes an .md file at submit -->
-          <div v-if="showText || pastedText" class="text-seed">
-            <div class="text-seed-head">
-              <span class="tg-icon">📝</span>
-              <span class="text-seed-label">Markdown or plain text — pasted posts, notes, transcripts</span>
-              <button class="chip-x" @click="clearText" :disabled="loading">×</button>
-            </div>
+          <!-- Chat-native simulation prompt with reality-seed attachments -->
+          <div
+            class="chat-box"
+            :class="{ 'drag-over': isDragOver }"
+            @dragover.prevent="handleDragOver"
+            @dragleave.prevent="handleDragLeave"
+            @drop.prevent="handleDrop"
+          >
             <textarea
-              v-model="pastedText"
-              class="text-seed-input"
-              placeholder="Paste real opinions, posts, or notes here to ground the sim.
-
-Markdown is fine — it's treated exactly like an uploaded .md file."
-              rows="6"
+              v-model="formData.simulationRequirement"
+              class="chat-input"
+              placeholder="Describe the scenario to simulate - a policy, a message, an event.
+e.g. How will the public react to phasing out the national fuel subsidy over 12 months?"
+              rows="5"
               :disabled="loading"
             ></textarea>
-          </div>
 
-          <!-- Telegram channel as a reality seed: crawled server-side at build time -->
-          <div v-if="showTelegram || telegramChannel" class="telegram-row">
-            <span class="tg-icon">📡</span>
+            <!-- reality seeds attached to the prompt -->
+            <div v-if="files.length" class="seed-chips">
+              <div v-for="(file, index) in files" :key="index" class="seed-chip">
+                <span class="file-icon">📄</span>
+                <span class="chip-name">{{ file.name }}</span>
+                <button @click.stop="removeFile(index)" class="chip-x">×</button>
+              </div>
+            </div>
+
+            <!-- Typed/pasted markdown as a reality seed: becomes an .md file at submit -->
+            <div v-if="showText || pastedText" class="text-seed">
+              <div class="text-seed-head">
+                <span class="tg-icon">📝</span>
+                <span class="text-seed-label">Markdown or plain text - pasted posts, notes, transcripts</span>
+                <button class="chip-x" @click="clearText" :disabled="loading">×</button>
+              </div>
+              <textarea
+                v-model="pastedText"
+                class="text-seed-input"
+                placeholder="Paste real opinions, posts, or notes here to ground the sim.
+
+Markdown is fine - it's treated exactly like an uploaded .md file."
+                rows="6"
+                :disabled="loading"
+              ></textarea>
+            </div>
+
+            <!-- Telegram channel as a reality seed: crawled server-side at build time -->
+            <div v-if="showTelegram || telegramChannel" class="telegram-row">
+              <span class="tg-icon">📡</span>
+              <input
+                v-model="telegramChannel"
+                class="tg-input"
+                placeholder="@channel or t.me link - recent public posts ground the sim"
+                :disabled="loading"
+              />
+              <select v-model.number="telegramMaxPosts" class="tg-count" :disabled="loading">
+                <option :value="25">25 posts</option>
+                <option :value="50">50 posts</option>
+                <option :value="100">100 posts</option>
+                <option :value="200">200 posts</option>
+              </select>
+              <button class="chip-x" @click="clearTelegram" :disabled="loading">×</button>
+            </div>
+
+            <div class="chat-toolbar">
+              <button class="attach-btn" @click="triggerFileInput" :disabled="loading">
+                📎 Reality seeds
+              </button>
+              <button class="attach-btn" @click="showText = !showText" :disabled="loading">
+                📝 Write text
+              </button>
+              <button class="attach-btn" @click="showTelegram = !showTelegram" :disabled="loading">
+                📡 Telegram
+              </button>
+              <span class="attach-hint">{{ seedHint }}</span>
+              <button
+                class="start-engine-btn"
+                @click="startSimulation"
+                :disabled="!canSubmit || loading"
+              >
+                <span v-if="!loading">Start Engine</span>
+                <span v-else>Initializing…</span>
+                <span class="btn-arrow">→</span>
+              </button>
+            </div>
+
             <input
-              v-model="telegramChannel"
-              class="tg-input"
-              placeholder="@channel or t.me link — recent public posts ground the sim"
+              ref="fileInput"
+              type="file"
+              multiple
+              accept=".pdf,.md,.txt"
+              @change="handleFileSelect"
+              style="display: none"
               :disabled="loading"
             />
-            <select v-model.number="telegramMaxPosts" class="tg-count" :disabled="loading">
-              <option :value="25">25 posts</option>
-              <option :value="50">50 posts</option>
-              <option :value="100">100 posts</option>
-              <option :value="200">200 posts</option>
-            </select>
-            <button class="chip-x" @click="clearTelegram" :disabled="loading">×</button>
           </div>
 
-          <!-- First-run model gate: no working model → guide to Settings. -->
+          <!-- Model readiness - Models moved to the rail, so surface the gate here. -->
           <div v-if="modelStatus === null" class="model-note checking">Checking model…</div>
           <div v-else-if="!modelStatus.ready" class="model-note missing">
-            <div class="model-note-title">No working model yet — Popinion needs a model to run.</div>
+            <div class="model-note-title">No working model yet - Popinion needs a model to run.</div>
             <div class="model-note-reason">{{ modelStatus.reason }}</div>
             <button class="model-note-link" @click="openSettings">Set up a model →</button>
           </div>
-
-          <div class="chat-toolbar">
-            <button class="attach-btn" @click="triggerFileInput" :disabled="loading">
-              📎 Reality seeds
-            </button>
-            <button class="attach-btn" @click="showText = !showText" :disabled="loading">
-              📝 Write text
-            </button>
-            <button class="attach-btn" @click="showTelegram = !showTelegram" :disabled="loading">
-              📡 Telegram
-            </button>
-            <span class="attach-hint">{{ seedHint }}</span>
-            <button
-              class="start-engine-btn"
-              @click="startSimulation"
-              :disabled="!canSubmit || loading"
-            >
-              <span v-if="!loading">Start Engine</span>
-              <span v-else>Initializing…</span>
-              <span class="btn-arrow">→</span>
-            </button>
+          <div v-else class="model-note ready">
+            <span class="ready-check">✓</span> Model ready
+            <span class="mono ready-model">{{ modelStatus.model }}</span>
           </div>
 
-          <input
-            ref="fileInput"
-            type="file"
-            multiple
-            accept=".pdf,.md,.txt"
-            @change="handleFileSelect"
-            style="display: none"
-            :disabled="loading"
-          />
-          <div class="engine-badge">Engine: Popinion-V1.0</div>
+          <!-- Concise value props - honest to what the engine does -->
+          <div class="value-props">
+            <div class="prop">
+              <span class="prop-name">Grounded personas</span>
+              <span class="prop-desc">Built from real evidence - no fabricated traits.</span>
+            </div>
+            <div class="prop">
+              <span class="prop-name">Trust checks</span>
+              <span class="prop-desc">Noise floor and ablation keep the signal honest.</span>
+            </div>
+            <div class="prop">
+              <span class="prop-name">Rehearse the future</span>
+              <span class="prop-desc">A/B scenarios with a significance test.</span>
+            </div>
+          </div>
+
+          <!-- Slim pipeline hint: what happens after Start Engine -->
+          <ol class="pipeline">
+            <li><span class="mono p-num">01</span> Reality injection</li>
+            <li><span class="mono p-num">02</span> Environment setup</li>
+            <li><span class="mono p-num">03</span> Simulate</li>
+            <li><span class="mono p-num">04</span> Report</li>
+            <li><span class="mono p-num">05</span> Interact</li>
+          </ol>
         </div>
-      </section>
-
-      <!-- Dashboard section: Single column layout -->
-      <section class="dashboard-section">
-        <div class="info-panel">
-          <div class="panel-header">
-            <span class="status-dot">■</span> System Status
-          </div>
-          
-          <h2 class="section-title">Ready</h2>
-          <p class="section-desc">
-            Prediction engine standing by. Describe a scenario above to run a simulation — attach reality seeds to ground it in real data.
-          </p>
-          
-          <!-- Metric cards -->
-          <div class="metrics-row">
-            <div class="metric-card">
-              <div class="metric-value">Graph-Grounded</div>
-              <div class="metric-label">Personas from real evidence</div>
-            </div>
-            <div class="metric-card">
-              <div class="metric-value">Trust Checks</div>
-              <div class="metric-label">Noise floor + ablation</div>
-            </div>
-          </div>
-
-          <!-- Capabilities Check -->
-          <div class="capabilities-list">
-             <div class="cap-item">
-               <span class="cap-icon">✓</span>
-               <span class="cap-text">Graph-grounded personas (no fabricated traits)</span>
-             </div>
-             <div class="cap-item">
-               <span class="cap-icon">✓</span>
-               <span class="cap-text">Direct simulation injection (World Agent)</span>
-             </div>
-             <div class="cap-item">
-               <span class="cap-icon">✓</span>
-               <span class="cap-text">Scenario A/B rehearsal with significance test</span>
-             </div>
-          </div>
-
-          <!-- Simulation Steps (new section) -->
-          <div class="steps-container">
-            <div class="steps-header">
-               <span class="diamond-icon">◇</span> Workflow Sequence
-            </div>
-            <div class="workflow-list">
-              <div class="workflow-item">
-                <span class="step-num">01</span>
-                <div class="step-info">
-                  <div class="step-title">Reality Injection</div>
-                  <div class="step-desc">Crawl a Telegram channel or upload documents & build a knowledge graph from the real evidence</div>
-                </div>
-              </div>
-              <div class="workflow-item">
-                <span class="step-num">02</span>
-                <div class="step-info">
-                  <div class="step-title">Environment Setup</div>
-                  <div class="step-desc">Entity relationship extraction & Profile generation & Agent configuration with simulation parameters</div>
-                </div>
-              </div>
-              <div class="workflow-item">
-                <span class="step-num">03</span>
-                <div class="step-info">
-                  <div class="step-title">Start Simulation</div>
-                  <div class="step-desc">Multi-agent simulation over rounds with stance & sentiment captured at each action</div>
-                </div>
-              </div>
-              <div class="workflow-item">
-                <span class="step-num">04</span>
-                <div class="step-info">
-                  <div class="step-title">Report Generation</div>
-                  <div class="step-desc">ReportAgent with rich toolset for deep interaction with post-simulation environment</div>
-                </div>
-              </div>
-              <div class="workflow-item">
-                <span class="step-num">05</span>
-                <div class="step-info">
-                  <div class="step-title">Deep Interaction</div>
-                  <div class="step-desc">Chat with any agent in the simulation & Interact with ReportAgent</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-    </div>
+      </div>
+    </main>
   </div>
 </template>
 
@@ -217,6 +158,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { getLlmStatus } from '../api/settings'
 import { openSettings } from '../settingsDrawer'
+import AppSidebar from '../components/AppSidebar.vue'
 
 const router = useRouter()
 
@@ -252,7 +194,7 @@ const formData = ref({
 // File list
 const files = ref([])
 
-// Typed markdown seed — sent as an .md file, which the backend already parses
+// Typed markdown seed - sent as an .md file, which the backend already parses
 const showText = ref(false)
 const pastedText = ref('')
 
@@ -279,7 +221,7 @@ const isDragOver = ref(false)
 // File input reference
 const fileInput = ref(null)
 
-// Computed attributes: canSubmit — at least one reality seed (file, text, or channel)
+// Computed attributes: canSubmit - at least one reality seed (file, text, or channel)
 const canSubmit = computed(() => {
   return formData.value.simulationRequirement.trim() !== '' &&
     (files.value.length > 0 || pastedText.value.trim() !== '' || telegramChannel.value.trim() !== '') &&
@@ -292,7 +234,7 @@ const seedHint = computed(() => {
   if (pastedText.value.trim()) parts.push('pasted text')
   if (telegramChannel.value.trim()) parts.push(`Telegram ${telegramChannel.value.trim()}`)
   return parts.length
-    ? parts.join(' + ') + ' — real data grounds the simulation'
+    ? parts.join(' + ') + ' - real data grounds the simulation'
     : 'Attach PDF · MD · TXT, write text, or crawl Telegram'
 })
 
@@ -376,162 +318,117 @@ const startSimulation = () => {
 }
 </script>
 
+
 <style scoped>
-/* Global variables and Reset */
-:root {
-  --black: #000000;
-  --white: #FFFFFF;
-  --orange: #FF4500;
-  --gray-light: #F5F5F5;
-  --gray-text: #666666;
-  --border: #E5E5E5;
-  /* 
-    Use Space Grotesk as main title font, JetBrains Mono as code/label font
-    Ensure these Google Fonts are imported in index.html 
-  */
-  --font-mono: 'JetBrains Mono', monospace;
-  --font-sans: 'Space Grotesk', -apple-system, sans-serif;
-}
-
-.home-container {
-  min-height: 100vh;
-  background: var(--white);
-  font-family: var(--font-sans);
-  color: var(--black);
-}
-
-/* Top navigation */
-.navbar {
-  height: 60px;
-  background: var(--black);
-  color: var(--white);
+/* Home shares the app shell: the rail sits beside a scrolling main column. */
+.main-view {
+  height: 100vh;
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 16px;
-  padding: 0 40px;
+  flex-direction: row;
+  overflow: hidden;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-body);
 }
-/* The tagline is decorative — drop it before it collides with the brand. */
-@media (max-width: 760px) {
-  .navbar { padding: 0 20px; }
-  .nav-desc { display: none; }
+.home-main {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
 }
-
-.nav-brand {
-  font-family: var(--font-mono);
-  font-weight: 800;
-  letter-spacing: 1px;
-  font-size: 1.2rem;
-}
-
-.nav-left {
+.home-scroll {
+  min-height: 100%;
   display: flex;
-  align-items: center;
-  gap: 16px;
+  justify-content: center;
+  padding: 64px 40px 80px;
+}
+.home-inner {
+  width: 100%;
+  max-width: 820px;
 }
 
-.nav-links {
-  display: flex;
-  align-items: center;
+/* Hero heading */
+.hero-head { margin-bottom: 28px; }
+.hero-title {
+  margin: 12px 0 10px;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--fs-xl);
+  line-height: 1.08;
+  letter-spacing: -0.01em;
+  color: var(--color-text);
+}
+.hero-lead {
+  margin: 0;
+  max-width: 60ch;
+  font-size: var(--fs-md);
+  line-height: 1.55;
+  color: var(--color-text-muted);
 }
 
-.github-link {
-  color: var(--white);
-  text-decoration: none;
-  font-family: var(--font-mono);
-  font-size: 0.9rem;
-  font-weight: 500;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  transition: opacity 0.2s;
-}
-
-.github-link:hover {
-  opacity: 0.8;
-}
-
-.nav-desc {
-  font-family: var(--font-mono);
-  font-size: 0.8rem;
-  letter-spacing: 2px;
-  text-transform: uppercase;
-  opacity: 0.55;
-}
-.nav-btn {
-  color: var(--white);
-  background: transparent;
-  cursor: pointer;
-  text-decoration: none;
-  font-family: var(--font-mono);
-  font-size: 0.85rem;
-  font-weight: 500;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 7px 14px;
-  border: 1px solid rgba(255, 255, 255, 0.35);
-  border-radius: 6px;
-  transition: all 0.2s;
-}
-.nav-btn + .nav-btn { margin-left: 10px; }
-.nav-btn:hover { background: var(--white); color: var(--black); }
-
-/* Chat-native simulation prompt */
+/* Compose box - the hero input */
 .chat-box {
-  max-width: 1000px;
-  margin: 40px auto 0;
-  background: var(--white);
-  border: 1px solid var(--black);
-  border-radius: 14px;
-  padding: 20px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 18px 18px 14px;
   position: relative;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
-.chat-box.drag-over { border-style: dashed; background: #f6f8ff; }
-.chat-label {
-  font-family: var(--font-mono);
-  font-size: 0.8rem;
-  letter-spacing: 1px;
-  color: #6b7280;
-  margin-bottom: 10px;
+.chat-box:focus-within {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--gold-soft);
+}
+.chat-box.drag-over {
+  border-style: dashed;
+  border-color: var(--color-accent);
 }
 .chat-input {
   width: 100%;
   border: none;
   outline: none;
   resize: vertical;
-  font-family: inherit;
-  font-size: 1.05rem;
-  line-height: 1.6;
-  color: var(--black);
+  font-family: var(--font-body);
+  font-size: var(--fs-md);
+  line-height: 1.55;
+  color: var(--color-text);
   background: transparent;
   min-height: 120px;
 }
-.chat-input::placeholder { color: #9ca3af; }
-.seed-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 4px; }
+.chat-input::placeholder { color: var(--color-text-muted); opacity: 0.75; }
+
+/* Attached reality seeds */
+.seed-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 4px; }
 .seed-chip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  background: #f3f4f6;
-  border: 1px solid #e5e7eb;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
   border-radius: 999px;
   padding: 4px 10px;
-  font-size: 0.85rem;
+  font-size: var(--fs-xs);
+  color: var(--color-text);
 }
 .chip-name { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.chip-x { border: none; background: none; cursor: pointer; font-size: 1rem; color: #9ca3af; line-height: 1; }
-.chip-x:hover { color: #dc2626; }
+.chip-x {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  color: var(--color-text-muted);
+}
+.chip-x:hover { color: var(--stance-oppose-strong); }
+
 .text-seed {
-  margin: 8px 0 4px;
-  padding: 6px 10px;
-  background: #f3f4f6;
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
+  margin: 10px 0 4px;
+  padding: 8px 10px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
 }
 .text-seed-head { display: flex; align-items: center; gap: 8px; }
-.text-seed-label { flex: 1; font-size: 0.85rem; color: var(--gray-text); }
+.text-seed-label { flex: 1; font-size: var(--fs-xs); color: var(--color-text-muted); }
 .text-seed-input {
   width: 100%;
   margin-top: 6px;
@@ -540,85 +437,128 @@ const startSimulation = () => {
   resize: vertical;
   background: transparent;
   font-family: var(--font-mono);
-  font-size: 0.85rem;
+  font-size: var(--fs-xs);
   line-height: 1.5;
-  color: var(--black);
+  color: var(--color-text);
   box-sizing: border-box;
 }
-.text-seed-input::placeholder { color: #9ca3af; }
+.text-seed-input::placeholder { color: var(--color-text-muted); opacity: 0.7; }
+
 .telegram-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 8px 0 4px;
+  margin: 10px 0 4px;
   padding: 6px 10px;
-  background: #f3f4f6;
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
 }
 .tg-icon { font-size: 0.9rem; }
 .tg-input {
   flex: 1;
+  min-width: 0;
   border: none;
   outline: none;
   background: transparent;
   font-family: var(--font-mono);
-  font-size: 0.85rem;
-  color: var(--black);
+  font-size: var(--fs-xs);
+  color: var(--color-text);
 }
-.tg-input::placeholder { color: #9ca3af; }
+.tg-input::placeholder { color: var(--color-text-muted); opacity: 0.7; }
 .tg-count {
-  border: 1px solid #e5e7eb;
-  background: #fff;
-  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  border-radius: var(--radius-sm);
   font-family: var(--font-mono);
-  font-size: 0.78rem;
+  font-size: var(--fs-2xs);
   padding: 3px 6px;
-  color: #374151;
+  color: var(--color-text-muted);
 }
+
+/* Toolbar: attach controls + primary CTA */
 .chat-toolbar {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 10px;
   margin-top: 14px;
   padding-top: 14px;
-  border-top: 1px solid #eee;
+  border-top: 1px solid var(--color-border);
 }
 .attach-btn {
   flex: none;
-  font-family: inherit;
-  font-size: 0.9rem;
-  padding: 8px 14px;
-  border: 1px solid #d1d5db;
-  background: #fff;
-  border-radius: 8px;
+  font-family: var(--font-body);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-text);
+  border-radius: var(--radius-sm);
   cursor: pointer;
   white-space: nowrap;
+  transition: border-color 0.15s, color 0.15s;
 }
-.attach-btn:hover { background: #f9fafb; }
-.attach-hint { flex: 1; font-size: 0.82rem; color: #9ca3af; }
-.chat-toolbar .start-engine-btn { width: auto; margin: 0; }
-/* First-run model gate */
+.attach-btn:hover:not(:disabled) { border-color: var(--color-accent); color: var(--color-accent-text); }
+.attach-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.attach-hint { flex: 1; min-width: 120px; font-size: var(--fs-2xs); color: var(--color-text-muted); }
+
+.start-engine-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  font-family: var(--font-body);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.15s;
+}
+.start-engine-btn:hover:not(:disabled) { background: var(--color-accent-hover); }
+.start-engine-btn:active:not(:disabled) { transform: translateY(1px); }
+.start-engine-btn:disabled {
+  background: transparent;
+  border-color: var(--color-border);
+  color: var(--color-text-muted);
+  cursor: not-allowed;
+}
+.btn-arrow { font-size: 1.05em; line-height: 1; }
+
+/* Model readiness */
 .model-note {
-  margin-top: 12px;
-  font-size: 0.88rem;
+  margin-top: 14px;
+  font-size: var(--fs-sm);
   line-height: 1.5;
 }
 .model-note.checking {
   font-family: var(--font-mono);
-  font-size: 0.75rem;
-  color: #9ca3af;
+  font-size: var(--fs-2xs);
+  color: var(--color-text-muted);
 }
+.model-note.ready {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--fs-xs);
+  color: var(--color-text-muted);
+}
+.ready-check { color: var(--stance-support); font-weight: 700; }
+.ready-model { color: var(--color-text); }
 .model-note.missing {
-  border: 1px solid #f0dcc0;
-  border-left: 3px solid #d97706;
-  background: #fdf8f0;
-  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-accent);
+  background: var(--color-surface);
+  border-radius: var(--radius-sm);
   padding: 12px 14px;
 }
-.model-note-title { font-weight: 600; color: #78350f; }
-.model-note-reason { color: #92672a; margin-top: 2px; }
+.model-note-title { font-weight: 600; color: var(--color-text); }
+.model-note-reason { color: var(--color-text-muted); margin-top: 2px; }
 .model-note-link {
   display: inline-block;
   margin-top: 6px;
@@ -626,398 +566,57 @@ const startSimulation = () => {
   border: none;
   background: none;
   cursor: pointer;
-  font-family: inherit;
-  font-size: inherit;
-  color: #000;
+  font-family: var(--font-body);
+  font-size: var(--fs-sm);
+  color: var(--color-accent-text);
   font-weight: 600;
   text-decoration: underline;
   text-underline-offset: 3px;
 }
-.model-note-link:hover { color: #d97706; }
+.model-note-link:hover { color: var(--color-accent-hover); }
 
-.engine-badge {
-  position: absolute;
-  top: 18px;
-  right: 20px;
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-  color: #9ca3af;
+/* Concise value props */
+.value-props {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+  margin-top: 44px;
+  padding-top: 32px;
+  border-top: 1px solid var(--color-border);
 }
-
-.arrow {
-  font-family: sans-serif;
+.prop { display: flex; flex-direction: column; gap: 6px; }
+.prop-name {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--fs-md);
+  color: var(--color-text);
 }
+.prop-desc { font-size: var(--fs-xs); line-height: 1.5; color: var(--color-text-muted); }
 
-/* Main content area */
-.main-content {
-  max-width: 1400px;
-  margin: 0 auto;
-  padding: 60px 40px;
-}
-
-/* Hero section: Console box */
-.hero-section {
-  margin-bottom: 60px;
-}
-
-.hero-section .console-box {
-  max-width: 1000px;
-  margin: 0 auto;
-}
-
-/* Dashboard Section: Single column */
-.dashboard-section {
-  border-top: 1px solid var(--border);
-  padding-top: 60px;
-}
-
-.info-panel {
-  max-width: 1000px;
-  margin: 0 auto;
-}
-
-.panel-header {
-  font-family: var(--font-mono);
-  font-size: 0.8rem;
-  color: #999;
+/* Slim pipeline hint */
+.pipeline {
   display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  margin: 28px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.pipeline li {
+  display: inline-flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 20px;
+  font-size: var(--fs-xs);
+  color: var(--color-text-muted);
+}
+.p-num {
+  font-size: var(--fs-2xs);
+  font-weight: 600;
+  color: var(--color-accent-text);
 }
 
-.status-dot {
-  color: var(--orange);
-  font-size: 0.8rem;
-}
-
-.section-title {
-  font-size: 2rem;
-  font-weight: 700;
-  margin: 0 0 15px 0;
-}
-
-.section-desc {
-  color: var(--gray-text);
-  margin-bottom: 25px;
-  line-height: 1.6;
-}
-
-.metrics-row {
-  display: flex;
-  gap: 20px;
-  margin-bottom: 15px;
-}
-
-.metric-card {
-  border: 1px solid var(--border);
-  padding: 20px 30px;
-  min-width: 150px;
-}
-
-.metric-value {
-  font-family: var(--font-mono);
-  font-size: 1.8rem;
-  font-weight: 700;
-  margin-bottom: 5px;
-}
-
-.metric-label {
-  font-size: 0.85rem;
-  color: #999;
-}
-
-/* Simulation Steps */
-.steps-container {
-  border: 1px solid var(--border);
-  padding: 30px;
-  position: relative;
-}
-
-.steps-header {
-  font-family: var(--font-mono);
-  font-size: 0.8rem;
-  color: #999;
-  margin-bottom: 25px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.diamond-icon {
-  font-size: 1.2rem;
-  line-height: 1;
-}
-
-.workflow-list {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-.workflow-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 20px;
-}
-
-.step-num {
-  font-family: var(--font-mono);
-  font-weight: 700;
-  color: var(--black);
-  opacity: 0.3;
-}
-
-.step-info {
-  flex: 1;
-}
-
-.step-title {
-  font-weight: 700;
-  font-size: 1rem;
-  margin-bottom: 4px;
-}
-
-.step-desc {
-  font-size: 0.85rem;
-  color: var(--gray-text);
-}
-
-
-.console-box {
-  border: 1px solid #CCC; /* Outer solid line */
-  padding: 8px; /* Inner padding creates double border effect */
-}
-
-.console-section {
-  padding: 20px;
-}
-
-.console-section.btn-section {
-  padding-top: 0;
-}
-
-.console-header {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 15px;
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  color: #666;
-}
-
-.upload-zone {
-  border: 1px dashed #CCC;
-  height: 200px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all 0.3s;
-  background: #FAFAFA;
-}
-
-.upload-zone:hover {
-  background: #F0F0F0;
-  border-color: #999;
-}
-
-.upload-placeholder {
-  text-align: center;
-}
-
-.upload-icon {
-  width: 40px;
-  height: 40px;
-  border: 1px solid #DDD;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin: 0 auto 15px;
-  color: #999;
-}
-
-.upload-title {
-  font-weight: 700;
-  font-size: 0.9rem;
-  margin-bottom: 5px;
-}
-
-.upload-hint {
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  color: #999;
-}
-
-.file-list {
-  width: 100%;
-  padding: 15px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.file-item {
-  display: flex;
-  align-items: center;
-  background: var(--white);
-  padding: 8px 12px;
-  border: 1px solid #EEE;
-  font-family: var(--font-mono);
-  font-size: 0.85rem;
-}
-
-.file-name {
-  flex: 1;
-  margin: 0 10px;
-}
-
-.remove-btn {
-  background: none;
-  border: none;
-  cursor: pointer;
-  font-size: 1.2rem;
-  color: #999;
-}
-
-.console-divider {
-  display: flex;
-  align-items: center;
-  margin: 10px 0;
-}
-
-.console-divider::before,
-.console-divider::after {
-  content: '';
-  flex: 1;
-  height: 1px;
-  background: #EEE;
-}
-
-.console-divider span {
-  padding: 0 15px;
-  font-family: var(--font-mono);
-  font-size: 0.7rem;
-  color: #BBB;
-  letter-spacing: 1px;
-}
-
-.input-wrapper {
-  position: relative;
-  border: 1px solid #DDD;
-  background: #FAFAFA;
-}
-
-.code-input {
-  width: 100%;
-  border: none;
-  background: transparent;
-  padding: 20px;
-  font-family: var(--font-mono);
-  font-size: 0.9rem;
-  line-height: 1.6;
-  resize: vertical;
-  outline: none;
-  min-height: 150px;
-}
-
-.model-badge {
-  position: absolute;
-  bottom: 10px;
-  right: 15px;
-  font-family: var(--font-mono);
-  font-size: 0.7rem;
-  color: #AAA;
-}
-
-.start-engine-btn {
-  width: 100%;
-  background: var(--black);
-  color: var(--white);
-  border: none;
-  padding: 20px;
-  font-family: var(--font-mono);
-  font-weight: 700;
-  font-size: 1.1rem;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  letter-spacing: 1px;
-  position: relative;
-  overflow: hidden;
-}
-
-/* Clickable status (not disabled) */
-.start-engine-btn:not(:disabled) {
-  background: var(--black);
-  border: 1px solid var(--black);
-  animation: pulse-border 2s infinite;
-}
-
-.start-engine-btn:hover:not(:disabled) {
-  background: var(--orange);
-  border-color: var(--orange);
-  transform: translateY(-2px);
-}
-
-.start-engine-btn:active:not(:disabled) {
-  transform: translateY(0);
-}
-
-.start-engine-btn:disabled {
-  background: #E5E5E5;
-  color: #999;
-  cursor: not-allowed;
-  transform: none;
-  border: 1px solid #E5E5E5;
-}
-
-/* Guide animation: Subtle border pulse */
-@keyframes pulse-border {
-  0% { box-shadow: 0 0 0 0 rgba(0, 0, 0, 0.2); }
-  70% { box-shadow: 0 0 0 6px rgba(0, 0, 0, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(0, 0, 0, 0); }
-}
-
-/* Capabilities List (New) */
-.capabilities-list {
-  margin: 20px 0;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  background: #f8f9fa;
-  padding: 15px;
-  border-left: 3px solid var(--orange);
-}
-
-.cap-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-family: var(--font-mono);
-  font-size: 0.85rem;
-  color: #555;
-}
-
-.cap-icon {
-  color: var(--orange);
-  font-weight: bold;
-}
-
-/* Responsive */
-@media (max-width: 1024px) {
-  .main-content {
-    padding: 40px 20px;
-  }
-  
-  .hero-section .console-box {
-    max-width: 100%;
-  }
-  
-  .info-panel {
-    max-width: 100%;
-  }
+@media (max-width: 1000px) {
+  .home-scroll { padding: 40px 24px 64px; }
+  .value-props { grid-template-columns: 1fr; gap: 18px; }
 }
 </style>
