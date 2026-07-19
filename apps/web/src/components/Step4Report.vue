@@ -77,14 +77,16 @@
           </div>
         </div>
 
-        <!-- Waiting State -->
-        <div v-if="!reportOutline" class="waiting-placeholder">
-          <div class="waiting-animation">
-            <div class="waiting-ring"></div>
-            <div class="waiting-ring"></div>
-            <div class="waiting-ring"></div>
+        <!-- Live Progress State (agent drafts in one pass, so no per-section
+             logs stream in — reflect the current stage/activity honestly) -->
+        <div v-if="!reportOutline" class="progress-placeholder">
+          <div class="progress-spinner"></div>
+          <div class="progress-activity">{{ progressActivity }}</div>
+          <div class="progress-substats">
+            <span class="progress-stat mono">{{ formatElapsedTime }}</span>
+            <span class="progress-dot">·</span>
+            <span class="progress-stat mono">{{ totalToolCalls }} tool {{ totalToolCalls === 1 ? 'call' : 'calls' }}</span>
           </div>
-          <span class="waiting-text">Waiting for Report Agent...</span>
         </div>
       </div>
 
@@ -231,34 +233,34 @@
 
                   <!-- Tool Call -->
                   <template v-if="log.action === 'tool_call'">
-                    <div class="tool-badge" :class="'tool-' + getToolColor(log.details?.tool_name)">
+                    <div class="tool-badge" :class="'tool-' + getToolColor(log.details?.tool)">
                       <!-- Deep Insight - Lightbulb -->
-                      <svg v-if="getToolIcon(log.details?.tool_name) === 'lightbulb'" class="tool-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                      <svg v-if="getToolIcon(log.details?.tool) === 'lightbulb'" class="tool-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.5V17a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2.5A7 7 0 0 0 12 2z"></path>
                       </svg>
                       <!-- Panorama Search - Globe -->
-                      <svg v-else-if="getToolIcon(log.details?.tool_name) === 'globe'" class="tool-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                      <svg v-else-if="getToolIcon(log.details?.tool) === 'globe'" class="tool-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
                         <circle cx="12" cy="12" r="10"></circle>
                         <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
                       </svg>
                       <!-- Agent Interview - Users -->
-                      <svg v-else-if="getToolIcon(log.details?.tool_name) === 'users'" class="tool-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                      <svg v-else-if="getToolIcon(log.details?.tool) === 'users'" class="tool-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
                         <circle cx="9" cy="7" r="4"></circle>
                         <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"></path>
                       </svg>
                       <!-- Quick Search - Zap -->
-                      <svg v-else-if="getToolIcon(log.details?.tool_name) === 'zap'" class="tool-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                      <svg v-else-if="getToolIcon(log.details?.tool) === 'zap'" class="tool-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
                         <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
                       </svg>
                       <!-- Graph Stats - Chart -->
-                      <svg v-else-if="getToolIcon(log.details?.tool_name) === 'chart'" class="tool-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                      <svg v-else-if="getToolIcon(log.details?.tool) === 'chart'" class="tool-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
                         <line x1="18" y1="20" x2="18" y2="10"></line>
                         <line x1="12" y1="20" x2="12" y2="4"></line>
                         <line x1="6" y1="20" x2="6" y2="14"></line>
                       </svg>
                       <!-- Entity Query - Database -->
-                      <svg v-else-if="getToolIcon(log.details?.tool_name) === 'database'" class="tool-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                      <svg v-else-if="getToolIcon(log.details?.tool) === 'database'" class="tool-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
                         <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
                         <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
                         <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
@@ -267,7 +269,7 @@
                       <svg v-else class="tool-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path>
                       </svg>
-                      {{ getToolDisplayName(log.details?.tool_name) }}
+                      {{ getToolDisplayName(log.details?.tool) }}
                     </div>
                     <div v-if="log.details?.parameters && expandedLogs.has(log.timestamp)" class="tool-params">
                       <pre>{{ formatParams(log.details.parameters) }}</pre>
@@ -276,44 +278,16 @@
 
                   <!-- Tool Result -->
                   <template v-if="log.action === 'tool_result'">
-                    <div class="result-wrapper" :class="'result-' + log.details?.tool_name">
-                      <!-- Hide result-meta for tools that show stats in their own header -->
-                      <div v-if="!['interview_agents', 'insight_forge', 'panorama_search', 'quick_search'].includes(log.details?.tool_name)" class="result-meta">
-                        <span class="result-tool">{{ getToolDisplayName(log.details?.tool_name) }}</span>
-                        <span class="result-size">{{ formatResultSize(log.details?.result_length) }}</span>
+                    <div class="result-wrapper" :class="'result-' + log.details?.tool">
+                      <div class="result-meta">
+                        <span class="result-tool">{{ getToolDisplayName(log.details?.tool) }}</span>
+                        <span class="result-size">{{ formatResultSize(log.details?.result_preview?.length) }}</span>
                       </div>
-                      
-                      <!-- Structured Result Display -->
-                      <div v-if="!showRawResult[log.timestamp]" class="result-structured">
-                        <!-- Interview Agents - Special Display -->
-                        <template v-if="log.details?.tool_name === 'interview_agents'">
-                          <InterviewDisplay :result="parseInterview(log.details.result)" :result-length="log.details?.result_length" />
-                        </template>
-                        
-                        <!-- Insight Forge -->
-                        <template v-else-if="log.details?.tool_name === 'insight_forge'">
-                          <InsightDisplay :result="parseInsightForge(log.details.result)" :result-length="log.details?.result_length" />
-                        </template>
-                        
-                        <!-- Panorama Search -->
-                        <template v-else-if="log.details?.tool_name === 'panorama_search'">
-                          <PanoramaDisplay :result="parsePanorama(log.details.result)" :result-length="log.details?.result_length" />
-                        </template>
-                        
-                        <!-- Quick Search -->
-                        <template v-else-if="log.details?.tool_name === 'quick_search'">
-                          <QuickSearchDisplay :result="parseQuickSearch(log.details.result)" :result-length="log.details?.result_length" />
-                        </template>
-                        
-                        <!-- Default -->
-                        <template v-else>
-                          <pre class="raw-preview">{{ truncateText(log.details?.result, 300) }}</pre>
-                        </template>
-                      </div>
-                      
-                      <!-- Raw Result -->
-                      <div v-else class="result-raw">
-                        <pre>{{ log.details?.result }}</pre>
+
+                      <!-- Result preview (first 500 chars captured by the agent) -->
+                      <div v-if="expandedLogs.has(log.timestamp)" class="result-raw">
+                        <pre v-if="log.details?.result_preview">{{ log.details.result_preview }}</pre>
+                        <div v-else class="result-empty">(no output captured)</div>
                       </div>
                     </div>
                   </template>
@@ -364,9 +338,9 @@
                       {{ expandedLogs.has(log.timestamp) ? 'Hide Params' : 'Show Params' }}
                     </button>
                     
-                    <!-- Tool Result: Raw/Structured View -->
-                    <button v-if="log.action === 'tool_result'" class="action-btn" @click.stop="toggleRawResult(log.timestamp, $event)">
-                      {{ showRawResult[log.timestamp] ? 'Structured View' : 'Raw Output' }}
+                    <!-- Tool Result: Show/Hide captured output -->
+                    <button v-if="log.action === 'tool_result'" class="action-btn" @click.stop="toggleLogExpand(log)">
+                      {{ expandedLogs.has(log.timestamp) ? 'Hide Output' : 'Show Output' }}
                     </button>
                     
                     <!-- LLM Response: Show/Hide Response -->
@@ -1714,6 +1688,35 @@ const totalToolCalls = computed(() => {
   return agentLogs.value.filter(l => l.action === 'tool_call').length
 })
 
+// Most recent tool the agent invoked (display name), for the progress line
+const latestToolName = computed(() => {
+  for (let i = agentLogs.value.length - 1; i >= 0; i--) {
+    const l = agentLogs.value[i]
+    if (l.action === 'tool_call' && l.details?.tool) return getToolDisplayName(l.details.tool)
+  }
+  return ''
+})
+
+// Honest, moving progress line derived from the latest agent-log entry. The
+// backend streams stage-tagged entries (pending → gathering → writing →
+// reflecting → completed), so we read the freshest one instead of guessing.
+const progressActivity = computed(() => {
+  const log = agentLogs.value[agentLogs.value.length - 1]
+  if (!log) return 'Starting the report agent…'
+  const stage = log.stage
+  const action = log.action
+  if (action === 'report_complete' || stage === 'completed') return 'Finalizing the report…'
+  if (action === 'report_failed' || stage === 'failed') return 'Report generation failed'
+  if (stage === 'reflecting' || action === 'revision_start' || action === 'revision_complete') return 'Reviewing and revising…'
+  if (stage === 'writing' || action === 'draft_complete') return 'Writing the report…'
+  if (stage === 'gathering') {
+    const t = latestToolName.value
+    return t ? `Gathering evidence — running ${t}…` : 'Gathering evidence…'
+  }
+  if (action === 'report_start' || stage === 'pending') return 'Analyzing the request…'
+  return 'Working…'
+})
+
 const formatElapsedTime = computed(() => {
   if (!startTime.value) return '0s'
   const lastLog = agentLogs.value[agentLogs.value.length - 1]
@@ -1989,7 +1992,10 @@ const hydrateFinalReport = async () => {
       const g = {}
       secs.forEach((s, i) => { g[i + 1] = s.content })
       generatedSections.value = g
+      currentSectionIndex.value = null
       isComplete.value = true
+      emit('update-status', 'completed')
+      stopPolling()
     }
   } catch (err) {
     console.warn('Failed to hydrate final report:', err)
@@ -2174,6 +2180,10 @@ onMounted(() => {
   if (props.reportId) {
     addLog(`Report Agent initialized: ${props.reportId}`)
     startPolling()
+    // If the report is already finished (e.g. opened after completion, or the
+    // report_complete log line was missed), hydrate the body directly. Guarded
+    // internally so it never double-runs, and it stops polling once complete.
+    hydrateFinalReport()
   }
 })
 
@@ -2615,47 +2625,54 @@ watch(() => props.reportId, (newId) => {
 }
 
 /* Waiting Placeholder */
-.waiting-placeholder {
+.progress-placeholder {
   flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 20px;
+  gap: 16px;
   padding: 40px;
+  color: #6B7280;
+}
+
+.progress-spinner {
+  width: 34px;
+  height: 34px;
+  border: 3px solid #E5E7EB;
+  border-top-color: #1F2937;
+  border-radius: 50%;
+  animation: progress-spin 0.9s linear infinite;
+}
+
+@keyframes progress-spin {
+  to { transform: rotate(360deg); }
+}
+
+.progress-activity {
+  font-size: 14px;
+  font-weight: 500;
+  color: #374151;
+  text-align: center;
+}
+
+.progress-substats {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
   color: #9CA3AF;
 }
 
-.waiting-animation {
-  position: relative;
-  width: 48px;
-  height: 48px;
+.progress-dot {
+  color: #D1D5DB;
 }
 
-.waiting-ring {
-  position: absolute;
-  width: 100%;
-  height: 100%;
-  border: 2px solid #E5E7EB;
-  border-radius: 50%;
-  animation: ripple 2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-}
-
-.waiting-ring:nth-child(2) {
-  animation-delay: 0.4s;
-}
-
-.waiting-ring:nth-child(3) {
-  animation-delay: 0.8s;
-}
-
-@keyframes ripple {
-  0% { transform: scale(0.5); opacity: 1; }
-  100% { transform: scale(2); opacity: 0; }
-}
-
-.waiting-text {
-  font-size: 14px;
+.result-empty {
+  font-size: 11px;
+  color: #9CA3AF;
+  font-style: italic;
+  padding: 6px 0;
 }
 
 /* Right Panel */
