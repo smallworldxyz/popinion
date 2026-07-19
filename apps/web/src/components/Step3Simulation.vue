@@ -154,6 +154,7 @@ import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { startSimulation, stopSimulation, getRunStatusDetail, getSimulationActions, getAgentStats, injectPost, getSpread } from '../api/simulation'
 import { generateReport } from '../api/report'
+import { liveRunStatus } from '../runStatus'
 
 const props = defineProps({
   simulationId: String,
@@ -189,15 +190,8 @@ let pollTick = 0
 const addLog = (msg) => emit('add-log', msg)
 
 // ---- derived ----
-const STATUS = {
-  initializing: { label: 'Initializing…', cls: 'run' },
-  running: { label: 'Running', cls: 'run' },
-  alive: { label: 'Complete — agents standing by', cls: 'done' },
-  stopped: { label: 'Stopped', cls: 'done' },
-  not_running: { label: 'Not running', cls: 'idle' },
-}
-const statusLabel = computed(() => (STATUS[status.value] || { label: status.value }).label)
-const statusClass = computed(() => (STATUS[status.value] || { cls: 'err' }).cls)
+const statusLabel = computed(() => liveRunStatus(status.value).label)
+const statusClass = computed(() => liveRunStatus(status.value).cls)
 const canReport = computed(() => status.value === 'alive' || status.value === 'stopped')
 const agentCount = computed(() => Object.keys(names.value).length)
 const currentRound = computed(() =>
@@ -253,14 +247,16 @@ const doStart = async () => {
 const loadNames = async () => {
   try {
     const res = await getAgentStats(props.simulationId)
+    if (!alive) return
     for (const a of res.data.agents || []) names.value[a.user_id] = a.user_name
   } catch { /* names are best-effort */ }
 }
 
 const poll = async () => {
-  if (!props.simulationId || terminated.value) return
+  if (!props.simulationId || terminated.value || !alive) return
   try {
     const res = await getRunStatusDetail(props.simulationId)
+    if (!alive) return
     const prev = status.value
     status.value = res.data.status || status.value
     postCount.value = res.data.post_count || 0
@@ -273,6 +269,7 @@ const poll = async () => {
 
   try {
     const res = await getSimulationActions(props.simulationId, { limit: 200 })
+    if (!alive) return
     // Endpoint returns newest-first; render oldest-first and append new ones.
     const list = (res.data.actions || []).slice().reverse()
     for (const a of list) {
@@ -345,7 +342,7 @@ const loadSpread = async () => {
   spreadLoading.value = true
   try {
     const res = await getSpread(props.simulationId)
-    spreadRows.value = res.data?.posts || []
+    if (alive) spreadRows.value = res.data?.posts || []
   } catch { /* no seed/injected posts yet — nothing to show */ }
   spreadLoading.value = false
 }
@@ -362,7 +359,11 @@ const shiftTitle = (p) => {
 }
 
 let timer = null
+// doStart() awaits the engine before it polls, but unmount is synchronous — so a
+// component torn down mid-start would otherwise install an interval nobody holds.
+let alive = true
 const startPolling = () => {
+  if (!alive || timer) return
   poll()
   timer = setInterval(poll, 2500)
 }
@@ -401,7 +402,10 @@ onMounted(() => {
   addLog('Simulation run initializing')
   if (props.simulationId) doStart()
 })
-onUnmounted(stopPolling)
+onUnmounted(() => {
+  alive = false
+  stopPolling()
+})
 </script>
 
 <style scoped>

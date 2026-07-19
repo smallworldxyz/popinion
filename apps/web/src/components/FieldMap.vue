@@ -100,7 +100,7 @@ function layout(personas) {
 }
 
 const marks = ref([])
-let ctx, dpr, W, H, ro, raf, animT0, iso = { con: [], pro: [] }
+let ctx, dpr, W, H, ro, raf, animT0, playTimer, iso = { con: [], pro: [] }
 const PAD = 28
 const px = (v) => PAD + v * (W - 2 * PAD)
 const py = (v) => (H - PAD) - v * (H - 2 * PAD)
@@ -205,15 +205,14 @@ function retarget() {
   animT0 = 0
   if (!raf) raf = requestAnimationFrame(animate)
 }
-function seek(r) { round.value = r; retarget() }
-function toggle() { playing.value = !playing.value; if (playing.value) tick() }
+function seek(r) { clearTimeout(playTimer); round.value = r; retarget() }
+function toggle() { clearTimeout(playTimer); playing.value = !playing.value; if (playing.value) tick() }
 function tick() {
   if (!playing.value) return
   if (round.value >= roundCount.value - 1) { playing.value = false; return }
   seek(round.value + 1)
   playTimer = setTimeout(tick, 900)
 }
-let playTimer
 
 function onMove(e) {
   const r = canvas.value.getBoundingClientRect()

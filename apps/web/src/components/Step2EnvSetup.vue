@@ -1002,6 +1002,7 @@ const fetchProfilesRealtime = async () => {
 
 // configuration polling
 const startConfigPolling = () => {
+  if (configTimer) return // guard: don't orphan an already-running interval
   configTimer = setInterval(fetchConfigRealtime, 2000)
 }
 
