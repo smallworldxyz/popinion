@@ -1879,7 +1879,33 @@ const renderMarkdown = (content) => {
 
   // Remove leading H2 title (## xxx), because section title already shown outside
   let processedContent = escapeHtml(content).replace(/^##\s+.+\n+/, '')
-  
+
+  // GFM tables: a header row, a |---| separator, then body rows. Emitted as a
+  // single line (no \n) so the later newline→paragraph pass leaves it intact;
+  // cell text keeps **bold**/`code` for the inline passes below to handle.
+  processedContent = (() => {
+    const lines = processedContent.split('\n')
+    const isRow = (l) => /^\s*\|.*\|\s*$/.test(l)
+    const isSep = (l) => /^\s*\|[\s:|-]+\|\s*$/.test(l)
+    const cells = (l) => l.trim().replace(/^\||\|$/g, '').split('|').map((c) => c.trim())
+    const out = []
+    for (let i = 0; i < lines.length; ) {
+      if (isRow(lines[i]) && i + 1 < lines.length && isSep(lines[i + 1])) {
+        const head = cells(lines[i])
+        let j = i + 2
+        const body = []
+        while (j < lines.length && isRow(lines[j])) body.push(cells(lines[j++]))
+        const th = '<thead><tr>' + head.map((h) => `<th>${h}</th>`).join('') + '</tr></thead>'
+        const tb = '<tbody>' + body.map((r) => '<tr>' + r.map((c) => `<td>${c}</td>`).join('') + '</tr>').join('') + '</tbody>'
+        out.push(`<table class="md-table">${th}${tb}</table>`)
+        i = j
+      } else {
+        out.push(lines[i++])
+      }
+    }
+    return out.join('\n')
+  })()
+
   // Process code blocks
   let html = processedContent.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre class="code-block"><code>$2</code></pre>')
   
@@ -1923,8 +1949,8 @@ const renderMarkdown = (content) => {
   html = html.replace(/<p class="md-p"><\/p>/g, '')
   html = html.replace(/<p class="md-p">(<h[2-5])/g, '$1')
   html = html.replace(/(<\/h[2-5]>)<\/p>/g, '$1')
-  html = html.replace(/<p class="md-p">(<ul|<ol|<blockquote|<pre|<hr)/g, '$1')
-  html = html.replace(/(<\/ul>|<\/ol>|<\/blockquote>|<\/pre>)<\/p>/g, '$1')
+  html = html.replace(/<p class="md-p">(<ul|<ol|<blockquote|<pre|<hr|<table)/g, '$1')
+  html = html.replace(/(<\/ul>|<\/ol>|<\/blockquote>|<\/pre>|<\/table>)<\/p>/g, '$1')
   
   return html
 }
@@ -2518,6 +2544,29 @@ watch(() => props.reportId, (newId) => {
 .generated-content :deep(.md-h2) { font-size: 20px; border-bottom: 1px solid #F3F4F6; padding-bottom: 8px; }
 .generated-content :deep(.md-h3) { font-size: 18px; }
 .generated-content :deep(.md-h4) { font-size: 16px; }
+
+.generated-content :deep(.md-table) {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0 18px;
+  font-size: 13px;
+}
+.generated-content :deep(.md-table th),
+.generated-content :deep(.md-table td) {
+  border: 1px solid var(--color-border, #e5e7eb);
+  padding: 7px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+.generated-content :deep(.md-table th) {
+  background: var(--color-bg, #f4f6f9);
+  font-weight: 600;
+  font-family: var(--font-body, inherit);
+  white-space: nowrap;
+}
+.generated-content :deep(.md-table tbody tr:nth-child(even)) {
+  background: color-mix(in srgb, var(--color-bg, #f4f6f9) 45%, transparent);
+}
 
 .generated-content :deep(.md-ul),
 .generated-content :deep(.md-ol) {
