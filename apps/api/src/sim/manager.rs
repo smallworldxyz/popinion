@@ -277,6 +277,23 @@ impl Manager {
         }
         Ok(())
     }
+
+    /// Delete a simulation: stop it if live, then remove its directory to free
+    /// disk and declutter the runs list. Irreversible. The id is validated the
+    /// same way `store()` does so we can never remove a path outside data_dir.
+    pub async fn delete(&self, id: &str) -> Result<()> {
+        if id.is_empty() || id.contains('/') || id.contains('\\') || id.contains("..") {
+            anyhow::bail!("invalid simulation id");
+        }
+        if let Some(h) = self.registry.remove(id) {
+            h.stop().await;
+        }
+        let dir = self.dir(id);
+        if dir.exists() {
+            std::fs::remove_dir_all(&dir)?;
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]

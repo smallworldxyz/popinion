@@ -58,7 +58,7 @@ pub fn router() -> Router<AppState> {
         .route("/survey/deploy", post(survey_deploy_h))
         .route("/survey/list", get(survey_list_h))
         .route("/survey/:survey_id", get(survey_get_h))
-        .route("/:id", get(get_sim))
+        .route("/:id", get(get_sim).delete(delete_sim))
         .route("/:id/config", get(get_config))
         .route("/:id/profiles", get(get_profiles))
         .route("/:id/run-status", get(run_status))
@@ -542,6 +542,12 @@ async fn list(State(st): State<AppState>) -> AppResult<Success<Value>> {
 async fn get_sim(State(st): State<AppState>, Path(id): Path<String>) -> AppResult<Success<Value>> {
     let m = st.sim_manager().meta(&id).map_err(|e| AppError::NotFound(e.to_string()))?;
     Ok(Success(serde_json::to_value(m).map_err(|e| AppError::Other(e.into()))?))
+}
+
+/// Delete a run: stops it if live and removes its directory. Irreversible.
+async fn delete_sim(State(st): State<AppState>, Path(id): Path<String>) -> AppResult<Success<Value>> {
+    st.sim_manager().delete(&id).await.map_err(AppError::Other)?;
+    Ok(Success(json!({ "simulation_id": id, "deleted": true })))
 }
 
 async fn get_config(State(st): State<AppState>, Path(id): Path<String>) -> AppResult<Success<Value>> {

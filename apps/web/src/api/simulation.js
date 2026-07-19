@@ -97,6 +97,14 @@ export const stopSimulation = (data) => {
 }
 
 /**
+ * Delete a simulation (run): stops it if live and removes it from disk. Irreversible.
+ * @param {string} simulationId
+ */
+export const deleteSimulation = (simulationId) => {
+  return service.delete(`/api/simulation/${simulationId}`)
+}
+
+/**
  * Get simulation realtime run status
  * @param {string} simulationId
  */

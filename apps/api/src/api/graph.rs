@@ -149,7 +149,21 @@ async fn generate_ontology(
     }
 
     let additional_context = additional_context.trim().to_string();
-    let mut project = projects::create(&project_name)?;
+    // Name the World from the scenario when the caller didn't supply a name, so
+    // the Worlds list reads meaningfully instead of a wall of "Unnamed Project".
+    let effective_name = if project_name.trim().is_empty() || project_name == "Unnamed Project" {
+        let s = simulation_requirement.trim();
+        if s.is_empty() {
+            project_name.clone()
+        } else {
+            let head: String = s.chars().take(70).collect();
+            let first = head.split(['.', '?', '!', '\n']).next().unwrap_or(&head).trim();
+            if first.is_empty() { head } else { first.to_string() }
+        }
+    } else {
+        project_name.clone()
+    };
+    let mut project = projects::create(&effective_name)?;
     project.simulation_requirement = Some(simulation_requirement.clone());
     project.additional_context =
         (!additional_context.is_empty()).then(|| additional_context.clone());

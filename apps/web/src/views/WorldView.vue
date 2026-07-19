@@ -19,6 +19,7 @@
           <th>Status</th>
           <th class="num">Agents</th>
           <th>Created</th>
+          <th></th>
         </tr>
       </thead>
       <tbody>
@@ -31,6 +32,13 @@
           <td><span class="badge" :class="statusOf(r).cls">{{ statusOf(r).label }}</span></td>
           <td class="num">{{ r.num_agents }}</td>
           <td class="date">{{ fmtDate(r.created_at) }}</td>
+          <td class="act" @click.stop>
+            <template v-if="pendingDelete === r.simulation_id">
+              <button class="del-confirm" :disabled="deleting" @click.stop="confirmDel(r)">Delete</button>
+              <button class="del-cancel" @click.stop="pendingDelete = null">Cancel</button>
+            </template>
+            <button v-else class="del-btn" title="Delete run" @click.stop="pendingDelete = r.simulation_id">✕</button>
+          </td>
         </tr>
       </tbody>
     </table>
@@ -40,7 +48,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { listSimulations } from '../api/simulation'
+import { listSimulations, deleteSimulation } from '../api/simulation'
 import { listProjects } from '../api/graph'
 
 const props = defineProps({ graphId: { type: String, required: true } })
@@ -49,6 +57,30 @@ const router = useRouter()
 const loading = ref(true)
 const runs = ref([])
 const world = ref({ name: 'World', metaText: '' })
+const pendingDelete = ref(null)
+const deleting = ref(false)
+
+// A World's name: the project name, unless it's the legacy "Unnamed Project"
+// placeholder, in which case fall back to the scenario it was built to test.
+const worldName = (p) => {
+  const n = (p.name || '').trim()
+  if (n && n !== 'Unnamed Project') return n
+  const req = (p.simulation_requirement || '').trim()
+  if (req) return req.length > 70 ? req.slice(0, 70) + '…' : req
+  return 'Untitled world'
+}
+
+const confirmDel = async (r) => {
+  if (deleting.value) return
+  deleting.value = true
+  try {
+    await deleteSimulation(r.simulation_id)
+    runs.value = runs.value.filter((x) => x.simulation_id !== r.simulation_id)
+  } catch { /* leave the row on failure */ } finally {
+    pendingDelete.value = null
+    deleting.value = false
+  }
+}
 
 // Map the backend's run status onto a small, honest set. "alive"/"completed"
 // both mean the run finished; "prepared" is ready-but-never-run.
@@ -90,7 +122,7 @@ onMounted(async () => {
       if (p.node_count != null) bits.push(`${p.node_count} entities`)
       if (p.edge_count != null) bits.push(`${p.edge_count} relations`)
       bits.push(`${runs.value.length} run${runs.value.length === 1 ? '' : 's'}`)
-      world.value = { name: p.name || 'Untitled world', metaText: bits.join(' · ') }
+      world.value = { name: worldName(p), metaText: bits.join(' · ') }
     } else {
       world.value = { name: 'Untitled world', metaText: `${runs.value.length} runs · graph ${props.graphId.slice(0, 8)}` }
     }
@@ -128,4 +160,11 @@ onMounted(async () => {
 .badge.stopped, .badge.draft { background: #f3f4f6; color: #6b7280; }
 .badge.failed { background: #fee2e2; color: #b91c1c; }
 .date { color: #9ca3af; white-space: nowrap; }
+.act { text-align: right; white-space: nowrap; }
+.del-btn { border: none; background: none; color: #c7ccd4; cursor: pointer; font-size: 14px; padding: 4px 7px; border-radius: 6px; line-height: 1; }
+.del-btn:hover { color: #b91c1c; background: #fee2e2; }
+.del-confirm { border: none; background: #b91c1c; color: #fff; border-radius: 6px; padding: 4px 10px; font-size: 12px; font-weight: 600; cursor: pointer; }
+.del-confirm:disabled { opacity: .6; cursor: default; }
+.del-cancel { border: 1px solid #e5e7eb; background: #fff; color: #6b7280; border-radius: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer; margin-left: 4px; }
+.del-cancel:hover { background: #f3f4f6; }
 </style>
