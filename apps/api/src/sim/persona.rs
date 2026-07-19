@@ -169,8 +169,17 @@ fn actor_map(graph_data: &GraphData, lexicon: &StanceLexicon) -> HashMap<String,
             let declared = n.attributes.get("actor").and_then(Value::as_bool);
             let is_subject = targeted.get(&n.uuid).copied().unwrap_or(0) >= DEBATE_SUBJECT_STANCES
                 && authored.get(&n.uuid).copied().unwrap_or(0) == 0;
-            // Unmarked entities stay agents: absent means unknown, not false.
-            (n.uuid.clone(), declared.unwrap_or(true) && !is_subject)
+            let is_actor = match declared {
+                // Extraction read the entity in context; the heuristic did not.
+                // A public figure everyone criticises who never speaks in the
+                // source has the same shape as the debate subject, so letting
+                // the heuristic override a declaration would silence them.
+                Some(declared) => declared,
+                // Unmarked entities stay agents: absent means unknown, not
+                // false. Only here does the structural read decide.
+                None => !is_subject,
+            };
+            (n.uuid.clone(), is_actor)
         })
         .collect()
 }
@@ -702,6 +711,26 @@ mod tests {
         let subject = bundles.iter().find(|b| b.uuid == "p1").unwrap();
         assert!(!subject.is_actor, "targeted by every stance, author of none");
         assert!(bundles.iter().filter(|b| b.uuid != "p1").all(|b| b.is_actor));
+    }
+
+    /// A public figure everyone attacks who never answers in the source has the
+    /// same shape as the debate subject. Extraction read them in context and the
+    /// heuristic did not, so a declaration outranks it — otherwise the most
+    /// criticised person in a debate is the one silently dropped from it.
+    #[test]
+    fn a_declared_actor_outranks_the_structural_heuristic() {
+        let mut nodes = vec![node("m1", "The Minister", "Politician", "Never replies.")];
+        nodes[0].attributes.insert("actor".into(), json!(true));
+        let mut edges = Vec::new();
+        for i in 0..DEBATE_SUBJECT_STANCES + 1 {
+            let id = format!("c{i}");
+            nodes.push(node(&id, &format!("Critic {i}"), "Group", "A critic."));
+            edges.push(edge("OPPOSES", "Attacks the minister.", (&id, "Critic"), ("m1", "Minister")));
+        }
+        let bundles = build_bundles(&graph(nodes, edges), &StanceLexicon::keywords_only());
+        let minister = bundles.iter().find(|b| b.uuid == "m1").unwrap();
+        assert!(minister.is_actor, "declared an actor, so never silenced by shape alone");
+        assert!(eligible(minister, 1));
     }
 
     /// An unmarked entity that simply has no stance edges is still an agent —

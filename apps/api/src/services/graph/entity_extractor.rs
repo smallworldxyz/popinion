@@ -123,10 +123,11 @@ Extract ALL entities and relationships from the text below.
    an entity backs, welcomes or defends the matter at hand, emit a `SUPPORTS`
    edge from that entity. Whenever an entity criticises, doubts, questions,
    warns about, or demands conditions on it, emit an `OPPOSES` edge from that
-   entity. Use these exact relation names for positions; do not soften them
-   into structural verbs such as COMMENTS_ON or QUESTIONS_BENEFITS_FROM. If the
-   text contains disagreement and you emit no `OPPOSES` edge, the extraction is
-   wrong.
+   entity. Use these exact relation names for every position, whatever its
+   flavour - do not invent a narrower stance verb, and do not downgrade a
+   position into a structural verb that merely records the two were connected.
+   If the text contains disagreement and you emit no `OPPOSES` edge, the
+   extraction is wrong.
 6. Set `"actor"` on every entity. `true` means the entity can HOLD AN OPINION
    and speak: a person, an organisation, a company, an institution, or a
    COLLECTIVE of people. Collectives are actors - "rooftop solar owners",

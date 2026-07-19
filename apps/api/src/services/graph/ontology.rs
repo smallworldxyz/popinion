@@ -109,10 +109,12 @@ to whom. You MUST include at least these two relationship types verbatim:
 - `OPPOSES` - the source entity is against it, doubts it, warns about it, or
   demands conditions before accepting it
 
-Use these exact names for stance, never invented synonyms such as
-`QUESTIONS_BENEFITS_FROM` or `APPROVES_INVESTMENT_FOR`. Structural relations
-(regulating, supplying, employing, commenting) are separate and must NOT be
-used to carry a position. An entity that objects in the source text must end up
+Use these two exact names for every position. Do NOT invent a more specific
+stance verb of your own: a name that describes the flavour of an objection
+(questioning, doubting, conditioning, welcoming) is still a position, and
+naming it something else hides it from every downstream reader. Structural
+relations (regulating, supplying, employing, commenting, working for) describe
+a connection rather than a view, and must NOT be used to carry a position. An entity that objects in the source text must end up
 as the SOURCE of an `OPPOSES` edge; if the text contains any criticism, doubt
 or unmet demand at all, that opposition MUST be represented. A graph in which
 nobody opposes anything describes a debate that does not exist.
