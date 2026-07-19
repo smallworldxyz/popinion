@@ -107,11 +107,12 @@
                 @click="selectProfile(profile)"
               >
                 <div class="profile-header">
-                  <span class="profile-realname">{{ profile.username || 'Unknown' }}</span>
-                  <span class="profile-username">@{{ profile.name || `agent_${idx}` }}</span>
+                  <span class="profile-realname">{{ profile.name || 'Unknown' }}</span>
+                  <span class="profile-username">@{{ profile.user_name || `agent_${idx}` }}</span>
                 </div>
-                <div class="profile-meta">
-                  <span class="profile-profession">{{ profile.profession || 'Unknown Profession' }}</span>
+                <div class="profile-meta" v-if="profile.profession || profile.faction">
+                  <span class="profile-profession" v-if="profile.profession">{{ profile.profession }}</span>
+                  <span class="profile-profession" v-else>{{ profile.faction === 'pro' ? 'Supporter' : profile.faction === 'con' ? 'Opponent' : 'Neutral' }}</span>
                 </div>
                 <p class="profile-bio">{{ profile.bio || 'No Bio Available' }}</p>
                 <div v-if="profile.interested_topics?.length" class="profile-topics">
@@ -576,10 +577,10 @@
           <div class="modal-header">
           <div class="modal-header-info">
             <div class="modal-name-row">
-              <span class="modal-realname">{{ selectedProfile.username }}</span>
-              <span class="modal-username">@{{ selectedProfile.name }}</span>
+              <span class="modal-realname">{{ selectedProfile.name }}</span>
+              <span class="modal-username">@{{ selectedProfile.user_name }}</span>
             </div>
-            <span class="modal-profession">{{ selectedProfile.profession }}</span>
+            <span class="modal-profession" v-if="selectedProfile.profession">{{ selectedProfile.profession }}</span>
           </div>
           <button class="close-btn" @click="selectedProfile = null">×</button>
         </div>
@@ -716,7 +717,7 @@
                       v-for="(profile, pIdx) in profiles" 
                       :key="pIdx" 
                       :value="pIdx"
-                    >{{ profile.username }}</option>
+                    >{{ profile.name || profile.user_name }}</option>
                   </select>
                   <span v-if="mapping.confidence === 'exact'" class="match-badge exact">✓ Exact</span>
                 </div>
@@ -846,7 +847,7 @@ const displayProfiles = computed(() => {
 const getAgentUsername = (agentId) => {
   if (profiles.value && profiles.value.length > agentId && agentId >= 0) {
     const profile = profiles.value[agentId]
-    return profile?.username || `agent_${agentId}`
+    return profile?.user_name || `agent_${agentId}`
   }
   return `agent_${agentId}`
 }
@@ -897,7 +898,7 @@ const handleKnowledgeImport = async (event) => {
     // Perform exact matching against current profiles
     const mappings = Object.keys(agentCounts).map(originalAgent => {
       const exactMatchIdx = profiles.value.findIndex(p => 
-        p.username?.toLowerCase() === originalAgent.toLowerCase()
+        p.user_name?.toLowerCase() === originalAgent.toLowerCase()
       )
       
       return {
@@ -939,7 +940,7 @@ const applyMappings = () => {
       return {
         ...h,
         mappedAgentIdx: mapping.matchedProfileIdx,
-        mappedAgentName: profiles.value[mapping.matchedProfileIdx]?.username
+        mappedAgentName: profiles.value[mapping.matchedProfileIdx]?.user_name
       }
     }
     // Keep original (will be treated as global in Step 5)
@@ -1235,7 +1236,7 @@ const fetchProfilesRealtime = async () => {
         lastLoggedProfileCount = currentCount
         const total = expectedTotal.value || '?'
         const latestProfile = profiles.value[currentCount - 1]
-        const profileName = latestProfile?.name || latestProfile?.username || `Agent_${currentCount}`
+        const profileName = latestProfile?.name || latestProfile?.user_name || `Agent_${currentCount}`
         if (currentCount === 1) {
           addLog(`Start Generating Agent Profile...`)
         }
