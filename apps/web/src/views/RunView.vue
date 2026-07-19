@@ -64,6 +64,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { getSimulation, getSimulationProfiles, getCredibility, getRunStatus } from '../api/simulation'
 import { checkReport, generateReport } from '../api/report'
+import { runLifecycleStatus } from '../runStatus'
 
 const props = defineProps({
   graphId: { type: String, required: true },
@@ -106,15 +107,7 @@ const grounded = computed(() => cred.value?.grounded ?? 0)
 const synthetic = computed(() => cred.value?.synthetic ?? 0)
 const postCount = computed(() => runStatus.value?.post_count ?? 0)
 
-// The run's lifecycle status, not /run-status's liveness - a finished run is
-// "not_running", which read as "Ready" here while the World page said
-// "Completed" for the same run. Same source, same labels, one answer.
-const STATUS = { running: 'Running', initializing: 'Running', alive: 'Completed', completed: 'Completed', stopped: 'Stopped', prepared: 'Ready' }
-const statusLabel = computed(() => {
-  const s = runLifecycle.value || ''
-  if (s.startsWith('error')) return 'Failed'
-  return STATUS[s] || 'Draft'
-})
+const statusLabel = computed(() => runLifecycleStatus(runLifecycle.value).label)
 
 const ORDER = { support: 0, neutral: 1, oppose: 2 }
 const stanceRows = computed(() => {

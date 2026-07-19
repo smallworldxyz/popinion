@@ -55,6 +55,8 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { listSimulations, deleteSimulation } from '../api/simulation'
 import { listProjects } from '../api/graph'
+import { runLifecycleStatus } from '../runStatus'
+import { worldName } from '../worldName'
 
 const props = defineProps({ graphId: { type: String, required: true } })
 const router = useRouter()
@@ -64,16 +66,6 @@ const runs = ref([])
 const world = ref({ name: 'World', metaText: '' })
 const pendingDelete = ref(null)
 const deleting = ref(false)
-
-// A World's name: the project name, unless it's the legacy "Unnamed Project"
-// placeholder, in which case fall back to the scenario it was built to test.
-const worldName = (p) => {
-  const n = (p.name || '').trim()
-  if (n && n !== 'Unnamed Project') return n
-  const req = (p.simulation_requirement || '').trim()
-  if (req) return req.length > 70 ? req.slice(0, 70) + '…' : req
-  return 'Untitled world'
-}
 
 const confirmDel = async (r) => {
   if (deleting.value) return
@@ -87,17 +79,7 @@ const confirmDel = async (r) => {
   }
 }
 
-// Map the backend's run status onto a small, honest set. "alive"/"completed"
-// both mean the run finished; "prepared" is ready-but-never-run.
-const statusOf = (r) => {
-  const s = r.status || ''
-  if (s.startsWith('error')) return { label: 'Failed', cls: 'failed' }
-  if (s === 'running' || s === 'initializing') return { label: 'Running', cls: 'running' }
-  if (s === 'alive' || s === 'completed') return { label: 'Completed', cls: 'completed' }
-  if (s === 'stopped') return { label: 'Stopped', cls: 'stopped' }
-  if (s === 'prepared') return { label: 'Ready', cls: 'ready' }
-  return { label: 'Draft', cls: 'draft' }
-}
+const statusOf = (r) => runLifecycleStatus(r.status)
 
 const fmtDate = (iso) => {
   if (!iso) return ''
