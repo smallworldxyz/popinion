@@ -1,127 +1,142 @@
 <template>
   <div class="sim-run">
-    <!-- Run header: status + live stats + report action -->
-    <div class="run-header">
-      <div class="run-status">
+    <!-- Command bar: status + live stats + run controls -->
+    <header class="cmd-bar">
+      <div class="cmd-status">
         <span class="status-dot" :class="statusClass"></span>
-        <span class="status-text">{{ statusLabel }}</span>
+        <div class="status-meta">
+          <span class="eyebrow">Live run</span>
+          <span class="status-text">{{ statusLabel }}</span>
+        </div>
       </div>
 
-      <div class="run-stats">
+      <div class="cmd-stats">
         <div class="rstat">
           <span class="rstat-num mono">{{ currentRound }}<span class="rstat-den">/{{ maxRounds || '—' }}</span></span>
-          <span class="rstat-label">Round</span>
+          <span class="stat-label">Round</span>
         </div>
-        <div class="rstat"><span class="rstat-num mono">{{ postCount }}</span><span class="rstat-label">Posts</span></div>
-        <div class="rstat"><span class="rstat-num mono">{{ allActions.length }}</span><span class="rstat-label">Actions</span></div>
-        <div class="rstat"><span class="rstat-num mono">{{ agentCount }}</span><span class="rstat-label">Agents</span></div>
+        <div class="rstat"><span class="rstat-num mono">{{ postCount }}</span><span class="stat-label">Posts</span></div>
+        <div class="rstat"><span class="rstat-num mono">{{ allActions.length }}</span><span class="stat-label">Actions</span></div>
+        <div class="rstat"><span class="rstat-num mono">{{ agentCount }}</span><span class="stat-label">Agents</span></div>
       </div>
 
-      <button
-        v-if="status === 'running' || status === 'initializing'"
-        class="stop-btn"
-        :disabled="stopping"
-        @click="doStop"
-      >
-        <span v-if="stopping" class="spinner spinner-dark"></span>
-        <span v-else class="stop-glyph"></span>
-        {{ stopping ? 'Stopping…' : 'Stop' }}
-      </button>
+      <div class="cmd-actions">
+        <button
+          v-if="status === 'running' || status === 'initializing'"
+          class="btn btn-danger stop-btn"
+          :disabled="stopping"
+          @click="doStop"
+        >
+          <span v-if="stopping" class="spinner spinner-dark"></span>
+          <span v-else class="stop-glyph"></span>
+          {{ stopping ? 'Stopping…' : 'Stop' }}
+        </button>
 
-      <button class="report-btn" :disabled="!canReport || isGeneratingReport" @click="handleNextStep">
-        <span v-if="isGeneratingReport" class="spinner"></span>
-        {{ isGeneratingReport ? 'Starting…' : 'Generate Report' }}
-        <span v-if="!isGeneratingReport" class="arrow">→</span>
-      </button>
-    </div>
-
-    <!-- Live stance snapshot (post-weighted; the honest split lives in the report's credibility panel) -->
-    <div class="stance-strip" v-if="stanceRows.length">
-      <span class="strip-label">Live stance · posts so far</span>
-      <div class="stance-bar">
-        <div v-for="s in stanceRows" :key="s.stance" class="seg" :class="'st-' + s.stance" :style="{ width: s.pct + '%' }"></div>
-      </div>
-      <div class="stance-legend">
-        <span v-for="s in stanceRows" :key="s.stance" class="leg"><i :class="'st-' + s.stance"></i>{{ s.stance }} {{ s.pct }}%</span>
-      </div>
-    </div>
-
-    <!-- Mid-run injection: red-team the population while the discussion is live -->
-    <div class="inject-strip" v-if="status === 'running' || status === 'initializing'">
-      <span class="strip-label">Drop a message into the live discussion (disinformation, a policy reversal, an opponent's statement)</span>
-      <div class="inject-row">
-        <input
-          v-model="injectContent"
-          class="inject-input"
-          placeholder="e.g. Leaked memo: the ministry plans to cancel the program"
-          :disabled="injecting"
-          @keyup.enter="doInject"
-        />
-        <button class="inject-btn" :disabled="injecting || !injectContent.trim()" @click="doInject">
-          {{ injecting ? 'Injecting…' : 'Inject' }}
+        <button class="btn btn-primary report-btn" :disabled="!canReport || isGeneratingReport" @click="handleNextStep">
+          <span v-if="isGeneratingReport" class="spinner spinner-dark"></span>
+          {{ isGeneratingReport ? 'Starting…' : 'Generate Report' }}
+          <span v-if="!isGeneratingReport" class="arrow">→</span>
         </button>
       </div>
-      <div v-if="injectNote" class="inject-note" :class="{ err: injectError }">{{ injectNote }}</div>
-    </div>
+    </header>
 
-    <!-- Activity feed: one honest stream of what the agents actually did -->
-    <div class="feed" ref="scrollContainer">
-      <div v-if="!allActions.length" class="feed-empty">
-        <div class="pulse-ring"></div>
-        <span>{{ status === 'running' ? 'Agents are deciding…' : 'Waiting for the simulation…' }}</span>
-      </div>
+    <!-- Body: focused activity stream + persistent control rail -->
+    <div class="sim-body">
+      <!-- Activity feed: one honest stream of what the agents actually did -->
+      <section class="feed" ref="scrollContainer">
+        <div v-if="!allActions.length" class="feed-empty">
+          <div class="pulse-ring"></div>
+          <span>{{ status === 'running' ? 'Agents are deciding…' : 'Waiting for the simulation…' }}</span>
+        </div>
 
-      <TransitionGroup name="act">
-        <div v-for="a in allActions" :key="a._id" class="act">
-          <div class="act-avatar">{{ (nameFor(a.user_id) || 'A')[0] }}</div>
-          <div class="act-body">
-            <div class="act-head">
-              <span class="act-name">{{ nameFor(a.user_id) }}</span>
-              <span class="act-badge" :class="badgeClass(a.action)">{{ badgeLabel(a.action) }}</span>
-              <span v-if="a.info && a.info.stance && a.info.stance !== 'seed'" class="act-stance" :class="'st-' + a.info.stance">{{ a.info.stance }}</span>
-              <span class="act-round mono">R{{ a.round }}</span>
+        <TransitionGroup name="act" tag="div" class="feed-stream">
+          <div v-for="a in allActions" :key="a._id" class="act">
+            <div class="act-avatar">{{ (nameFor(a.user_id) || 'A')[0] }}</div>
+            <div class="act-body">
+              <div class="act-head">
+                <span class="act-name">{{ nameFor(a.user_id) }}</span>
+                <span class="act-badge" :class="badgeClass(a.action)">{{ badgeLabel(a.action) }}</span>
+                <span v-if="a.info && a.info.stance && a.info.stance !== 'seed'" class="act-stance" :class="'st-' + a.info.stance">{{ a.info.stance }}</span>
+                <span class="act-round mono">R{{ a.round }}</span>
+              </div>
+              <div v-if="a.info && a.info.content" class="act-content">{{ a.info.content }}</div>
+              <div v-else-if="a.action === 'do_nothing'" class="act-muted">
+                skipped this round<span v-if="a.info && a.info.reasoning"> — {{ a.info.reasoning }}</span>
+              </div>
+              <div v-else-if="a.action === 'like_post'" class="act-muted">liked post #<span class="mono">{{ a.info && a.info.target_post_id }}</span></div>
+              <div v-else-if="a.action === 'dislike_post'" class="act-muted">disliked post #<span class="mono">{{ a.info && a.info.target_post_id }}</span></div>
+              <div v-else-if="a.action === 'follow'" class="act-muted">followed an account</div>
             </div>
-            <div v-if="a.info && a.info.content" class="act-content">{{ a.info.content }}</div>
-            <div v-else-if="a.action === 'do_nothing'" class="act-muted">
-              skipped this round<span v-if="a.info && a.info.reasoning"> — {{ a.info.reasoning }}</span>
-            </div>
-            <div v-else-if="a.action === 'like_post'" class="act-muted">liked post #{{ a.info && a.info.target_post_id }}</div>
-            <div v-else-if="a.action === 'dislike_post'" class="act-muted">disliked post #{{ a.info && a.info.target_post_id }}</div>
-            <div v-else-if="a.action === 'follow'" class="act-muted">followed an account</div>
           </div>
-        </div>
-      </TransitionGroup>
+        </TransitionGroup>
+      </section>
+
+      <!-- Control rail: stance, steer, spread -->
+      <aside class="rail">
+        <!-- Live stance snapshot (post-weighted; the honest split lives in the report's credibility panel) -->
+        <section class="rail-block" v-if="stanceRows.length">
+          <div class="rail-title">
+            <span class="eyebrow">Live stance</span>
+            <span class="rail-sub mono">posts so far</span>
+          </div>
+          <div class="stance-bar">
+            <div v-for="s in stanceRows" :key="s.stance" class="seg" :class="'st-' + s.stance" :style="{ width: s.pct + '%' }"></div>
+          </div>
+          <div class="stance-legend">
+            <span v-for="s in stanceRows" :key="s.stance" class="leg"><i :class="'st-' + s.stance"></i>{{ s.stance }} <b class="mono">{{ s.pct }}%</b></span>
+          </div>
+        </section>
+
+        <!-- Mid-run injection: red-team the population while the discussion is live -->
+        <section class="rail-block steer" v-if="status === 'running' || status === 'initializing'">
+          <div class="rail-title"><span class="eyebrow">Steer the discussion</span></div>
+          <p class="rail-hint">Drop a message into the live discussion — disinformation, a policy reversal, an opponent's statement.</p>
+          <div class="inject-row">
+            <input
+              v-model="injectContent"
+              class="field inject-input"
+              placeholder="e.g. Leaked memo: the ministry plans to cancel the program"
+              :disabled="injecting"
+              @keyup.enter="doInject"
+            />
+            <button class="inject-btn" :disabled="injecting || !injectContent.trim()" @click="doInject">
+              {{ injecting ? 'Injecting…' : 'Inject' }}
+            </button>
+          </div>
+          <div v-if="injectNote" class="inject-note" :class="{ err: injectError }">{{ injectNote }}</div>
+        </section>
+
+        <!-- Spread: where the seed & injected messages landed -->
+        <section class="rail-block" v-if="spreadRows.length">
+          <div class="rail-title">
+            <span class="eyebrow">Spread</span>
+            <button class="spread-refresh" :disabled="spreadLoading" @click="loadSpread">
+              {{ spreadLoading ? '…' : 'Refresh' }}
+            </button>
+          </div>
+          <div v-for="p in spreadRows" :key="p.post_id" class="spread-row">
+            <div class="spread-content">
+              <span class="spread-tag mono" :class="{ injected: p.injected }">{{ p.injected ? `INJECTED R${p.round}` : 'SEED' }}</span>
+              <span class="spread-text">{{ p.content }}</span>
+            </div>
+            <div class="spread-metrics mono">
+              <span>reach {{ p.reach }}</span>
+              <span>{{ p.engagement.likes }} likes · {{ p.engagement.dislikes }} dislikes · {{ p.engagement.comments }} replies</span>
+              <span :title="shiftTitle(p)">{{ shiftText(p) }}</span>
+            </div>
+          </div>
+          <p class="spread-caption">
+            Shift compares agents who were served the post (acting after exposure) with those who never saw it,
+            on a support&nbsp;+1&hellip;oppose&nbsp;&minus;1 axis. Observational — exposure follows network position, not random assignment.
+          </p>
+        </section>
+      </aside>
     </div>
 
-    <!-- Spread: where the seed & injected messages landed -->
-    <div class="spread-strip" v-if="spreadRows.length">
-      <div class="spread-head">
-        <span class="strip-label">Spread · where the seed &amp; injected messages landed</span>
-        <button class="spread-refresh" :disabled="spreadLoading" @click="loadSpread">
-          {{ spreadLoading ? '…' : 'Refresh' }}
-        </button>
-      </div>
-      <div v-for="p in spreadRows" :key="p.post_id" class="spread-row">
-        <div class="spread-content">
-          <span class="spread-tag" :class="{ injected: p.injected }">{{ p.injected ? `INJECTED R${p.round}` : 'SEED' }}</span>
-          <span class="spread-text">{{ p.content }}</span>
-        </div>
-        <div class="spread-metrics mono">
-          <span>reach {{ p.reach }}</span>
-          <span>{{ p.engagement.likes }} likes · {{ p.engagement.dislikes }} dislikes · {{ p.engagement.comments }} replies</span>
-          <span :title="shiftTitle(p)">{{ shiftText(p) }}</span>
-        </div>
-      </div>
-      <p class="spread-caption">
-        Shift compares agents who were served the post (acting after exposure) with those who never saw it,
-        on a support&nbsp;+1&hellip;oppose&nbsp;&minus;1 axis. Observational — exposure follows network position, not random assignment.
-      </p>
-    </div>
-
-    <!-- Monitor log -->
-    <div class="system-logs">
+    <!-- Monitor log: slim bottom ribbon -->
+    <footer class="system-logs">
       <div class="log-header">
-        <span class="log-title">SIMULATION MONITOR</span>
+        <span class="log-title mono">SIMULATION MONITOR</span>
         <span class="log-id mono">{{ simulationId || 'NO_SIMULATION' }}</span>
       </div>
       <div class="log-content" ref="logContent">
@@ -130,7 +145,7 @@
           <span class="log-msg">{{ log.msg }}</span>
         </div>
       </div>
-    </div>
+    </footer>
   </div>
 </template>
 
@@ -390,149 +405,187 @@ onUnmounted(stopPolling)
 </script>
 
 <style scoped>
-.sim-run { height: 100%; display: flex; flex-direction: column; background: #fff; overflow: hidden; }
-.mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
-
-/* header */
-.run-header {
-  display: flex; align-items: center; gap: 24px;
-  padding: 14px 24px; border-bottom: 1px solid #eaeaea; flex-shrink: 0;
+.sim-run {
+  height: 100%; display: flex; flex-direction: column;
+  background: var(--color-bg); color: var(--color-text);
+  font-family: var(--font-body); overflow: hidden;
 }
-.run-status { display: flex; align-items: center; gap: 8px; min-width: 220px; }
-.status-dot { width: 9px; height: 9px; border-radius: 50%; background: #9ca3af; }
-.status-dot.run { background: #2563eb; animation: pulse 1.4s infinite; }
-.status-dot.done { background: #059669; }
-.status-dot.err { background: #dc2626; }
-.status-text { font-size: 0.95rem; font-weight: 600; }
-@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
 
-.run-stats { display: flex; gap: 26px; flex: 1; }
-.rstat { display: flex; flex-direction: column; }
-.rstat-num { font-size: 1.25rem; font-weight: 700; line-height: 1.1; }
-.rstat-den { font-size: 0.85rem; color: #9ca3af; font-weight: 400; }
-.rstat-label { font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; color: #9ca3af; }
-
-.report-btn {
-  display: inline-flex; align-items: center; gap: 8px;
-  padding: 10px 20px; background: #000; color: #fff; border: none; border-radius: 8px;
-  font-family: inherit; font-size: 0.95rem; font-weight: 600; cursor: pointer;
+/* ─── Command bar ──────────────────────────────────────────────────────────── */
+.cmd-bar {
+  display: flex; align-items: center; gap: 32px; flex-shrink: 0;
+  padding: 12px 24px;
+  background: var(--color-surface); border-bottom: 1px solid var(--color-border);
 }
-.report-btn:disabled { opacity: 0.35; cursor: not-allowed; }
-.report-btn:hover:not(:disabled) { background: #333; }
+.cmd-status { display: flex; align-items: center; gap: 10px; min-width: 190px; }
+.status-meta { display: flex; flex-direction: column; gap: 1px; line-height: 1.1; }
+.status-text { font-size: var(--fs-sm); font-weight: 600; color: var(--color-text); }
+.status-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--color-text-muted); flex-shrink: 0; }
+.status-dot.run { background: var(--stance-oppose); animation: pulse 1.4s infinite; }
+.status-dot.done { background: var(--color-accent); }
+.status-dot.idle { background: var(--color-text-muted); }
+.status-dot.err { background: var(--stance-oppose-strong); }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
 
-/* Stop the run early — outline until hover, then the oppose-pole colour so it
-   reads as a halt without shouting. */
-.stop-btn {
-  display: inline-flex; align-items: center; gap: 7px;
-  padding: 10px 16px; background: #fff; border: 1px solid var(--color-border, #d9e0e8);
-  border-radius: 8px; color: #4b5563;
-  font-family: inherit; font-size: 0.9rem; font-weight: 600; cursor: pointer;
-  transition: border-color 0.15s, color 0.15s;
+.cmd-stats { display: flex; gap: 30px; flex: 1; }
+.rstat { display: flex; flex-direction: column; gap: 2px; }
+.rstat-num {
+  font-family: var(--font-mono); font-size: var(--fs-md); font-weight: 600;
+  line-height: 1; color: var(--color-text);
 }
-.stop-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.stop-btn:hover:not(:disabled) { border-color: var(--stance-oppose); color: var(--stance-oppose); }
+.rstat-den { font-size: var(--fs-xs); color: var(--color-text-muted); font-weight: 400; }
+
+.cmd-actions { display: flex; align-items: center; gap: 10px; }
+.stop-btn { padding: 9px 16px; }
 .stop-glyph { width: 9px; height: 9px; border-radius: 2px; background: currentColor; }
-.spinner-dark { border: 2px solid rgba(0,0,0,0.2); border-top-color: #666; }
+.report-btn .arrow { font-weight: 400; }
 
-/* stance strip */
-.stance-strip { padding: 12px 24px; border-bottom: 1px solid #f0f0f0; }
-.strip-label { font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: #9ca3af; }
-.stance-bar { display: flex; height: 8px; border-radius: 999px; overflow: hidden; margin: 8px 0 6px; background: #f3f4f6; }
-.seg { height: 100%; }
-.stance-legend { display: flex; gap: 16px; font-size: 0.8rem; color: #4b5563; }
-.leg i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; vertical-align: middle; }
-/* Functional stance ramp (blue↔amber, tritan-safe) — not the brand pair. */
-.st-support { background: var(--stance-support); } .st-support.act-stance, .st-support.leg { background: none; }
-.st-oppose { background: var(--stance-oppose); }
-.st-neutral { background: var(--stance-neutral); }
-.st-unknown { background: #d1d5db; }
+/* ─── Body: feed + rail ────────────────────────────────────────────────────── */
+.sim-body { flex: 1; display: flex; min-height: 0; }
 
-/* inject strip */
-.inject-strip { padding: 12px 24px; border-bottom: 1px solid #f0f0f0; }
-.inject-row { display: flex; gap: 8px; margin-top: 8px; }
-.inject-input {
-  flex: 1; padding: 8px 12px; border: 1px solid #e5e7eb; border-radius: 6px;
-  font-family: inherit; font-size: 0.88rem; color: #1f2937;
-}
-.inject-input:focus { outline: none; border-color: #111; }
-.inject-input:disabled { background: #fafafa; color: #9ca3af; }
-.inject-btn {
-  padding: 8px 18px; background: #000; color: #fff; border: none; border-radius: 6px;
-  font-family: inherit; font-size: 0.85rem; font-weight: 600; cursor: pointer;
-}
-.inject-btn:disabled { opacity: 0.35; cursor: not-allowed; }
-.inject-btn:hover:not(:disabled) { background: #333; }
-.inject-note { margin-top: 6px; font-size: 0.78rem; color: #059669; }
-.inject-note.err { color: #dc2626; }
-
-/* spread strip */
-.spread-strip { padding: 12px 24px; border-top: 1px solid #f0f0f0; flex-shrink: 0; max-height: 220px; overflow-y: auto; }
-.spread-head { display: flex; align-items: center; justify-content: space-between; }
-.spread-refresh {
-  border: 1px solid #e5e7eb; background: #fff; color: #666; padding: 3px 12px;
-  border-radius: 5px; font-family: inherit; font-size: 0.72rem; font-weight: 600; cursor: pointer;
-}
-.spread-refresh:disabled { opacity: 0.5; cursor: default; }
-.spread-refresh:hover:not(:disabled) { border-color: #ccc; color: #111; }
-.spread-row { padding: 8px 0; border-bottom: 1px solid #f5f5f5; }
-.spread-content { display: flex; align-items: baseline; gap: 8px; }
-.spread-tag {
-  font-size: 0.6rem; letter-spacing: 0.05em; padding: 2px 6px; border-radius: 4px;
-  font-weight: 700; background: #f0f0f0; color: #666; flex-shrink: 0;
-}
-.spread-tag.injected { background: #fef3c7; color: #92400e; }
-.spread-text {
-  font-size: 0.85rem; color: #1f2937; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.spread-metrics { display: flex; gap: 18px; margin-top: 4px; font-size: 0.74rem; color: #6b7280; }
-.spread-caption { margin: 8px 0 0; font-size: 0.72rem; color: #9ca3af; line-height: 1.5; }
-
-/* feed */
-.feed { flex: 1; overflow-y: auto; padding: 16px 24px; max-width: 820px; margin: 0 auto; width: 100%; }
+/* Activity feed — a single flush stream on the ground inset, no cards. */
+.feed { flex: 1; overflow-y: auto; padding: 20px 28px; min-width: 0; }
+.feed-stream { max-width: 760px; margin: 0 auto; }
 .feed-empty {
   display: flex; flex-direction: column; align-items: center; gap: 14px;
-  color: #b0b0b0; font-size: 0.85rem; padding: 60px 0;
+  color: var(--color-text-muted); font-size: var(--fs-sm); padding: 72px 0;
 }
-.pulse-ring { width: 32px; height: 32px; border-radius: 50%; border: 1px solid #e5e7eb; animation: ripple 2s infinite; }
+.pulse-ring { width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--color-border); animation: ripple 2s infinite; }
 @keyframes ripple { 0% { transform: scale(0.8); opacity: 1; } 100% { transform: scale(2.4); opacity: 0; } }
 
-.act { display: flex; gap: 12px; padding: 12px 0; border-bottom: 1px solid #f3f4f6; }
+.act { display: flex; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--color-border); }
+.act:last-child { border-bottom: none; }
 .act-avatar {
-  width: 30px; height: 30px; border-radius: 50%; background: #111; color: #fff;
-  display: flex; align-items: center; justify-content: center; font-size: 0.8rem; font-weight: 700;
-  text-transform: uppercase; flex-shrink: 0;
+  width: 30px; height: 30px; border-radius: 50%;
+  background: var(--color-accent-2); color: var(--color-on-accent-2);
+  display: flex; align-items: center; justify-content: center;
+  font-size: var(--fs-xs); font-weight: 600; text-transform: uppercase; flex-shrink: 0;
 }
 .act-body { flex: 1; min-width: 0; }
 .act-head { display: flex; align-items: center; gap: 8px; margin-bottom: 3px; }
-.act-name { font-weight: 600; font-size: 0.92rem; }
-.act-badge { font-size: 0.62rem; letter-spacing: 0.05em; padding: 2px 6px; border-radius: 4px; font-weight: 700; }
-.b-post { background: #eef2ff; color: #3730a3; }
-.b-reply { background: #f0f0f0; color: #444; }
-.b-react { background: #fff; color: #666; border: 1px solid #e5e7eb; }
-.b-meta { background: #fafafa; color: #999; border: 1px dashed #ddd; }
-.b-idle { background: #f9fafb; color: #bbb; }
-.b-default { background: #f0f0f0; color: #666; }
-.act-stance { font-size: 0.68rem; padding: 1px 7px; border-radius: 999px; color: #fff; font-weight: 600; }
-.act-stance.st-support { background: var(--stance-support); }
+.act-name { font-weight: 600; font-size: var(--fs-sm); color: var(--color-text); }
+.act-badge {
+  font-family: var(--font-mono); font-size: var(--fs-2xs); letter-spacing: 0.05em;
+  padding: 2px 6px; border-radius: 4px; font-weight: 600;
+  background: var(--color-bg); color: var(--color-text-muted); border: 1px solid var(--color-border);
+}
+.b-post { background: var(--color-accent); color: var(--color-on-accent); border-color: transparent; }
+.b-reply { background: var(--color-bg); color: var(--color-text); }
+.b-react { background: transparent; color: var(--color-text-muted); }
+.b-meta { background: transparent; color: var(--color-text-muted); border-style: dashed; }
+.b-idle { background: transparent; color: var(--color-text-muted); opacity: 0.7; }
+.b-default { background: var(--color-bg); color: var(--color-text-muted); }
+.act-stance {
+  font-size: var(--fs-2xs); padding: 1px 8px; border-radius: 999px; color: #fff; font-weight: 600;
+  text-transform: capitalize;
+}
+.act-stance.st-support { background: var(--stance-support-strong); }
 .act-stance.st-oppose { background: var(--stance-oppose); }
-.act-stance.st-neutral { background: var(--stance-neutral); }
-.act-round { margin-left: auto; font-size: 0.72rem; color: #b0b0b0; }
-.act-content { font-size: 0.95rem; line-height: 1.55; color: #1f2937; }
-.act-muted { font-size: 0.85rem; color: #9ca3af; font-style: italic; }
+.act-stance.st-neutral { background: var(--stance-neutral); color: var(--ink); }
+.act-round { margin-left: auto; font-size: var(--fs-xs); color: var(--color-text-muted); }
+.act-content { font-size: var(--fs-sm); line-height: 1.55; color: var(--color-text); }
+.act-muted { font-size: var(--fs-xs); color: var(--color-text-muted); font-style: italic; }
 
-.act-enter-active { transition: all 0.35s ease; }
+.act-enter-active { transition: opacity 0.35s ease, transform 0.35s ease; }
 .act-enter-from { opacity: 0; transform: translateY(8px); }
 
-/* logs */
-.system-logs { background: #000; color: #ddd; padding: 14px 16px; border-top: 1px solid #222; flex-shrink: 0; }
-.log-header { display: flex; justify-content: space-between; border-bottom: 1px solid #333; padding-bottom: 6px; margin-bottom: 6px; font-size: 0.62rem; color: #666; letter-spacing: 0.05em; }
-.log-content { display: flex; flex-direction: column; gap: 3px; height: 84px; overflow-y: auto; }
-.log-line { font-size: 0.72rem; display: flex; gap: 12px; line-height: 1.5; }
-.log-time { color: #555; min-width: 72px; }
-.log-msg { color: #bbb; word-break: break-word; }
+/* ─── Control rail (sheet) ─────────────────────────────────────────────────── */
+.rail {
+  width: 340px; flex-shrink: 0; overflow-y: auto;
+  background: var(--color-surface); border-left: 1px solid var(--color-border);
+  display: flex; flex-direction: column;
+}
+.rail-block { padding: 18px 20px; border-bottom: 1px solid var(--color-border); }
+.rail-block:last-child { border-bottom: none; }
+.rail-title { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+.rail-sub { font-size: var(--fs-2xs); color: var(--color-text-muted); }
+.rail-hint { margin: 0 0 12px; font-size: var(--fs-xs); line-height: 1.5; color: var(--color-text-muted); }
+
+/* stance bar */
+.stance-bar {
+  display: flex; height: 8px; border-radius: 999px; overflow: hidden;
+  margin-bottom: 10px; background: var(--color-bg);
+}
+.seg { height: 100%; }
+.stance-legend { display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: var(--fs-xs); color: var(--color-text-muted); text-transform: capitalize; }
+.leg { display: inline-flex; align-items: center; }
+.leg b { font-weight: 600; color: var(--color-text); margin-left: 4px; }
+.leg i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; }
+/* Functional stance ramp (blue↔amber, tritan-safe) — not the brand pair. */
+.st-support { background: var(--stance-support); }
+.st-oppose { background: var(--stance-oppose); }
+.st-neutral { background: var(--stance-neutral); }
+.st-unknown { background: var(--color-border); }
+
+/* steer / inject — event injection carries the gold ember. */
+.steer { background: var(--color-bg); }
+.inject-row { display: flex; flex-direction: column; gap: 8px; }
+.inject-input { width: 100%; }
+.inject-input:disabled { opacity: 0.6; cursor: not-allowed; }
+.inject-btn {
+  padding: 8px 16px; background: var(--color-accent); color: var(--color-on-accent);
+  border: none; border-radius: var(--radius-sm);
+  font-family: var(--font-body); font-size: var(--fs-sm); font-weight: 600; cursor: pointer;
+  transition: background 0.15s;
+}
+.inject-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.inject-btn:hover:not(:disabled) { background: var(--color-accent-hover); }
+.inject-note { margin-top: 8px; font-size: var(--fs-xs); color: var(--color-accent-text); }
+.inject-note.err { color: var(--stance-oppose); }
+
+/* spread */
+.spread-refresh {
+  border: 1px solid var(--color-border); background: transparent; color: var(--color-text-muted);
+  padding: 3px 12px; border-radius: var(--radius-sm);
+  font-family: var(--font-mono); font-size: var(--fs-2xs); font-weight: 600; cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+.spread-refresh:disabled { opacity: 0.5; cursor: default; }
+.spread-refresh:hover:not(:disabled) { border-color: var(--color-accent); color: var(--color-accent-text); }
+.spread-row { padding: 10px 0; border-bottom: 1px solid var(--color-border); }
+.spread-row:last-of-type { border-bottom: none; }
+.spread-content { display: flex; align-items: baseline; gap: 8px; }
+.spread-tag {
+  font-size: var(--fs-2xs); letter-spacing: 0.04em; padding: 2px 6px; border-radius: 4px;
+  font-weight: 600; background: var(--color-bg); color: var(--color-text-muted);
+  border: 1px solid var(--color-border); flex-shrink: 0;
+}
+.spread-tag.injected { background: var(--color-accent); color: var(--color-on-accent); border-color: transparent; }
+.spread-text {
+  font-size: var(--fs-xs); color: var(--color-text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.spread-metrics { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 6px; font-size: var(--fs-2xs); color: var(--color-text-muted); }
+.spread-caption { margin: 12px 0 0; font-size: var(--fs-2xs); color: var(--color-text-muted); line-height: 1.5; }
+
+/* ─── Monitor log ribbon ───────────────────────────────────────────────────── */
+.system-logs {
+  flex-shrink: 0; background: var(--navy); color: var(--on-dark-muted);
+  padding: 12px 20px; border-top: 1px solid var(--border-dark);
+}
+.log-header {
+  display: flex; justify-content: space-between; border-bottom: 1px solid var(--border-dark);
+  padding-bottom: 6px; margin-bottom: 6px; font-size: var(--fs-2xs); letter-spacing: 0.08em;
+}
+.log-title { color: var(--gold-bright); }
+.log-id { color: var(--on-dark-muted); opacity: 0.7; }
+.log-content { display: flex; flex-direction: column; gap: 3px; height: 76px; overflow-y: auto; }
+.log-line { font-size: var(--fs-xs); display: flex; gap: 12px; line-height: 1.5; }
+.log-time { color: var(--purple-bright); min-width: 72px; }
+.log-msg { color: var(--on-dark-muted); word-break: break-word; }
+
+/* ─── Spinners ─────────────────────────────────────────────────────────────── */
 .spinner {
   width: 13px; height: 13px; border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff;
   border-radius: 50%; animation: spin 0.8s linear infinite;
 }
+.spinner-dark { border: 2px solid rgba(0,0,0,0.25); border-top-color: currentColor; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* ─── Responsive ───────────────────────────────────────────────────────────── */
+@media (max-width: 1100px) {
+  .cmd-bar { gap: 18px; flex-wrap: wrap; }
+  .cmd-stats { gap: 22px; order: 3; flex-basis: 100%; }
+  .rail { width: 300px; }
+}
 </style>
