@@ -67,23 +67,24 @@ The data is light-on-dark terrain, ink-dense.
 
 ### 3.2 Color
 
-Strategy: **Committed**.
-Brand hue is a slate-indigo, `oklch(0.62 0.13 265)`.
-All neutrals are tinted toward 265.
+Strategy: **Baray, committed** (adopted; supersedes the earlier slate-indigo proposal).
+Two brand hues carry all chrome - gold (primary, CTA, the light in the room) and purple (secondary, links, secondary CTA, World-event injection) - over a navy ground.
+Dark is the primary theme; a light theme (`[data-theme="light"]`) is the alternate.
+Canonical values and the semantic map live in `DESIGN.md` and `apps/web/src/assets/theme.css`.
 
 ```
-Deep ground (app frame, room)   oklch(0.19 0.021 265)
-Map ground (field substrate)    oklch(0.245 0.026 265)
-Raised ground (rails, sheets)   oklch(0.29 0.028 265)
-Hairline / graticule            oklch(0.38 0.022 265)
-Body text                       oklch(0.88 0.012 265)
-Quiet text                      oklch(0.66 0.018 265)
-Ink (max, headline)             oklch(0.96 0.008 265)
-Alert (World event injection)   oklch(0.72 0.19 42)   ember
-Refusal / below-bar             oklch(0.55 0.03 265)  desaturated, not red
+Gold (primary / CTA)            #F2B01E   hover #D9990F  bright #F5C243  deep #9C6F00
+Purple (secondary / links)      #6F4D9F   hover #5C3F86  bright #A98BD6
+Navy ground / raised            #0E2340 / #16345C
+Light surface / surface-2       #FFFFFF / #F4F6F9
+Text on navy / muted            #FFFFFF / #C9D6E5
+Text on light / muted           #1A2433 / #5D6B7C
+Border dark / light             #2C4A70 / #D9E0E8
+Alert (World event injection)   the gold family (the ember)
+Refusal / below-bar             desaturated navy, not red
 ```
 
-Stance is the key encoding, and it is a diverging luminance-plus-hue ramp on the blue to amber axis, never red to green.
+Stance is the key encoding, and Baray does not touch it: it is a diverging luminance-plus-hue ramp on the blue to amber axis, never red to green, never brand gold/purple.
 
 ```
 Oppose         oklch(0.60 0.15 250)  ->  strong oppose  oklch(0.48 0.17 255)
@@ -100,13 +101,13 @@ Sentiment, which is separate from stance, is encoded as mark opacity and agitati
 
 Offline, self-hosted woff2, no CDN, because the app ships as an offline-capable Tauri desktop build.
 
-- **Inter Tight** at 600 to 700, tight tracking, for display and map labels. Forecast maps label with a condensed grotesque, never a serif.
-- **Inter** 400 and 500 for body and UI, set at 65 to 72ch in prose surfaces.
-- **IBM Plex Mono** 400 and 600 for every number, provenance ID, tick label, and count.
+- **Fraunces** 500 to 700 for display, headings, and map labels. The Baray voice; weight carries the headline, not size.
+- **Inter** 400/500/600 for body and UI, set at 65 to 72ch in prose surfaces.
+- **JetBrains Mono** 400 and 600 for every number, provenance ID, tick label, and count.
 
 Mono is a truth signal.
 If it is monospace, it was measured from real data.
-If it is Inter, the product wrote it.
+If it is Inter, the product wrote it, and if it is Fraunces, the product is speaking.
 
 Scale, ratio 1.333: 11 / 13 / 15 / 20 / 27 / 36 / 48.
 Weight contrast carries hierarchy (600 against 400), not size inflation.

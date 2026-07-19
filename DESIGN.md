@@ -4,8 +4,14 @@ Visual system for the FIELD direction.
 Strategic context is in PRODUCT.md.
 Full rationale and phased build plan are in docs/redesign-plan.md.
 
-Status: proposed, not yet built.
+Status: chrome foundation built (Phase 0); the FIELD map skin (Phase 4) is not yet built.
 When code and this file disagree during the build, update this file in the same change.
+
+**Palette and type: Baray (adopted).**
+The visual system is **Baray** - gold `#F2B01E` primary, purple `#6F4D9F` secondary, navy `#0E2340` surfaces; Fraunces (display) + Inter (body) + JetBrains Mono (numbers), self-hosted woff2, no CDN.
+This is the whole design, not a chrome layer over a separate map palette: the earlier slate-indigo / Inter-Tight / IBM-Plex proposal is retired and its values are gone from this file.
+The one thing Baray does not touch is the stance **data** ramp (blue↔amber below) - that stays functional and colourblind-safe, never brand gold/purple, because a data encoding is not decoration.
+Implementation: `apps/web/src/assets/theme.css` (primitive + semantic tokens, dark primary with `[data-theme="light"]` alternate).
 
 ---
 
@@ -15,37 +21,54 @@ Dark, forecast-desk dark.
 Scene: a duty forecaster at 04:10 in a national situation room, lit only by the wall-sized map she is reading, the room behind her unlit so nothing competes with the map.
 The room is dark because the map is the only light source.
 The map is a paper-dense field of matte ink marks, not a void with glowing dots.
-One theme only, no light mode, because a forecast map is read in a dark room.
+Dark is the primary theme, because a forecast map is read in a dark room; a light theme ships as the alternate for daylight/print use, not as the default.
 
 ---
 
 ## Color
 
-Strategy: Committed.
-Brand hue is slate-indigo, `oklch(0.62 0.13 265)`.
-All neutrals are tinted toward 265.
-No pure black or white anywhere.
+Strategy: Baray, committed.
+Two brand hues carry all chrome: gold (the primary, CTA, the light in the room) and purple (the secondary, links, secondary CTA, World-agent event injection).
+Navy is the ground; gold and purple sit on it.
+Dark is the primary theme; a light theme (`[data-theme="light"]`) is the alternate.
 
-### Neutrals and grounds
+### Primitives (Baray)
 
 ```
---ground-deep    oklch(0.19 0.021 265)   app frame, the room
---ground-map     oklch(0.245 0.026 265)  field substrate
---ground-raised  oklch(0.29 0.028 265)   rails, sheets
---hairline       oklch(0.38 0.022 265)   graticule, rules
---text-quiet     oklch(0.66 0.018 265)   labels, secondary
---text-body      oklch(0.88 0.012 265)   body
---text-ink       oklch(0.96 0.008 265)   max, headline
+--gold          #F2B01E   primary / CTA            --purple          #6F4D9F   secondary
+--gold-hover    #D9990F                            --purple-hover    #5C3F86
+--gold-bright   #F5C243   gold as text on navy     --purple-bright   #A98BD6   purple as text on navy
+--gold-deep     #9C6F00   gold as text on light    --purple-soft     #E7DEF0
+--gold-soft     #FBE7BF
+
+--navy          #0E2340   dark ground              --surface-light   #FFFFFF
+--navy-raised   #16345C   dark raised              --surface-light2  #F4F6F9
+
+--ink           #1A2433   text on light            --on-dark         #FFFFFF   text on navy
+--ink-muted     #5D6B7C   muted on light           --on-dark-muted   #C9D6E5   muted on navy
+--border-light  #D9E0E8                            --border-dark     #2C4A70
 ```
+
+### Semantic map
+
+Dark is primary (`:root`); light is the alternate (`:root[data-theme="light"]`).
+
+```
+--color-bg / --color-surface     navy / navy-raised   (light: surface2 / white)
+--color-text / --color-text-muted  on-dark / on-dark-muted   (light: ink / ink-muted)
+--color-accent (fill) / --color-accent-text   gold / gold-bright   (light text: gold-deep)
+--color-accent-2 (fill) / --color-accent-2-text   purple / purple-bright
+--color-on-accent   navy   (text on a gold fill)
+--color-on-accent-2 white  (text on a purple fill)
+--color-border      border-dark   (light: border-light)
+```
+
+Contrast rule, enforced in `.btn`/`.badge`: gold fill takes navy text; gold as text uses `--color-accent-text` (bright on dark, deep on light); purple fill takes white text.
 
 ### Meaningful color
 
 Color is never decoration; it is a claim.
-
-```
---alert-event    oklch(0.72 0.19 42)     ember, World-agent event injection only
---refusal        oklch(0.55 0.03 265)    below the evidence bar, desaturated, never red
-```
+Event injection is the gold family (the World-agent's ember); a refusal (below the evidence bar) is desaturated navy, never red.
 
 ### Stance (the key data encoding)
 
@@ -73,17 +96,17 @@ Sentiment is separate from stance and is encoded as mark opacity and agitation, 
 ## Typography
 
 Self-hosted, subset woff2, no CDN, because the app ships as an offline-capable Tauri desktop build.
-Test variable-axis rendering on the Tauri Linux target (WebKitGTK) before committing.
+Test rendering on the Tauri Linux target (WebKitGTK) before shipping.
 
 | Role | Family | Weights | Notes |
 |---|---|---|---|
-| Display, map labels | Inter Tight | 600, 700 | tight tracking; condensed grotesque, not a serif |
-| Body, UI | Inter | 400, 500 | prose capped 65 to 72ch |
-| Data, provenance, counts | IBM Plex Mono | 400, 600 | every number and ID |
+| Display, headings, map labels | Fraunces | 500, 600, 700 | Baray display face; weight carries the headline, not size |
+| Body, UI | Inter | 400, 500, 600 | prose capped 65 to 72ch |
+| Data, provenance, counts | JetBrains Mono | 400, 600 | every number, ID, tick, endpoint |
 
-Mono is a truth signal: monospace means measured from real data, Inter means the product wrote it.
+Mono is a truth signal: monospace means measured from real data, Inter means the product wrote it, Fraunces is the voice of the product.
 
-Scale, ratio 1.333: 11 / 13 / 15 / 20 / 27 / 36 / 48.
+Scale, ratio 1.333: 11 / 13 / 15 / 20 / 27 / 36 / 48 (`--fs-2xs` … `--fs-2xl`).
 Hierarchy comes from weight contrast (600 against 400), not size inflation.
 
 ---
@@ -141,7 +164,7 @@ Ease-out only, exponential curves (quart, quint, expo), no bounce, no elastic.
 ## Absolute bans (in force here)
 
 No glow, neon, cyan, or force-directed node cloud (reflex one).
-No serif, warm paper, or evenly-quiet restraint (reflex two).
+No warm-paper editorial restraint, body serif, or evenly-quiet flatness (reflex two); the only serif is Fraunces, and only as the display/heading face over the Baray palette.
 No side-stripe borders, gradient text, decorative glassmorphism, hero-metric template, identical card grids, or modal-as-first-thought.
 No em dashes in UI copy.
 No percentage presented as certainty on the leader surface; confidence is Signal, Noise, or Unmeasured.
