@@ -97,19 +97,28 @@ pub fn update<F: FnOnce(&mut ReportEntry)>(report_id: &str, f: F) -> bool {
     REPORTS.update(report_id, f)
 }
 
-/// Write a terminal report to `path`. In-flight reports are skipped: a
-/// half-generated draft isn't resumable, so persisting it would only leave a
-/// permanently "running" report after a crash.
+/// Write a completed report to `path`, atomically.
+///
+/// Only `Completed` is written. An in-flight draft isn't resumable, so saving
+/// it would leave a permanently "running" report after a crash; a `Failed` one
+/// must not be saved either, because a failed regeneration would replace the
+/// good report already on disk and leave no way back to it.
+///
+/// The write goes to a sibling temp file and is renamed into place, so a crash
+/// or a full disk leaves the previous report intact rather than a truncated
+/// file that `restore` would discard - losing exactly what this exists to keep.
 pub fn persist(report_id: &str, path: &Path) {
     let Some(entry) = get(report_id) else { return };
-    if !matches!(entry.status, JobStatus::Completed | JobStatus::Failed) {
+    if entry.status != JobStatus::Completed {
         return;
     }
     let write = || -> std::io::Result<()> {
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir)?;
         }
-        std::fs::write(path, serde_json::to_vec_pretty(&entry)?)
+        let tmp = path.with_extension("json.tmp");
+        std::fs::write(&tmp, serde_json::to_vec_pretty(&entry)?)?;
+        std::fs::rename(&tmp, path)
     };
     if let Err(e) = write() {
         tracing::warn!("could not persist report {report_id} to {}: {e}", path.display());
@@ -120,7 +129,9 @@ pub fn persist(report_id: &str, path: &Path) {
 /// caller from the live data dir rather than trusted from the file, so moving
 /// the data dir doesn't restore reports pointing at paths that no longer exist.
 pub fn restore(path: &Path, db_path: String) -> Option<String> {
-    let raw = std::fs::read(path).ok()?;
+    let raw = std::fs::read(path)
+        .map_err(|e| tracing::warn!("could not read report {}: {e}", path.display()))
+        .ok()?;
     let mut entry: ReportEntry = serde_json::from_slice(&raw)
         .map_err(|e| tracing::warn!("ignoring unreadable report {}: {e}", path.display()))
         .ok()?;
@@ -214,6 +225,21 @@ mod tests {
         assert_eq!(restored.sections.len(), 1);
         assert_eq!(restored.db_path, "/new/social.db");
         assert_eq!(find_by_simulation("sim_p").unwrap().report_id, "report_p1");
+
+        // A later failed regeneration must not replace the good report on disk,
+        // or a restart would leave the user a failure and no way back to it.
+        insert(ReportEntry::new("report_p2".into(), "sim_p".into(), "/x.db".into(), "topic".into()));
+        update("report_p2", |r| {
+            r.status = JobStatus::Failed;
+            r.error = Some("boom".into());
+        });
+        persist("report_p2", &path);
+        let after = restore(&path, "/new/social.db".into()).unwrap();
+        assert_eq!(after, "report_p1");
+        assert_eq!(get(&after).unwrap().markdown_content, "## Findings\nbody");
+
+        // Nothing is left behind by the atomic write.
+        assert!(!path.with_extension("json.tmp").exists());
 
         let _ = std::fs::remove_dir_all(&dir);
     }
