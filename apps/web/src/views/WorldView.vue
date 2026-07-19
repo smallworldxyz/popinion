@@ -26,7 +26,11 @@
       <tbody>
         <tr v-for="r in runs" :key="r.simulation_id" class="run" @click="open(r)">
           <td class="name">
-            {{ (r.name && r.name !== 'Untitled Simulation') ? r.name : 'Baseline run' }}
+            <!-- A real link, so the row is keyboard-reachable and openable in a
+                 new tab; the row @click stays as the wider hit target. -->
+            <router-link class="run-link" :to="`/world/${graphId}/run/${r.simulation_id}`" @click.stop>
+              {{ (r.name && r.name !== 'Untitled Simulation') ? r.name : 'Baseline run' }}
+            </router-link>
             <span v-if="r.parent_id" class="from" :title="'forked from ' + r.parent_id">↳ derived</span>
           </td>
           <td><span class="kind" :class="r.kind">{{ r.kind }}</span></td>
