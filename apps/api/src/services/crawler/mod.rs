@@ -51,8 +51,12 @@ pub fn parse_count(text: &str) -> i64 {
 /// evidence tracking included). Posts without text (media-only) are skipped.
 pub fn corpus_document(result: &crate::models::CrawlResult) -> String {
     let channel = result.query.as_deref().unwrap_or("unknown");
+    // Says what this material IS. A channel broadcasts; it does not answer
+    // back. Reading these posts as public reaction would put the channel's own
+    // position in the mouth of an audience that never spoke here.
     let mut doc = format!(
-        "Recent public posts from the {} channel @{channel}.\n",
+        "Posts BROADCAST BY the {} channel @{channel}. These are the channel's own \
+         statements, not replies from its audience.\n",
         result.platform
     );
     if let Some(user) = result.users.first() {
@@ -60,6 +64,9 @@ pub fn corpus_document(result: &crate::models::CrawlResult) -> String {
             doc.push_str(&format!("Channel: {}", user.display_name));
             if !user.bio.is_empty() {
                 doc.push_str(&format!(" — {}", user.bio));
+            }
+            if user.followers > 0 {
+                doc.push_str(&format!(" ({} subscribers)", user.followers));
             }
             doc.push('\n');
         }
@@ -93,6 +100,33 @@ pub fn extract_tagged(content: &str, prefix: char) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The corpus must say what the material is. A channel broadcasts and its
+    /// audience does not reply here, so anything downstream that treats these
+    /// posts as public reaction is attributing the channel's own position to
+    /// people who never spoke.
+    #[test]
+    fn the_corpus_labels_channel_posts_as_broadcasts() {
+        // Built from JSON: these models have no Default and do not need one.
+        let result: crate::models::CrawlResult = serde_json::from_value(serde_json::json!({
+            "platform": "telegram",
+            "query": "examplechannel",
+            "users": [{
+                "platform": "telegram", "user_id": "examplechannel",
+                "display_name": "Example News", "followers": 12000
+            }],
+            "posts": [{
+                "platform": "telegram", "post_id": "1", "author_id": "examplechannel",
+                "content": "We announced the policy today."
+            }]
+        }))
+        .unwrap();
+        let doc = corpus_document(&result);
+        assert!(doc.contains("BROADCAST BY"), "names what the material is");
+        assert!(doc.contains("not replies from its audience"), "and what it is not");
+        assert!(doc.contains("12000 subscribers"), "reach is kept, not discarded");
+        assert!(doc.contains("We announced the policy today."));
+    }
 
     #[test]
     fn parse_count_handles_suffixes_and_plain() {

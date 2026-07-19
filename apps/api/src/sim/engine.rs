@@ -1,7 +1,7 @@
 use super::action::{ActionType, Decision};
 use super::agent::{Agent, Persona};
 use super::config::SimConfig;
-use super::store::Store;
+use super::store::{NewUser, Store};
 use super::{Command, SimHandle};
 use crate::llm::{Llm, Msg};
 use anyhow::Result;
@@ -197,15 +197,15 @@ impl Engine {
     /// event takes — so it enters agents' feeds on subsequent rounds.
     fn inject_post(&self, content: &str, round: i64) -> Result<i64> {
         // Idempotent: the Event account may not exist if the run had no initial event.
-        self.store.add_user(
-            super::config::EVENT_AUTHOR_ID,
-            "Event",
-            "event",
-            "",
-            "The event under discussion.",
-            false,
-            None,
-        )?;
+        self.store.add_user(NewUser {
+            user_id: super::config::EVENT_AUTHOR_ID,
+            name: "Event",
+            user_name: "event",
+            bio: "",
+            persona: "The event under discussion.",
+            synthetic: false,
+            faction: None,
+        })?;
         let post_id = self.store.add_post(super::config::EVENT_AUTHOR_ID, content, round, Some("seed"), None)?;
         self.store.trace(
             super::config::EVENT_AUTHOR_ID,
@@ -218,15 +218,15 @@ impl Engine {
 
     fn reset(&mut self) -> Result<()> {
         for a in &self.agents {
-            self.store.add_user(
-                a.profile.user_id,
-                &a.profile.name,
-                &a.profile.user_name,
-                &a.profile.bio,
-                &a.profile.persona,
-                a.profile.synthetic,
-                a.profile.faction.as_deref(),
-            )?;
+            self.store.add_user(NewUser {
+                user_id: a.profile.user_id,
+                name: &a.profile.name,
+                user_name: &a.profile.user_name,
+                bio: &a.profile.bio,
+                persona: &a.profile.persona,
+                synthetic: a.profile.synthetic,
+                faction: a.profile.faction.as_deref(),
+            })?;
         }
         // Seed an influence network: the synthetic public follows the named
         // influencers (non-synthetic, graph-grounded agents), so elite posts
@@ -269,15 +269,15 @@ impl Engine {
             .iter()
             .any(|p| p.poster_agent_id == super::config::EVENT_AUTHOR_ID)
         {
-            self.store.add_user(
-                super::config::EVENT_AUTHOR_ID,
-                "Event",
-                "event",
-                "",
-                "The event under discussion.",
-                false,
-                None,
-            )?;
+            self.store.add_user(NewUser {
+                user_id: super::config::EVENT_AUTHOR_ID,
+                name: "Event",
+                user_name: "event",
+                bio: "",
+                persona: "The event under discussion.",
+                synthetic: false,
+                faction: None,
+            })?;
         }
         // Seed the discussion with the configured initial posts (the "event").
         for post in &self.config.event_config.initial_posts {

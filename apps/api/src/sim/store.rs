@@ -95,6 +95,21 @@ CREATE INDEX IF NOT EXISTS idx_comment_post ON comment(post_id);
 CREATE INDEX IF NOT EXISTS idx_trace_user ON trace(user_id, action);
 "#;
 
+/// One agent's row. A struct rather than eight positional arguments, so a
+/// caller cannot silently swap `bio` for `persona` or lose the provenance
+/// fields in the middle of the list.
+pub struct NewUser<'a> {
+    pub user_id: i64,
+    pub name: &'a str,
+    pub user_name: &'a str,
+    pub bio: &'a str,
+    pub persona: &'a str,
+    /// Constructed to populate a camp, rather than compiled from an entity.
+    pub synthetic: bool,
+    /// The camp it was compiled into, before the run.
+    pub faction: Option<&'a str>,
+}
+
 impl Store {
     pub fn open(path: &Path) -> Result<Self> {
         if let Some(dir) = path.parent() {
@@ -121,21 +136,12 @@ impl Store {
         Ok(Store { conn: Mutex::new(conn) })
     }
 
-    pub fn add_user(
-        &self,
-        user_id: i64,
-        name: &str,
-        user_name: &str,
-        bio: &str,
-        persona: &str,
-        synthetic: bool,
-        faction: Option<&str>,
-    ) -> Result<()> {
+    pub fn add_user(&self, u: NewUser<'_>) -> Result<()> {
         let c = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         c.execute(
             "INSERT OR REPLACE INTO user (user_id, name, user_name, bio, persona, synthetic, faction, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            params![user_id, name, user_name, bio, persona, synthetic as i64, faction, now()],
+            params![u.user_id, u.name, u.user_name, u.bio, u.persona, u.synthetic as i64, u.faction, now()],
         )?;
         Ok(())
     }
@@ -787,7 +793,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("popinion-test-{}", std::process::id()));
         let path = dir.join("s.db");
         let s = Store::open(&path).unwrap();
-        s.add_user(1, "Alice", "alice", "bio", "persona", false, None).unwrap();
+        s.add_user(NewUser { user_id: 1, name: "Alice", user_name: "alice", bio: "bio", persona: "persona", synthetic: false, faction: None }).unwrap();
         let p = s.add_post(1, "I support the policy", 0, Some("support"), Some(0.8)).unwrap();
         s.add_comment(p, 1, "agreed", 0, Some("support"), Some(0.6)).unwrap();
         s.like_post(p, 1, false).unwrap();
@@ -807,8 +813,8 @@ mod tests {
     fn follow_and_like_are_idempotent() {
         let dir = std::env::temp_dir().join(format!("popinion-idem-{}", std::process::id()));
         let s = Store::open(&dir.join("s.db")).unwrap();
-        s.add_user(1, "A", "a", "", "", false, None).unwrap();
-        s.add_user(2, "B", "b", "", "", false, None).unwrap();
+        s.add_user(NewUser { user_id: 1, name: "A", user_name: "a", bio: "", persona: "", synthetic: false, faction: None }).unwrap();
+        s.add_user(NewUser { user_id: 2, name: "B", user_name: "b", bio: "", persona: "", synthetic: false, faction: None }).unwrap();
         let p = s.add_post(2, "hi", 0, None, None).unwrap();
 
         // Repeated follow / like from the same agent must not inflate counts.
@@ -828,7 +834,7 @@ mod tests {
     fn independent_labels_drive_distribution_and_agreement() {
         let dir = std::env::temp_dir().join(format!("popinion-indep-{}", std::process::id()));
         let s = Store::open(&dir.join("s.db")).unwrap();
-        s.add_user(1, "u", "u", "", "", false, None).unwrap();
+        s.add_user(NewUser { user_id: 1, name: "u", user_name: "u", bio: "", persona: "", synthetic: false, faction: None }).unwrap();
         let p1 = s.add_post(1, "I back the plan", 0, Some("support"), None).unwrap();
         let p2 = s.add_post(1, "actually this is terrible", 0, Some("support"), None).unwrap();
         // Independent classifier agrees on p1, disagrees on p2 (self=support, indep=oppose).
@@ -859,7 +865,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("popinion-feed-{}", std::process::id()));
         let s = Store::open(&dir.join("s.db")).unwrap();
         for id in 1..=3 {
-            s.add_user(id, "u", "u", "", "", false, None).unwrap();
+            s.add_user(NewUser { user_id: id, name: "u", user_name: "u", bio: "", persona: "", synthetic: false, faction: None }).unwrap();
         }
         let p_followee = s.add_post(2, "from someone I follow", 0, Some("support"), None).unwrap();
         let p_trending = s.add_post(3, "popular but not followed", 0, Some("oppose"), None).unwrap();
@@ -881,8 +887,8 @@ mod tests {
     fn exposure_rows_and_spread_posts_roundtrip() {
         let dir = std::env::temp_dir().join(format!("popinion-spread-{}", std::process::id()));
         let s = Store::open(&dir.join("s.db")).unwrap();
-        s.add_user(1, "A", "a", "", "", false, None).unwrap();
-        s.add_user(2, "B", "b", "", "", false, None).unwrap();
+        s.add_user(NewUser { user_id: 1, name: "A", user_name: "a", bio: "", persona: "", synthetic: false, faction: None }).unwrap();
+        s.add_user(NewUser { user_id: 2, name: "B", user_name: "b", bio: "", persona: "", synthetic: false, faction: None }).unwrap();
         let seed = s.add_post(-1, "the event", 0, Some("seed"), None).unwrap();
         let normal = s.add_post(1, "a reaction", 1, Some("support"), None).unwrap();
         s.add_comment(seed, 2, "reply on the event", 1, Some("oppose"), None).unwrap();
@@ -913,8 +919,8 @@ mod tests {
     fn agent_weighted_counts_one_vote_per_agent() {
         let dir = std::env::temp_dir().join(format!("popinion-agentw-{}", std::process::id()));
         let s = Store::open(&dir.join("s.db")).unwrap();
-        s.add_user(1, "A", "a", "", "", false, None).unwrap();
-        s.add_user(2, "B", "b", "", "", false, None).unwrap();
+        s.add_user(NewUser { user_id: 1, name: "A", user_name: "a", bio: "", persona: "", synthetic: false, faction: None }).unwrap();
+        s.add_user(NewUser { user_id: 2, name: "B", user_name: "b", bio: "", persona: "", synthetic: false, faction: None }).unwrap();
         // Agent 1 is hyperactive: 3 support posts. Agent 2: one oppose comment.
         for _ in 0..3 {
             s.add_post(1, "yes", 0, Some("support"), Some(0.5)).unwrap();

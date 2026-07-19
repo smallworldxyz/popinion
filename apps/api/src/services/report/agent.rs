@@ -643,14 +643,15 @@ fn chat_result(response: &str, tool_calls_made: &[Value]) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sim::store::NewUser;
 
     fn seeded_store(name: &str) -> (Store, std::path::PathBuf) {
         let dir = std::env::temp_dir().join(format!("popinion-report-{name}-{}", std::process::id()));
         let path = dir.join("s.db");
         std::fs::remove_file(&path).ok();
         let s = Store::open(&path).unwrap();
-        s.add_user(1, "Alice", "alice", "", "activist", false, None).unwrap();
-        s.add_user(2, "Bob", "bob", "", "skeptic", false, None).unwrap();
+        s.add_user(NewUser { user_id: 1, name: "Alice", user_name: "alice", bio: "", persona: "activist", synthetic: false, faction: None }).unwrap();
+        s.add_user(NewUser { user_id: 2, name: "Bob", user_name: "bob", bio: "", persona: "skeptic", synthetic: false, faction: None }).unwrap();
         let p1 = s.add_post(1, "I fully support the new climate policy", 0, Some("support"), Some(0.8)).unwrap();
         s.add_post(2, "This climate policy will ruin the economy", 1, Some("oppose"), Some(-0.6)).unwrap();
         s.add_post(1, "Everyone should read the climate policy details", 2, Some("support"), Some(0.5)).unwrap();
@@ -713,16 +714,16 @@ mod tests {
         let s = Store::open(&path).unwrap();
 
         // Compiled as an opponent, argued as one: the setup speaking.
-        s.add_user(1, "Residents", "res", "", "", false, Some("con")).unwrap();
+        s.add_user(NewUser { user_id: 1, name: "Residents", user_name: "res", bio: "", persona: "", synthetic: false, faction: Some("con") }).unwrap();
         s.add_post(1, "Still against it", 0, Some("oppose"), Some(-0.5)).unwrap();
         // Compiled as an opponent, ended supporting: the run found something.
-        s.add_user(2, "Council", "council", "", "", false, Some("con")).unwrap();
+        s.add_user(NewUser { user_id: 2, name: "Council", user_name: "council", bio: "", persona: "", synthetic: false, faction: Some("con") }).unwrap();
         s.add_post(2, "Against for now", 0, Some("oppose"), Some(-0.3)).unwrap();
         s.add_post(2, "Persuaded, actually", 3, Some("support"), Some(0.4)).unwrap();
         // Constructed, and with no prior at all.
-        s.add_user(3, "Supporter", "sup", "", "", true, Some("pro")).unwrap();
+        s.add_user(NewUser { user_id: 3, name: "Supporter", user_name: "sup", bio: "", persona: "", synthetic: true, faction: Some("pro") }).unwrap();
         s.add_post(3, "For it", 0, Some("support"), Some(0.6)).unwrap();
-        s.add_user(4, "Observer", "obs", "", "", false, None).unwrap();
+        s.add_user(NewUser { user_id: 4, name: "Observer", user_name: "obs", bio: "", persona: "", synthetic: false, faction: None }).unwrap();
         s.add_post(4, "Unsure", 0, Some("neutral"), Some(0.0)).unwrap();
 
         let m: Value = serde_json::from_str(&execute_tool(&s, "constituency_map", &json!({})).unwrap()).unwrap();
@@ -810,14 +811,14 @@ mod tests {
         std::fs::remove_file(&path).ok();
         let s = Store::open(&path).unwrap();
 
-        s.add_user(1, "Ministry", "ministry", "", "official", false, None).unwrap();
+        s.add_user(NewUser { user_id: 1, name: "Ministry", user_name: "ministry", bio: "", persona: "official", synthetic: false, faction: None }).unwrap();
         s.add_post(1, "We back it", 0, Some("support"), Some(0.6)).unwrap();
         for uid in 2..5 {
-            s.add_user(uid, "Residents", &format!("res{uid}"), "", "resident", false, None).unwrap();
+            s.add_user(NewUser { user_id: uid, name: "Residents", user_name: &format!("res{uid}"), bio: "", persona: "resident", synthetic: false, faction: None }).unwrap();
             s.add_post(uid, "We are against it", 0, Some("oppose"), Some(-0.5)).unwrap();
         }
         for uid in 10..16 {
-            s.add_user(uid, "Supporter", &format!("sup{uid}"), "", "citizen", true, None).unwrap();
+            s.add_user(NewUser { user_id: uid, name: "Supporter", user_name: &format!("sup{uid}"), bio: "", persona: "citizen", synthetic: true, faction: None }).unwrap();
             s.add_post(uid, "Sounds good to me", 0, Some("support"), Some(0.5)).unwrap();
         }
 
@@ -846,12 +847,12 @@ mod tests {
         let path = dir.join("s.db");
         std::fs::remove_file(&path).ok();
         let s = Store::open(&path).unwrap();
-        s.add_user(1, "Loud", "loud", "", "activist", false, None).unwrap();
+        s.add_user(NewUser { user_id: 1, name: "Loud", user_name: "loud", bio: "", persona: "activist", synthetic: false, faction: None }).unwrap();
         for r in 0..10 {
             s.add_post(1, "Backing this all the way", r, Some("support"), Some(0.7)).unwrap();
         }
         for uid in 2..5 {
-            s.add_user(uid, "Quiet", &format!("quiet{uid}"), "", "resident", false, None).unwrap();
+            s.add_user(NewUser { user_id: uid, name: "Quiet", user_name: &format!("quiet{uid}"), bio: "", persona: "resident", synthetic: false, faction: None }).unwrap();
             s.add_post(uid, "I am against it", 0, Some("oppose"), Some(-0.5)).unwrap();
         }
 

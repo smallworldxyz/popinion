@@ -37,7 +37,9 @@ async fn generate_ontology(
     let mut simulation_requirement = String::new();
     let mut additional_context = String::new();
     let mut project_name = "Unnamed Project".to_string();
-    let mut telegram_channel = String::new();
+    // A channel is one editorial line. Accepting several lets a build span
+    // the spectrum instead of grounding in whoever was listed first.
+    let mut telegram_channels: Vec<String> = Vec::new();
     let mut telegram_max_posts: usize = 50;
 
     while let Some(field) = multipart
@@ -70,8 +72,13 @@ async fn generate_ontology(
             }
             "simulation_requirement" => simulation_requirement = read_text(field).await?,
             "additional_context" => additional_context = read_text(field).await?,
-            "telegram_channel" => {
-                telegram_channel = telegram::normalize_channel(&read_text(field).await?);
+            "telegram_channel" | "telegram_channels" => {
+                for raw in read_text(field).await?.split(',') {
+                    let ch = telegram::normalize_channel(raw);
+                    if !ch.is_empty() && !telegram_channels.contains(&ch) {
+                        telegram_channels.push(ch);
+                    }
+                }
             }
             "telegram_max_posts" => {
                 if let Ok(n) = read_text(field).await?.trim().parse::<usize>() {
@@ -89,7 +96,7 @@ async fn generate_ontology(
     }
 
     let simulation_requirement = simulation_requirement.trim().to_string();
-    if files.is_empty() && telegram_channel.is_empty() {
+    if files.is_empty() && telegram_channels.is_empty() {
         return Err(AppError::BadRequest(
             "At least one file or a Telegram channel is required".into(),
         ));
@@ -121,14 +128,28 @@ async fn generate_ontology(
     // doesn't sink the build as long as other sources yielded text — the
     // outcome is reported honestly in the `crawl` field either way.
     let mut crawl_info: Option<Value> = None;
-    if !telegram_channel.is_empty() {
-        let result = telegram::crawl_channel(&telegram_channel, telegram_max_posts).await;
-        let (doc, info) = crawl_to_source(&result, &telegram_channel);
-        if let Some((text, label)) = doc {
-            document_texts.push(text);
-            sources.push(label);
+    if !telegram_channels.is_empty() {
+        let mut per_channel = Vec::new();
+        for channel in &telegram_channels {
+            let result = telegram::crawl_channel(channel, telegram_max_posts).await;
+            let (doc, info) = crawl_to_source(&result, channel);
+            if let Some((text, label)) = doc {
+                document_texts.push(text);
+                sources.push(label);
+            }
+            per_channel.push(info);
         }
-        crawl_info = Some(info);
+        // One channel failing is not the build failing, so the outcome is
+        // reported per channel rather than collapsed into a single verdict.
+        let error = per_channel
+            .iter()
+            .filter_map(|c| c["error"].as_str())
+            .collect::<Vec<_>>()
+            .join("; ");
+        crawl_info = Some(json!({
+            "channels": per_channel,
+            "error": (!error.is_empty()).then_some(error),
+        }));
     }
 
     if document_texts.is_empty() {
@@ -136,14 +157,19 @@ async fn generate_ontology(
             .as_ref()
             .and_then(|c| c["error"].as_str())
             .unwrap_or("no text posts found");
-        return Err(AppError::BadRequest(if telegram_channel.is_empty() {
+        let listed = telegram_channels
+            .iter()
+            .map(|c| format!("@{c}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        return Err(AppError::BadRequest(if telegram_channels.is_empty() {
             "No valid text extracted from uploaded files".to_string()
         } else if sources.is_empty() {
-            format!("Telegram crawl of @{telegram_channel} failed: {crawl_err}")
+            format!("Telegram crawl of {listed} failed: {crawl_err}")
         } else {
             format!(
                 "No valid text extracted from uploaded files, and the Telegram \
-                 crawl of @{telegram_channel} failed: {crawl_err}"
+                 crawl of {listed} failed: {crawl_err}"
             )
         }));
     }

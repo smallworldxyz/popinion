@@ -13,7 +13,6 @@
 //! models), so string structure plus a judgement call is what is available.
 
 use anyhow::Result;
-use serde_json::json;
 use std::collections::{BTreeSet, HashMap};
 
 use super::db::{self, GraphDb, GraphData, GraphNode};
@@ -202,6 +201,7 @@ pub async fn run(db: &GraphDb, graph_id: &str, llm: &Llm) -> Result<Vec<(String,
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     fn n(name: &str, etype: &str) -> GraphNode {
         GraphNode {
