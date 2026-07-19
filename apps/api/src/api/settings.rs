@@ -2,7 +2,7 @@
 //! provider, and detect locally-running model servers. Keys are never returned.
 
 use crate::error::{AppError, AppResult, Success};
-use crate::llm::{Llm, Msg};
+use crate::llm::Msg;
 use crate::settings::LlmSlot;
 use crate::state::AppState;
 use axum::extract::State;
@@ -95,9 +95,16 @@ struct TestReq {
     api_key: String,
 }
 
-/// One tiny chat to confirm a provider/model works before saving it.
-async fn test_llm(Json(req): Json<TestReq>) -> AppResult<Success<Value>> {
-    let llm = Llm::new(&req.api_key, &req.base_url, &req.model);
+/// One tiny chat to confirm a provider/model works before saving it. Routes
+/// through the same `client_for` the engine uses, so the ChatGPT subscription
+/// provider is tested over its OAuth backend rather than as a keyed API.
+async fn test_llm(State(st): State<AppState>, Json(req): Json<TestReq>) -> AppResult<Success<Value>> {
+    if crate::chatgpt_auth::is_chatgpt_backend(&req.base_url) && !st.chatgpt.logged_in() {
+        return Ok(Success(
+            json!({ "ok": false, "error": "Not signed in to ChatGPT — sign in from Settings." }),
+        ));
+    }
+    let llm = st.client_for(&LlmSlot { base_url: req.base_url, model: req.model, api_key: req.api_key });
     match llm.chat(&[Msg::user("Reply with the single word: ok")], 0.0, 8).await {
         Ok(reply) => Ok(Success(json!({ "ok": true, "reply": reply.chars().take(80).collect::<String>() }))),
         Err(e) => Ok(Success(json!({ "ok": false, "error": format!("{e}") }))),

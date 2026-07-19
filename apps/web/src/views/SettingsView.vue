@@ -1,13 +1,15 @@
 <template>
-  <div class="settings">
+  <Transition name="drawer">
+    <div v-if="settingsOpen" class="drawer-backdrop" @click.self="closeSettings">
+      <aside class="settings" role="dialog" aria-modal="true" aria-label="Model settings">
     <header class="head">
+      <button class="close" aria-label="Close settings" @click="closeSettings">✕</button>
       <h1>Model Settings</h1>
       <p class="sub">
         Pick the model Popinion runs on. One model does everything — local providers need no key,
         and signing in with ChatGPT needs no key either.
       </p>
       <div class="head-row">
-        <router-link class="back" to="/">← Back</router-link>
         <div v-if="ready" class="ready-line" :class="ready.ready ? 'ready-ok' : 'ready-warn'">
           <template v-if="ready.ready">Model ready ✓ — {{ ready.model }}</template>
           <template v-else>Not ready — {{ ready.reason }}</template>
@@ -149,17 +151,20 @@
       <button class="save" :disabled="saving" @click="save">{{ saving ? 'Saving…' : 'Save settings' }}</button>
       <span v-if="savedMsg" class="saved">{{ savedMsg }}</span>
     </div>
-  </div>
+      </aside>
+    </div>
+  </Transition>
 </template>
 
 <script setup>
-import { reactive, ref, computed, onMounted } from 'vue'
+import { reactive, ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import {
   getLlmSettings, getLlmStatus, updateLlmSettings, testLlm, getProviders,
   lmsModels, lmsLoad, lmsUnload, lmsDownload, lmsDownloadStatus,
   ollamaPull, ollamaPullStatus,
   chatgptLogin, chatgptStatus, chatgptLogout,
 } from '../api/settings'
+import { settingsOpen, closeSettings } from '../settingsDrawer'
 
 const bulk = reactive({ base_url: '', model: '', has_key: false, key: '' })
 const boost = reactive({ base_url: '', model: '', has_key: false, key: '' })
@@ -373,7 +378,8 @@ async function pollPull(taskId, state) {
 }
 
 // Every success response is `{ success: true, data: <payload> }` — read `.data`.
-onMounted(async () => {
+// Re-run each time the drawer opens so it reflects the live provider state.
+async function load() {
   await reloadProviders() // detection is best-effort
   const cur = (await getLlmSettings()).data
   Object.assign(bulk, cur.bulk, { key: '' })
@@ -385,7 +391,15 @@ onMounted(async () => {
   refreshLms() // best-effort; only shown when a slot uses LM Studio
   refreshChatgpt() // best-effort; only shown when a slot uses ChatGPT
   refreshReady()
+}
+watch(settingsOpen, (open) => { if (open) load() })
+
+const onKey = (e) => { if (e.key === 'Escape' && settingsOpen.value) closeSettings() }
+onMounted(() => {
+  if (settingsOpen.value) load()
+  window.addEventListener('keydown', onKey)
 })
+onUnmounted(() => window.removeEventListener('keydown', onKey))
 
 async function testSlot(which) {
   const s = which === 'bulk' ? bulk : boost
@@ -428,7 +442,44 @@ async function save() {
 </script>
 
 <style scoped>
-.settings { max-width: 900px; margin: 0 auto; padding: 32px 20px; }
+/* Right-side drawer: a dimmed backdrop with a panel sliding in from the edge. */
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: rgba(17, 17, 17, 0.35);
+  display: flex;
+  justify-content: flex-start;
+}
+.settings {
+  width: min(520px, 100vw);
+  height: 100%;
+  overflow-y: auto;
+  padding: 28px 24px 40px;
+  background: #fff;
+  box-shadow: 8px 0 30px rgba(0, 0, 0, 0.18);
+}
+/* Slide + fade the whole overlay in from the left. */
+.drawer-enter-active, .drawer-leave-active { transition: opacity 0.2s ease; }
+.drawer-enter-active .settings, .drawer-leave-active .settings { transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1); }
+.drawer-enter-from, .drawer-leave-to { opacity: 0; }
+.drawer-enter-from .settings, .drawer-leave-to .settings { transform: translateX(-100%); }
+.close {
+  position: absolute;
+  top: 18px;
+  right: 20px;
+  width: 30px;
+  height: 30px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 15px;
+  color: #6b7280;
+  line-height: 1;
+}
+.close:hover { background: #f3f4f6; color: #111; }
+.head { position: relative; }
 .head h1 { margin: 0 0 8px; }
 .sub { color: #555; line-height: 1.5; max-width: 720px; margin: 0; }
 /* Back + readiness sit on one row: as inline-blocks they collided with no gap. */
@@ -438,9 +489,8 @@ async function save() {
 .ready-line { font-size: 13px; padding: 6px 10px; border-radius: 8px; }
 .ready-ok { color: #065f46; background: #d1fae5; }
 .ready-warn { color: #92400e; background: #fef3c7; }
-.cards { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 24px 0; }
-.cards.solo { grid-template-columns: minmax(0, 420px); }
-@media (max-width: 720px) { .cards { grid-template-columns: 1fr; } }
+/* One column: the drawer is too narrow for a side-by-side split. */
+.cards { display: grid; grid-template-columns: 1fr; gap: 20px; margin: 24px 0; }
 .split { display: flex; gap: 10px; align-items: flex-start; margin: 0 0 20px; cursor: pointer; max-width: 620px; }
 .split input { margin-top: 3px; }
 .split b { display: block; font-size: 13px; color: #374151; font-weight: 600; }

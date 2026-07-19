@@ -156,13 +156,22 @@ test.describe('FIELD map', () => {
   })
 })
 
+// Settings live in a right-side drawer now, opened from any page's ⚙ Models
+// button — not a route. Opening runs its data load fresh, so route stubs set
+// before the click take effect without a reload.
+const openSettings = async (page) => {
+  await page.getByRole('button', { name: /Models/ }).click()
+  await expect(page.locator('.settings')).toBeVisible()
+}
+
 test.describe('Settings — model selection', () => {
   test.beforeEach(async ({ page }) => {
     await stubModelReady(page)
-    await page.goto('/settings')
+    await page.goto('/')
   })
 
   test('one model by default; the split is opt-in', async ({ page }) => {
+    await openSettings(page)
     await expect(page.locator('.card')).toHaveCount(1)
     await expect(page.locator('.card h3')).toHaveText('Model')
 
@@ -175,6 +184,7 @@ test.describe('Settings — model selection', () => {
   })
 
   test('remote and local providers are separated by tab', async ({ page }) => {
+    await openSettings(page)
     await page.getByRole('tab', { name: 'Local' }).click()
     await expect(page.locator('.prov')).toHaveText([/Ollama/, /LM Studio/])
 
@@ -190,6 +200,7 @@ test.describe('Settings — model selection', () => {
   })
 
   test('the Z.ai coding plan points at the subscription endpoint, not the wallet one', async ({ page }) => {
+    await openSettings(page)
     const baseUrl = page.locator('.card input.input').first()
 
     // Same key authenticates on both; the wrong base_url silently bills wallet
@@ -204,7 +215,7 @@ test.describe('Settings — model selection', () => {
 
   test('picking ChatGPT needs no key and no typing', async ({ page }) => {
     await stubChatgptSession(page, false)
-    await page.reload()
+    await openSettings(page)
     await page.getByRole('tab', { name: 'Remote' }).click()
     await page.locator('.prov', { hasText: 'ChatGPT (subscription)' }).click()
 
@@ -220,7 +231,7 @@ test.describe('Settings — model selection', () => {
 
   test('a signed-in ChatGPT session shows the account, not a sign-in prompt', async ({ page }) => {
     await stubChatgptSession(page, true)
-    await page.reload()
+    await openSettings(page)
     await page.getByRole('tab', { name: 'Remote' }).click()
     await page.locator('.prov', { hasText: 'ChatGPT (subscription)' }).click()
 
@@ -230,6 +241,7 @@ test.describe('Settings — model selection', () => {
   })
 
   test('the Ollama pull control stays out of the Remote tab', async ({ page }) => {
+    await openSettings(page)
     await page.getByRole('tab', { name: 'Local' }).click()
     await page.locator('.prov', { hasText: 'Ollama' }).click()
     await expect(page.getByText('Pull a model')).toBeVisible()
@@ -238,14 +250,15 @@ test.describe('Settings — model selection', () => {
     await expect(page.getByText('Pull a model')).toHaveCount(0)
   })
 
-  test('Back link and the readiness badge never collide', async ({ page }) => {
+  test('the close button and the readiness badge never collide', async ({ page }) => {
+    await openSettings(page)
     for (const width of [1440, 900, 400]) {
       await page.setViewportSize({ width, height: 900 })
-      const back = await page.locator('.back').boundingBox()
+      const close = await page.locator('.settings .close').boundingBox()
       const ready = await page.locator('.ready-line').boundingBox()
       const overlaps =
-        ready.x < back.x + back.width && ready.x + ready.width > back.x &&
-        ready.y < back.y + back.height && ready.y + ready.height > back.y
+        ready.x < close.x + close.width && ready.x + ready.width > close.x &&
+        ready.y < close.y + close.height && ready.y + ready.height > close.y
       expect(overlaps, `overlap at ${width}px`).toBe(false)
     }
   })

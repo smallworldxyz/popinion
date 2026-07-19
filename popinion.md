@@ -6,9 +6,7 @@ In this digital world, thousands of AI agents act like real people. By testing i
 
 ---
 
-## 🛡️ How It Helps (Strategic Uses)
-
-## 🎯 Optimal Use Case: High-Stakes Social Wargaming
+## Optimal Use Case: High-Stakes Social Wargaming
 
 Popinion is designed for moments when **the cost of being wrong is too high** to test in reality.
 
@@ -27,8 +25,6 @@ It serves as a "Digital Wind Tunnel" for three critical scenarios:
 *   **The Popinion Solution:** "Red Team" your own population with fake news to see where it spreads. Then, test "truth campaigns" to immunize the public. **Build a defense system for your nation's mind.**
 
 ---
-
-## 🚀 Why Use It?
 
 ### "Don't Guess the Future. Rehearse It."
 

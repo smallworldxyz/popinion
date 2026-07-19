@@ -4,6 +4,7 @@
     <header class="app-header">
       <div class="header-left">
         <div class="brand" @click="router.push('/')">POPINION</div>
+        <button class="brand-models" @click="openSettings">⚙ Models</button>
       </div>
       
       <div class="header-center">
@@ -82,6 +83,7 @@ import Step1GraphBuild from '../components/Step1GraphBuild.vue'
 import Step2EnvSetup from '../components/Step2EnvSetup.vue'
 import { generateOntology, getProject, buildGraph, getTaskStatus, getGraphData } from '../api/graph'
 import { getPendingUpload, clearPendingUpload } from '../store/pendingUpload'
+import { openSettings } from '../settingsDrawer'
 
 const route = useRoute()
 const router = useRouter()
@@ -452,6 +454,12 @@ onUnmounted(() => {
   transform: translateX(-50%);
 }
 
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
 .brand {
   font-family: 'JetBrains Mono', monospace;
   font-weight: 800;
@@ -459,6 +467,18 @@ onUnmounted(() => {
   letter-spacing: 1px;
   cursor: pointer;
 }
+
+.brand-models {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: #000;
+  background: #FFF;
+  border: 1px solid #000;
+  border-radius: 6px;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+.brand-models:hover { background: #000; color: #FFF; }
 
 .view-switcher {
   display: flex;

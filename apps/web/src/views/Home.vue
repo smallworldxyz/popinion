@@ -2,11 +2,13 @@
   <div class="home-container">
     <!-- Top navigation bar -->
     <nav class="navbar">
-      <div class="nav-brand">POPINION</div>
+      <div class="nav-left">
+        <div class="nav-brand">POPINION</div>
+        <button class="nav-btn" @click="openSettings">⚙ Models</button>
+      </div>
       <div class="nav-desc">Public Opinion Analysis</div>
       <div class="nav-links">
         <router-link to="/worlds" class="nav-btn">Worlds</router-link>
-        <router-link to="/settings" class="nav-btn">⚙ Models</router-link>
         <a href="https://github.com/rithythul/popinion" target="_blank" class="nav-btn">
           GitHub <span class="arrow">↗</span>
         </a>
@@ -83,7 +85,7 @@ Markdown is fine — it's treated exactly like an uploaded .md file."
           <div v-else-if="!modelStatus.ready" class="model-note missing">
             <div class="model-note-title">No working model yet — Popinion needs a model to run.</div>
             <div class="model-note-reason">{{ modelStatus.reason }}</div>
-            <router-link to="/settings" class="model-note-link">Set up a model →</router-link>
+            <button class="model-note-link" @click="openSettings">Set up a model →</button>
           </div>
 
           <div class="chat-toolbar">
@@ -214,6 +216,7 @@ Markdown is fine — it's treated exactly like an uploaded .md file."
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { getLlmStatus } from '../api/settings'
+import { openSettings } from '../settingsDrawer'
 
 const router = useRouter()
 
@@ -421,6 +424,12 @@ const startSimulation = () => {
   font-size: 1.2rem;
 }
 
+.nav-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
 .nav-links {
   display: flex;
   align-items: center;
@@ -451,6 +460,8 @@ const startSimulation = () => {
 }
 .nav-btn {
   color: var(--white);
+  background: transparent;
+  cursor: pointer;
   text-decoration: none;
   font-family: var(--font-mono);
   font-size: 0.85rem;
@@ -611,6 +622,12 @@ const startSimulation = () => {
 .model-note-link {
   display: inline-block;
   margin-top: 6px;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: inherit;
   color: #000;
   font-weight: 600;
   text-decoration: underline;
