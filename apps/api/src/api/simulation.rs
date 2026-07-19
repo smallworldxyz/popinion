@@ -410,10 +410,12 @@ struct ValidateReq {
 /// then pass the ids here to see whether any effect exceeds the noise floor.
 async fn validate(State(st): State<AppState>, Json(req): Json<ValidateReq>) -> AppResult<Success<Value>> {
     let manager = st.sim_manager();
-    // Agent-weighted (one vote per agent) — the honest population metric.
+    // Grounded agents, one vote each — the same measure the report headlines,
+    // so the floor bounds the number actually quoted rather than a neighbouring
+    // one that includes the constructed public.
     let shares_of = |id: &str| -> AppResult<std::collections::BTreeMap<String, f64>> {
         let store = manager.store(id).map_err(|_| AppError::NotFound(format!("simulation {id}")))?;
-        let dist = store.agent_stance_distribution().map_err(AppError::Other)?;
+        let dist = store.grounded_stance_distribution().map_err(AppError::Other)?;
         Ok(crate::sim::validate::stance_shares(&dist))
     };
 
@@ -488,7 +490,7 @@ async fn compare(State(st): State<AppState>, Query(q): Query<CompareQ>) -> AppRe
     let manager = st.sim_manager();
     let side = |id: &str| -> AppResult<(Value, std::collections::BTreeMap<String, f64>)> {
         let store = manager.store(id).map_err(|_| AppError::NotFound(format!("simulation {id}")))?;
-        let dist = store.agent_stance_distribution().map_err(AppError::Other)?;
+        let dist = store.grounded_stance_distribution().map_err(AppError::Other)?;
         let shares = crate::sim::validate::stance_shares(&dist);
         Ok((dist, shares))
     };

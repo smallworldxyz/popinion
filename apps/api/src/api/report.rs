@@ -33,6 +33,10 @@ struct GenerateReq {
     topic: Option<String>,
     #[serde(default)]
     force_regenerate: bool,
+    /// Sibling runs of the same prepared population, for the noise floor.
+    /// Without them the report can only say the wobble is unmeasured.
+    #[serde(default)]
+    rerun_ids: Vec<String>,
 }
 
 async fn generate(
@@ -69,7 +73,7 @@ async fn generate(
     }
 
     let topic = req.topic.unwrap_or_default();
-    let report_id = agent::start(&st, simulation_id.clone(), db_path, topic);
+    let report_id = agent::start(&st, simulation_id.clone(), db_path, topic, req.rerun_ids);
 
     Ok(Success(json!({
         "simulation_id": simulation_id,

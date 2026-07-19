@@ -28,6 +28,14 @@ pub struct ReportEntry {
     pub error: Option<String>,
     pub created_at: String,
     pub completed_at: Option<String>,
+    /// Mean pairwise distance between this run and its siblings — how much the
+    /// stance distribution moves on identical inputs. `None` means nobody
+    /// measured it, which is not the same as zero.
+    #[serde(default)]
+    pub noise_floor: Option<f64>,
+    /// How many runs the floor was measured across, this one included.
+    #[serde(default)]
+    pub validated_runs: usize,
     // Not persisted. db_path is recomputed on load from the current data dir;
     // the two logs are live generation telemetry, so a restored report shows
     // its content with empty log panels.
@@ -56,6 +64,8 @@ impl ReportEntry {
             error: None,
             created_at: chrono::Utc::now().to_rfc3339(),
             completed_at: None,
+            noise_floor: None,
+            validated_runs: 0,
             db_path,
             agent_log: Vec::new(),
             console_log: Vec::new(),

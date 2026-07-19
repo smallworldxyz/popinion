@@ -9,6 +9,14 @@
           <div class="report-header-block">
             <div class="report-meta">
               <span class="report-tag">Prediction Report</span>
+              <!-- A reader should know what the figures rest on before reading
+                   them, not after. An unrepeated run has no measured wobble. -->
+              <span v-if="validation.runs" class="report-validated" :title="`Noise floor measured across ${validation.runs} runs`">
+                &plusmn;{{ Math.round(validation.floor * 100) }} pts &middot; {{ validation.runs }} runs
+              </span>
+              <span v-else class="report-unvalidated" title="Run it again from Trust Checks to measure the margin">
+                Single run &middot; margin unmeasured
+              </span>
               <span class="report-id">ID: {{ reportId || 'REF-2024-X92' }}</span>
             </div>
             <h1 class="main-title">{{ reportOutline.title }}</h1>
@@ -408,6 +416,7 @@ const consoleLogs = ref([])
 const agentLogLine = ref(0)
 const consoleLogLine = ref(0)
 const reportOutline = ref(null)
+const validation = ref({ floor: 0, runs: 0 })
 const currentSectionIndex = ref(null)
 const generatedSections = ref({})
 const expandedContent = ref(new Set())
@@ -2015,6 +2024,7 @@ const hydrateFinalReport = async () => {
         summary: '',
         sections: secs.map(s => ({ title: s.title })),
       }
+      validation.value = { floor: r.noise_floor ?? 0, runs: r.validated_runs || 0 }
       const g = {}
       secs.forEach((s, i) => { g[i + 1] = s.content })
       generatedSections.value = g
@@ -2402,6 +2412,12 @@ watch(() => props.reportId, (newId) => {
   margin-bottom: 24px;
 }
 
+.report-validated,
+.report-unvalidated {
+  font-family: var(--font-mono); font-size: var(--fs-2xs); padding: 2px 8px;
+  border-radius: 999px; border: 1px solid var(--color-border); color: var(--color-text-muted);
+}
+.report-validated { border-color: var(--color-accent); color: var(--color-accent-text); }
 .report-tag {
   background: #000000;
   color: #FFFFFF;

@@ -238,11 +238,96 @@ pub fn split_sections(markdown: &str) -> Vec<ReportSection> {
 
 // ---- generation ----
 
+/// Identifies the population a run was prepared with. Two runs are siblings —
+/// and so comparable for a noise floor — only when they share one exactly.
+fn roster_fingerprint(personas: &[crate::sim::agent::Persona]) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    personas.len().hash(&mut h);
+    for p in personas {
+        p.user_id.hash(&mut h);
+        p.name.hash(&mut h);
+        p.synthetic.hash(&mut h);
+    }
+    h.finish()
+}
+
+/// What precision has a run earned? Without sibling runs nobody knows how far
+/// the number moves on identical inputs, so a decimal place asserts a stability
+/// that was never measured. This is the only place that decides it.
+fn precision_rule(measured: Option<(f64, usize)>) -> String {
+    match measured {
+        Some((floor, n)) => {
+            let pts = floor * 100.0;
+            format!(
+                "This run was repeated {n} times. The stance distribution moved by {pts:.0} \
+                 percentage points on average between identical runs, so that is the \
+                 measurement's wobble. Round every percentage to the nearest whole number, give \
+                 it as `X% (+/-{pts:.0} pts, {n} runs)` the first time you state it, and never \
+                 call a gap smaller than {:.0} points a difference - it is indistinguishable \
+                 from noise.",
+                pts * 1.5
+            )
+        }
+        None => "This run has NOT been repeated, so how much the numbers move between identical \
+             runs is unmeasured. Give every percentage as a whole number - never a decimal, \
+             which would assert a precision nobody has checked - and state once, plainly, that \
+             the figures come from a single unrepeated run and their margin is unknown."
+            .to_string(),
+    }
+}
+
 /// Register a new report and spawn its generation task. Returns the report_id.
-pub fn start(st: &AppState, simulation_id: String, db_path: String, topic: String) -> String {
+pub fn start(
+    st: &AppState,
+    simulation_id: String,
+    db_path: String,
+    topic: String,
+    rerun_ids: Vec<String>,
+) -> String {
     let report_id = format!("report_{}", &uuid::Uuid::new_v4().simple().to_string()[..12]);
     let sim_id = simulation_id.clone();
     registry::insert(ReportEntry::new(report_id.clone(), simulation_id, db_path, topic));
+
+    // How far the distribution moves between identical runs. Measured before
+    // the writer starts, so it can be told what precision its numbers deserve.
+    if !rerun_ids.is_empty() {
+        let mgr = st.sim_manager();
+        let shares = |id: &str| {
+            mgr.store(id)
+                .and_then(|s| s.grounded_stance_distribution())
+                .map(|d| crate::sim::validate::stance_shares(&d))
+                .ok()
+        };
+        // A floor is how far ONE population wanders between identical runs.
+        // Measured across two different populations it is just the distance
+        // between two unrelated answers, and would license far more precision
+        // than the run has earned. Siblings share a persona roster exactly.
+        let roster = |id: &str| mgr.load_personas(id).ok().map(|p| roster_fingerprint(&p));
+        let baseline_roster = roster(&sim_id);
+        let siblings: Vec<&String> = rerun_ids
+            .iter()
+            .filter(|id| {
+                let same = roster(id) == baseline_roster && baseline_roster.is_some();
+                if !same {
+                    tracing::warn!("report {report_id}: ignoring rerun {id}, different population");
+                }
+                same
+            })
+            .collect();
+
+        let mut runs: Vec<_> = shares(&sim_id).into_iter().collect();
+        runs.extend(siblings.iter().filter_map(|id| shares(id)));
+        if runs.len() >= 2 {
+            let floor = crate::sim::validate::noise_floor(&runs);
+            let n = runs.len();
+            registry::update(&report_id, |r| {
+                r.noise_floor = Some(floor);
+                r.validated_runs = n;
+            });
+            tracing::info!("report {report_id}: noise floor {floor:.3} across {n} runs");
+        }
+    }
 
     let st = st.clone();
     let id = report_id.clone();
@@ -351,6 +436,9 @@ async fn generate(st: &AppState, report_id: &str) -> anyhow::Result<()> {
         .map(|t| format!("## {t}"))
         .collect::<Vec<_>>()
         .join("\n");
+    let precision_rule =
+        precision_rule(registry::get(report_id).and_then(|r| r.noise_floor.map(|f| (f, r.validated_runs))));
+
     let writer_system = format!(
         "You are an expert public-opinion analyst. Analyze the simulated public discussion about \
          \"{topic}\" to determine sentiment, identify key themes, and detect emerging trends.\n\n\
@@ -359,6 +447,7 @@ async fn generate(st: &AppState, report_id: &str) -> anyhow::Result<()> {
          SENTIMENT value from -1 to 1. Read stance as the primary opinion signal (support = favorable, \
          oppose = unfavorable, neutral = undecided/mixed) and the sentiment value as emotional intensity. \
          The discussion runs over rounds; treat later rounds as more recent.\n\n\
+         PRECISION: {precision_rule}\n\n\
          Write the report in Markdown with EXACTLY these five section headings, in this order:\n{section_list}\n\n\
          Section requirements:\n\
          - Executive Summary: a 3-sentence overview of the general public mood.\n\
@@ -598,6 +687,65 @@ mod tests {
         assert_eq!(count_of(&v["by_agent"], "support"), Some(1));
         assert_eq!(count_of(&v["by_agent"], "oppose"), Some(1));
         std::fs::remove_dir_all(dir).ok();
+    }
+
+    /// A floor is how far ONE population wanders between identical runs. Taken
+    /// across two different populations it is the distance between unrelated
+    /// answers, and would license precision the run never earned.
+    #[test]
+    fn only_an_identical_roster_counts_as_a_sibling_run() {
+        use crate::sim::agent::Persona;
+        // Built from JSON so the test states only what the fingerprint reads;
+        // Persona has no Default and does not need one for this.
+        let p = |id: i64, name: &str, synthetic: bool| -> Persona {
+            serde_json::from_value(json!({
+                "user_id": id, "user_name": name, "name": name, "synthetic": synthetic
+            }))
+            .unwrap()
+        };
+        let baseline = vec![p(0, "Ministry", false), p(1, "Residents", false)];
+
+        assert_eq!(
+            roster_fingerprint(&baseline),
+            roster_fingerprint(&[p(0, "Ministry", false), p(1, "Residents", false)]),
+            "a rerun of the same prepared population"
+        );
+        assert_ne!(
+            roster_fingerprint(&baseline),
+            roster_fingerprint(&[p(0, "Ministry", false)]),
+            "a different roster size"
+        );
+        assert_ne!(
+            roster_fingerprint(&baseline),
+            roster_fingerprint(&[p(0, "Ministry", false), p(1, "Retailers", false)]),
+            "same size, different members"
+        );
+        assert_ne!(
+            roster_fingerprint(&baseline),
+            roster_fingerprint(&[p(0, "Ministry", false), p(1, "Residents", true)]),
+            "same names but one is now constructed"
+        );
+    }
+
+    /// An unrepeated run has no measured wobble, so a decimal place in its
+    /// percentages claims a stability nobody checked. "49.1%" was exactly that.
+    #[test]
+    fn an_unrepeated_run_is_denied_decimal_precision() {
+        let rule = precision_rule(None);
+        assert!(rule.contains("NOT been repeated"));
+        assert!(rule.contains("never a decimal"));
+        assert!(rule.contains("margin is unknown"));
+    }
+
+    /// With siblings the wobble is a number, so the report may state it — and
+    /// must stop calling sub-noise gaps differences.
+    #[test]
+    fn a_measured_floor_sets_the_rounding_and_the_significance_bar() {
+        let rule = precision_rule(Some((0.04, 3)));
+        assert!(rule.contains("repeated 3 times"), "states how many runs backed it");
+        assert!(rule.contains("4 percentage points"), "states the measured wobble");
+        assert!(rule.contains("+/-4 pts, 3 runs"), "gives the format to report it in");
+        assert!(rule.contains("6 points"), "significance bar is 1.5x the floor");
     }
 
     /// Synthetic agents are built during setup to populate each camp, so their
