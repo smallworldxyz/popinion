@@ -49,13 +49,13 @@ impl AppState {
 
     /// A client for the bulk slot at the currently-configured provider.
     pub fn llm(&self) -> Llm {
-        let s = self.llm_settings.read().unwrap();
+        let s = self.llm_settings.read().unwrap_or_else(|e| e.into_inner());
         self.client_for(&s.bulk)
     }
 
     /// A client for the boost slot; falls back to the bulk slot when unset.
     pub fn llm_boost(&self) -> Llm {
-        let s = self.llm_settings.read().unwrap();
+        let s = self.llm_settings.read().unwrap_or_else(|e| e.into_inner());
         let slot = if s.boost.base_url.trim().is_empty() { &s.bulk } else { &s.boost };
         self.client_for(slot)
     }

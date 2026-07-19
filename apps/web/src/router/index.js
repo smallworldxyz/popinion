@@ -3,7 +3,6 @@ import Home from '../views/Home.vue'
 import Process from '../views/MainView.vue'
 import WorldsView from '../views/WorldsView.vue'
 import WorldView from '../views/WorldView.vue'
-import FieldDemoView from '../views/FieldDemoView.vue'
 import RunView from '../views/RunView.vue'
 import SimulationView from '../views/SimulationView.vue'
 import SimulationRunView from '../views/SimulationRunView.vue'
@@ -20,11 +19,6 @@ const routes = [
     path: '/worlds',
     name: 'Worlds',
     component: WorldsView
-  },
-  {
-    path: '/field-demo',
-    name: 'FieldDemo',
-    component: FieldDemoView
   },
   {
     path: '/world/:graphId',

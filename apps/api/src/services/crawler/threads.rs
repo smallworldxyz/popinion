@@ -26,7 +26,9 @@ pub async fn crawl_user(username: &str, limit: usize) -> CrawlResult {
         success: true,
         error: None,
     };
-    match fetch_html(&format!("{BASE_URL}/@{username}")).await {
+    let mut url = reqwest::Url::parse(BASE_URL).expect("static base url");
+    url.path_segments_mut().expect("base url has a path").push(&format!("@{username}"));
+    match fetch_html(url.as_str()).await {
         Ok(html) => {
             result.posts = parse_posts(&html, &username, limit);
             if result.posts.is_empty() {

@@ -92,9 +92,15 @@ impl Default for TimeConfig {
     }
 }
 
+/// Ceiling on a run's length. `total_simulation_hours` is caller-supplied, so
+/// the hours→minutes conversion must neither overflow nor schedule a run that
+/// effectively never ends — a panic here lands inside the spawned engine task,
+/// leaving the sim stuck at "running" forever.
+pub const MAX_ROUNDS: u32 = 100_000;
+
 impl TimeConfig {
     pub fn total_rounds(&self) -> u32 {
-        (self.total_simulation_hours * 60) / self.minutes_per_round.max(1)
+        (self.total_simulation_hours.saturating_mul(60) / self.minutes_per_round.max(1)).min(MAX_ROUNDS)
     }
     pub fn hour_multiplier(&self, hour: u32) -> f64 {
         if self.peak_hours.contains(&hour) {
@@ -164,6 +170,14 @@ mod tests {
         // The native field name still works.
         let p2: InitialPost = serde_json::from_str(r#"{"poster_agent_id": 3, "content": "x"}"#).unwrap();
         assert_eq!(p2.poster_agent_id, 3);
+    }
+
+    #[test]
+    fn total_rounds_survives_an_absurd_hour_count() {
+        // u32::MAX * 60 overflows; a debug build would panic inside the spawned
+        // engine task and strand the sim at "running".
+        let tc = TimeConfig { total_simulation_hours: u32::MAX, minutes_per_round: 0, ..Default::default() };
+        assert_eq!(tc.total_rounds(), MAX_ROUNDS);
     }
 
     #[test]

@@ -1,18 +1,21 @@
-//! In-process report registry. Uses a module-level map instead of file-based
-//! persistence; reports live for the process lifetime.
+//! In-process report registry, backed by one `report.json` per simulation.
+//! Live progress stays in the map; a report is written to disk once it reaches
+//! a terminal state and read back at startup, so a finished report survives a
+//! restart instead of costing a fresh LLM run to regenerate.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::path::Path;
 
 use crate::services::registry::{JobStatus, Registry};
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ReportSection {
     pub title: String,
     pub content: String,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct ReportEntry {
     pub report_id: String,
     pub simulation_id: String,
@@ -25,6 +28,10 @@ pub struct ReportEntry {
     pub error: Option<String>,
     pub created_at: String,
     pub completed_at: Option<String>,
+    // Not persisted. db_path is recomputed on load from the current data dir;
+    // the two logs are live generation telemetry, so a restored report shows
+    // its content with empty log panels.
+    // ponytail: persist the logs too if replaying a past run's trace matters.
     #[serde(skip)]
     pub db_path: String,
     #[serde(skip)]
@@ -90,6 +97,50 @@ pub fn update<F: FnOnce(&mut ReportEntry)>(report_id: &str, f: F) -> bool {
     REPORTS.update(report_id, f)
 }
 
+/// Write a completed report to `path`, atomically.
+///
+/// Only `Completed` is written. An in-flight draft isn't resumable, so saving
+/// it would leave a permanently "running" report after a crash; a `Failed` one
+/// must not be saved either, because a failed regeneration would replace the
+/// good report already on disk and leave no way back to it.
+///
+/// The write goes to a sibling temp file and is renamed into place, so a crash
+/// or a full disk leaves the previous report intact rather than a truncated
+/// file that `restore` would discard - losing exactly what this exists to keep.
+pub fn persist(report_id: &str, path: &Path) {
+    let Some(entry) = get(report_id) else { return };
+    if entry.status != JobStatus::Completed {
+        return;
+    }
+    let write = || -> std::io::Result<()> {
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        let tmp = path.with_extension("json.tmp");
+        std::fs::write(&tmp, serde_json::to_vec_pretty(&entry)?)?;
+        std::fs::rename(&tmp, path)
+    };
+    if let Err(e) = write() {
+        tracing::warn!("could not persist report {report_id} to {}: {e}", path.display());
+    }
+}
+
+/// Read a persisted report back into the registry. `db_path` is supplied by the
+/// caller from the live data dir rather than trusted from the file, so moving
+/// the data dir doesn't restore reports pointing at paths that no longer exist.
+pub fn restore(path: &Path, db_path: String) -> Option<String> {
+    let raw = std::fs::read(path)
+        .map_err(|e| tracing::warn!("could not read report {}: {e}", path.display()))
+        .ok()?;
+    let mut entry: ReportEntry = serde_json::from_slice(&raw)
+        .map_err(|e| tracing::warn!("ignoring unreadable report {}: {e}", path.display()))
+        .ok()?;
+    entry.db_path = db_path;
+    let id = entry.report_id.clone();
+    insert(entry);
+    Some(id)
+}
+
 pub fn set_progress(report_id: &str, status: JobStatus, progress: i32, message: &str) {
     update(report_id, |e| {
         e.status = status;
@@ -143,5 +194,53 @@ mod tests {
         assert!(find_by_simulation("sim_a").is_some());
         assert!(find_by_simulation("sim_missing").is_none());
         assert!(!list(Some("sim_a"), 10).is_empty());
+    }
+
+    #[test]
+    fn persists_only_terminal_reports_and_restores_them() {
+        let dir = std::env::temp_dir().join("popinion_report_persist_test");
+        let _ = std::fs::remove_dir_all(&dir);
+        let path = dir.join("report.json");
+
+        insert(ReportEntry::new("report_p1".into(), "sim_p".into(), "/old/social.db".into(), "topic".into()));
+
+        // Still running: nothing on disk, so a crash can't strand a "running" report.
+        set_progress("report_p1", JobStatus::Running, 50, "half done");
+        persist("report_p1", &path);
+        assert!(!path.exists());
+
+        update("report_p1", |r| {
+            r.status = JobStatus::Completed;
+            r.markdown_content = "## Findings\nbody".into();
+            r.sections = vec![ReportSection { title: "Findings".into(), content: "body".into() }];
+        });
+        persist("report_p1", &path);
+        assert!(path.exists());
+
+        // db_path comes from the caller, not the file - the stale one is dropped.
+        let id = restore(&path, "/new/social.db".into()).unwrap();
+        let restored = get(&id).unwrap();
+        assert_eq!(restored.status, JobStatus::Completed);
+        assert_eq!(restored.markdown_content, "## Findings\nbody");
+        assert_eq!(restored.sections.len(), 1);
+        assert_eq!(restored.db_path, "/new/social.db");
+        assert_eq!(find_by_simulation("sim_p").unwrap().report_id, "report_p1");
+
+        // A later failed regeneration must not replace the good report on disk,
+        // or a restart would leave the user a failure and no way back to it.
+        insert(ReportEntry::new("report_p2".into(), "sim_p".into(), "/x.db".into(), "topic".into()));
+        update("report_p2", |r| {
+            r.status = JobStatus::Failed;
+            r.error = Some("boom".into());
+        });
+        persist("report_p2", &path);
+        let after = restore(&path, "/new/social.db".into()).unwrap();
+        assert_eq!(after, "report_p1");
+        assert_eq!(get(&after).unwrap().markdown_content, "## Findings\nbody");
+
+        // Nothing is left behind by the atomic write.
+        assert!(!path.with_extension("json.tmp").exists());
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

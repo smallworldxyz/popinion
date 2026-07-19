@@ -98,7 +98,7 @@ impl Engine {
             if let Err(e) = self.run(rx, status.clone(), max_rounds, persist_run).await {
                 tracing::error!("simulation {simulation_id} failed: {e}");
                 let s = format!("error: {e}");
-                *status.lock().unwrap() = s.clone();
+                *status.lock().unwrap_or_else(|e| e.into_inner()) = s.clone();
                 // Persist so the run reads as failed after the handle drops,
                 // not as an untouched "prepared" sim.
                 persist(&s);
@@ -115,7 +115,7 @@ impl Engine {
         persist: Arc<dyn Fn(&str) + Send + Sync>,
     ) -> Result<()> {
         self.reset()?;
-        *status.lock().unwrap() = "running".into();
+        *status.lock().unwrap_or_else(|e| e.into_inner()) = "running".into();
 
         let mut total = self.config.time_config.total_rounds();
         if let Some(m) = max_rounds {
@@ -145,19 +145,27 @@ impl Engine {
             }
         }
 
+        // A stopped run is not a finished one: recording it as "completed" would
+        // let a report be generated over a truncated run as if it had full signal.
+        if stopped {
+            persist("stopped");
+            *status.lock().unwrap_or_else(|e| e.into_inner()) = "stopped".into();
+            return Ok(());
+        }
+
         // Rounds are done. Persist "completed" to disk now, so the run reads as
         // finished even after the handle drops from the registry (on disk it
         // would otherwise revert to the stale "prepared"). In memory we stay
         // "alive" to keep serving interviews (panel chat / survey) until stopped,
         // and live status wins over the persisted one while resident.
         persist("completed");
-        *status.lock().unwrap() = "alive".into();
+        *status.lock().unwrap_or_else(|e| e.into_inner()) = "alive".into();
         while let Some(cmd) = rx.recv().await {
             if self.handle_command(cmd, None).await {
                 break;
             }
         }
-        *status.lock().unwrap() = "stopped".into();
+        *status.lock().unwrap_or_else(|e| e.into_inner()) = "stopped".into();
         Ok(())
     }
 
@@ -558,7 +566,11 @@ async fn decide(llm: &Llm, persona: &str, memory: &str, feed: &str) -> Result<De
     let v = llm
         .chat_json(&[Msg::system(sys), Msg::user(feed.to_string())], 0.9, 900)
         .await?;
-    Ok(serde_json::from_value::<Decision>(v).unwrap_or_default())
+    // A malformed decision must surface: defaulting it maps every agent to
+    // do_nothing, so a model that emits e.g. "3" for a numeric field yields an
+    // empty database from a run that reported success.
+    serde_json::from_value::<Decision>(v.clone())
+        .map_err(|e| anyhow::anyhow!("malformed decision {v}: {e}"))
 }
 
 // ---- interview convenience on the handle ----
@@ -582,8 +594,16 @@ impl SimHandle {
         rx.await.map_err(|_| anyhow::anyhow!("simulation dropped the request"))?
     }
 
+    /// Stop the run and wait for the engine task to actually exit. Awaiting the
+    /// receiver's close is the acknowledgement: until it lands the engine still
+    /// owns social.db, so a restart would spawn a second engine over the same
+    /// database (double-reset, duplicated seed posts) and a delete would remove
+    /// the directory under a live writer.
     pub async fn stop(&self) {
-        let _ = self.cmd.send(Command::Stop).await;
+        if self.cmd.send(Command::Stop).await.is_err() {
+            return;
+        }
+        self.cmd.closed().await;
     }
 }
 

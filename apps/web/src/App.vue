@@ -1,7 +1,7 @@
 <template>
-  <!-- Models lives in the sidebar on the app-shell views; the fab is only a
-       fallback for the non-shell routes that have no sidebar. -->
-  <button v-if="['Worlds', 'World', 'Run', 'FieldDemo'].includes($route.name)" class="settings-fab" title="Model settings" @click="openSettings">⚙ Models</button>
+  <!-- Worlds and World render no AppSidebar, so Models needs its own affordance
+       there. Every other route reaches it through the sidebar. -->
+  <button v-if="['Worlds', 'World'].includes($route.name)" class="settings-fab" title="Model settings" @click="openSettings">⚙ Models</button>
   <router-view />
   <SettingsView />
 </template>

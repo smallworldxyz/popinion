@@ -15,6 +15,7 @@
 //! ponytail: tokens live in a 0600 JSON file, same trust level as the existing
 //! settings.json that holds API keys. Keychain is the desktop Phase-2 upgrade.
 
+use crate::settings::write_owner_only;
 use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -86,7 +87,7 @@ impl ChatGptAuth {
     /// Cancel a login that's still sitting on :1455, freeing the port. Returns
     /// true if one was actually waiting.
     fn cancel_pending(&self) -> bool {
-        match self.pending.lock().unwrap().take() {
+        match self.pending.lock().unwrap_or_else(|e| e.into_inner()).take() {
             Some(h) => {
                 h.abort();
                 true
@@ -96,14 +97,14 @@ impl ChatGptAuth {
     }
 
     pub fn logged_in(&self) -> bool {
-        self.creds.lock().unwrap().as_ref().is_some_and(|c| !c.refresh_token.is_empty())
+        self.creds.lock().unwrap_or_else(|e| e.into_inner()).as_ref().is_some_and(|c| !c.refresh_token.is_empty())
     }
 
     /// { logged_in, email, plan, status } for the settings UI.
     pub fn status_json(&self) -> Value {
-        let c = self.creds.lock().unwrap();
+        let c = self.creds.lock().unwrap_or_else(|e| e.into_inner());
         let (email, plan) = c.as_ref().map(|c| (c.email.clone(), c.plan.clone())).unwrap_or_default();
-        let status = match &*self.status.lock().unwrap() {
+        let status = match &*self.status.lock().unwrap_or_else(|e| e.into_inner()) {
             LoginStatus::Idle => "idle".to_string(),
             LoginStatus::Pending => "pending".to_string(),
             LoginStatus::Done => "done".to_string(),
@@ -119,8 +120,8 @@ impl ChatGptAuth {
 
     pub fn logout(&self) {
         self.cancel_pending(); // don't leave :1455 held by a login we're abandoning
-        *self.creds.lock().unwrap() = None;
-        *self.status.lock().unwrap() = LoginStatus::Idle;
+        *self.creds.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        *self.status.lock().unwrap_or_else(|e| e.into_inner()) = LoginStatus::Idle;
         std::fs::remove_file(&self.path).ok();
     }
 
@@ -129,15 +130,9 @@ impl ChatGptAuth {
             std::fs::create_dir_all(dir).ok();
         }
         if let Ok(bytes) = serde_json::to_vec_pretty(&creds) {
-            if std::fs::write(&self.path, bytes).is_ok() {
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::PermissionsExt;
-                    let _ = std::fs::set_permissions(&self.path, std::fs::Permissions::from_mode(0o600));
-                }
-            }
+            let _ = write_owner_only(&self.path, &bytes);
         }
-        *self.creds.lock().unwrap() = Some(creds);
+        *self.creds.lock().unwrap_or_else(|e| e.into_inner()) = Some(creds);
     }
 
     /// A valid (access_token, account_id), refreshing if the token is near
@@ -193,7 +188,7 @@ impl ChatGptAuth {
         let listener = bind_callback(had_pending).await?;
 
         let url = authorize_url(&pkce.challenge, &state);
-        *self.status.lock().unwrap() = LoginStatus::Pending;
+        *self.status.lock().unwrap_or_else(|e| e.into_inner()) = LoginStatus::Pending;
 
         let this = self.clone();
         let verifier = pkce.verifier.clone();
@@ -203,15 +198,15 @@ impl ChatGptAuth {
                 Ok(code) => match exchange_code(&code, &verifier).await {
                     Ok(creds) => {
                         this.persist(creds);
-                        *this.status.lock().unwrap() = LoginStatus::Done;
+                        *this.status.lock().unwrap_or_else(|e| e.into_inner()) = LoginStatus::Done;
                     }
-                    Err(e) => *this.status.lock().unwrap() = LoginStatus::Failed(e.to_string()),
+                    Err(e) => *this.status.lock().unwrap_or_else(|e| e.into_inner()) = LoginStatus::Failed(e.to_string()),
                 },
-                Err(e) => *this.status.lock().unwrap() = LoginStatus::Failed(e.to_string()),
+                Err(e) => *this.status.lock().unwrap_or_else(|e| e.into_inner()) = LoginStatus::Failed(e.to_string()),
             }
-            this.pending.lock().unwrap().take();
+            this.pending.lock().unwrap_or_else(|e| e.into_inner()).take();
         });
-        *self.pending.lock().unwrap() = Some(handle);
+        *self.pending.lock().unwrap_or_else(|e| e.into_inner()) = Some(handle);
 
         Ok(url)
     }
@@ -289,7 +284,7 @@ async fn await_callback(listener: tokio::net::TcpListener, expected_state: &str)
             continue;
         };
         if !path.starts_with("/auth/callback") {
-            let _ = sock.write_all(http_page("Not found")).await;
+            let _ = sock.write_all(&http_page("Not found")).await;
             continue;
         }
         let query = path.split_once('?').map(|(_, q)| q).unwrap_or("");
@@ -305,22 +300,30 @@ async fn await_callback(listener: tokio::net::TcpListener, expected_state: &str)
                 _ => {}
             }
         }
-        let _ = sock
-            .write_all(http_page("Signed in to ChatGPT. You can close this tab and return to Popinion."))
-            .await;
+        // Decide the outcome BEFORE answering, so the tab never claims success
+        // on a state mismatch we are about to reject.
+        let outcome = if !state_ok {
+            Err(anyhow!("login state mismatch (possible CSRF) — try again"))
+        } else {
+            code.ok_or_else(|| anyhow!("no authorization code in callback"))
+        };
+        let page = match &outcome {
+            Ok(_) => http_page("Signed in to ChatGPT"),
+            Err(e) => http_page(&format!("Sign-in failed: {e}")),
+        };
+        let _ = sock.write_all(&page).await;
         let _ = sock.flush().await;
-        if !state_ok {
-            return Err(anyhow!("login state mismatch (possible CSRF) — try again"));
-        }
-        return code.ok_or_else(|| anyhow!("no authorization code in callback"));
+        return outcome;
     }
 }
 
-fn http_page(msg: &str) -> &'static [u8] {
-    // Static body; the message is the same shape regardless of branch, so leak a
-    // fixed page. ponytail: not worth threading a dynamic body through a raw socket.
-    let _ = msg;
-    b"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n<html><body style=\"font-family:sans-serif;padding:3rem;text-align:center\"><h2>Signed in to ChatGPT</h2><p>You can close this tab and return to Popinion.</p></body></html>"
+/// `msg` is always one of our own fixed strings — never echo callback query
+/// data here, it would land unescaped in the HTML.
+fn http_page(msg: &str) -> Vec<u8> {
+    format!(
+        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nConnection: close\r\n\r\n<html><body style=\"font-family:sans-serif;padding:3rem;text-align:center\"><h2>{msg}</h2><p>You can close this tab and return to Popinion.</p></body></html>"
+    )
+    .into_bytes()
 }
 
 /// Parsed token response, with account/email/plan pulled from the id_token JWT.

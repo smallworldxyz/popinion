@@ -16,7 +16,8 @@ pub async fn crawl_trends(geo: &str, limit: usize) -> CrawlResult {
         let g = geo.trim();
         if g.is_empty() { "US".to_string() } else { g.to_uppercase() }
     };
-    let url = format!("{BASE_URL}?geo={geo}");
+    let url = reqwest::Url::parse_with_params(BASE_URL, &[("geo", geo.as_str())])
+        .expect("static base url");
     let mut result = CrawlResult {
         platform: "google_trends".into(),
         query: Some(geo.clone()),
@@ -26,7 +27,7 @@ pub async fn crawl_trends(geo: &str, limit: usize) -> CrawlResult {
         success: true,
         error: None,
     };
-    match fetch_html(&url).await {
+    match fetch_html(url.as_str()).await {
         Ok(xml) => {
             result.posts = parse_trends(&xml, &geo, limit);
             if result.posts.is_empty() {

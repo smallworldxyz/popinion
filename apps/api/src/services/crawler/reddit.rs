@@ -51,8 +51,20 @@ struct PostData {
 /// Crawl the top posts of a subreddit over the past week.
 pub async fn crawl_subreddit(subreddit: &str, limit: usize) -> CrawlResult {
     let sub = subreddit.trim().trim_start_matches("r/").trim_start_matches('/').to_string();
-    let url = format!("{BASE_URL}/r/{sub}/top.json?t=week&limit={limit}");
-    crawl(&url, &sub).await
+    crawl(subreddit_url(&sub, limit).as_str(), &sub).await
+}
+
+/// Percent-encodes the subreddit as a single path segment, so one containing
+/// '/', '?' or '&' cannot redirect the request to another path or inject params.
+fn subreddit_url(sub: &str, limit: usize) -> reqwest::Url {
+    let mut url = reqwest::Url::parse(BASE_URL).expect("static base url");
+    url.path_segments_mut()
+        .expect("base url has a path")
+        .extend(["r", sub, "top.json"]);
+    url.query_pairs_mut()
+        .append_pair("t", "week")
+        .append_pair("limit", &limit.to_string());
+    url
 }
 
 /// Search Reddit for the top posts matching a query.
@@ -151,6 +163,16 @@ fn parse_listing(body: &str, limit: usize) -> anyhow::Result<Vec<ScrapedPost>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn subreddit_stays_one_path_segment() {
+        let url = subreddit_url("news/../admin?x=1&y=2", 25);
+        assert_eq!(url.host_str(), Some("www.reddit.com"));
+        assert!(url.path().starts_with("/r/news%2F"), "path was {}", url.path());
+        assert!(url.path().ends_with("/top.json"));
+        let params: Vec<_> = url.query_pairs().map(|(k, v)| (k.into_owned(), v.into_owned())).collect();
+        assert_eq!(params, vec![("t".into(), "week".into()), ("limit".into(), "25".into())]);
+    }
 
     #[test]
     fn parses_listing_json() {

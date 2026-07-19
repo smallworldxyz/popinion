@@ -19,6 +19,10 @@ pub struct Llm {
     base_url: String,
     model: String,
     chatgpt: Option<Arc<ChatGptAuth>>,
+    /// Attempts per request before giving up. Only tests lower it: the default
+    /// backoff takes minutes to exhaust against an unreachable endpoint, which
+    /// is right in production and a hang in a unit test.
+    max_retries: u32,
 }
 
 #[derive(Serialize)]
@@ -51,7 +55,15 @@ impl Llm {
             base_url: base_url.trim_end_matches('/').to_string(),
             model: model.to_string(),
             chatgpt: None,
+            max_retries: 10,
         }
+    }
+
+    /// Same client with a single attempt - for tests that point at a dead
+    /// endpoint and want the error, not ten backoff sleeps.
+    pub fn without_retries(mut self) -> Self {
+        self.max_retries = 1;
+        self
     }
 
     /// A client backed by a ChatGPT subscription (OAuth) instead of an API key.
@@ -66,6 +78,7 @@ impl Llm {
             base_url: crate::chatgpt_auth::BACKEND.to_string(),
             model: model.to_string(),
             chatgpt: Some(auth),
+            max_retries: 10,
         }
     }
 
@@ -99,7 +112,7 @@ impl Llm {
 
         let url = format!("{}/chat/completions", self.base_url);
         // Retry on 429 / transient errors with capped exponential backoff + jitter.
-        let max_retries = 10u32;
+        let max_retries = self.max_retries;
         for attempt in 0..max_retries {
             let mut builder = self.http.post(&url).json(&body);
             if !self.api_key.is_empty() {

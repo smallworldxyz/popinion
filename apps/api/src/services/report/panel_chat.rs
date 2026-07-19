@@ -356,9 +356,10 @@ mod tests {
     use super::*;
 
     fn offline_llm() -> Llm {
-        // Empty API key: Llm::chat errors immediately without any network call,
-        // exercising the rule-based / fallback paths.
-        Llm::new("", "http://127.0.0.1:1", "test")
+        // A dead port, so every call fails and the rule-based fallback paths run.
+        // An empty key does NOT short-circuit the request (local servers need no
+        // key), so the retries must be capped or this sleeps through the backoff.
+        Llm::new("", "http://127.0.0.1:1", "test").without_retries()
     }
 
     fn personas() -> Vec<Persona> {

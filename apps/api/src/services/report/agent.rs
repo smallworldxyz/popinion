@@ -230,6 +230,7 @@ pub fn split_sections(markdown: &str) -> Vec<ReportSection> {
 /// Register a new report and spawn its generation task. Returns the report_id.
 pub fn start(st: &AppState, simulation_id: String, db_path: String, topic: String) -> String {
     let report_id = format!("report_{}", &uuid::Uuid::new_v4().simple().to_string()[..12]);
+    let sim_id = simulation_id.clone();
     registry::insert(ReportEntry::new(report_id.clone(), simulation_id, db_path, topic));
 
     let st = st.clone();
@@ -247,6 +248,9 @@ pub fn start(st: &AppState, simulation_id: String, db_path: String, topic: Strin
             registry::agent_log(&id, "report_failed", "failed", json!({"error": format!("{e:#}")}));
             registry::console_log(&id, "ERROR", &format!("Report generation failed: {e:#}"));
         }
+        // Persist on success so a restart doesn't cost a regeneration. A failure
+        // writes nothing, leaving any previously saved report reachable.
+        registry::persist(&id, &st.sim_manager().report_path(&sim_id));
     });
     report_id
 }

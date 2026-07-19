@@ -181,6 +181,7 @@ async function refreshChatgpt() {
   try { Object.assign(chatgpt, (await chatgptStatus()).data) } catch (e) { /* best-effort */ }
 }
 async function cgLogin() {
+  stopCgPoll(); cgFailures = 0
   cgBusy.value = true; cgErr.value = false; cgMsg.value = 'Opening browser…'
   try {
     const { auth_url } = (await chatgptLogin()).data
@@ -192,16 +193,34 @@ async function cgLogin() {
     cgMsg.value = e?.response?.data?.error || 'could not start sign-in'
   }
 }
+// The sign-in poll outlives the drawer unless it is cancelled: SettingsView is
+// mounted for the app's lifetime, so nothing else would ever stop it.
+let cgTimer = null
+let cgFailures = 0
+const CG_MAX_FAILURES = 10
+function stopCgPoll() {
+  clearTimeout(cgTimer)
+  cgTimer = null
+}
 async function pollChatgpt() {
+  cgTimer = null
   const s = (await chatgptStatus().catch(() => null))?.data
-  if (!s) { setTimeout(pollChatgpt, 1500); return }
+  if (!s) {
+    if (++cgFailures > CG_MAX_FAILURES) {
+      cgBusy.value = false; cgErr.value = true; cgMsg.value = 'lost contact with the backend'
+      return
+    }
+    cgTimer = setTimeout(pollChatgpt, 1500)
+    return
+  }
+  cgFailures = 0
   Object.assign(chatgpt, s)
   if (s.logged_in) {
     cgBusy.value = false; cgMsg.value = ''; refreshReady()
   } else if ((s.status || '').startsWith('failed')) {
     cgBusy.value = false; cgErr.value = true; cgMsg.value = s.status
   } else {
-    setTimeout(pollChatgpt, 1500)
+    cgTimer = setTimeout(pollChatgpt, 1500)
   }
 }
 async function cgLogout() {
@@ -232,14 +251,22 @@ async function load() {
   refreshChatgpt() // best-effort; only shown when a slot uses ChatGPT
   refreshReady()
 }
-watch(settingsOpen, (open) => { if (open) load() })
+watch(settingsOpen, (open) => {
+  if (open) return load()
+  // Closing abandons any sign-in in flight; reopening starts a fresh one.
+  stopCgPoll()
+  cgBusy.value = false; cgMsg.value = ''
+})
 
 const onKey = (e) => { if (e.key === 'Escape' && settingsOpen.value) closeSettings() }
 onMounted(() => {
   if (settingsOpen.value) load()
   window.addEventListener('keydown', onKey)
 })
-onUnmounted(() => window.removeEventListener('keydown', onKey))
+onUnmounted(() => {
+  window.removeEventListener('keydown', onKey)
+  stopCgPoll()
+})
 
 async function testSlot(which) {
   const s = which === 'bulk' ? bulk : boost

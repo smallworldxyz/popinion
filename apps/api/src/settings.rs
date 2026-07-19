@@ -51,15 +51,31 @@ impl LlmSettings {
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir).ok();
         }
-        std::fs::write(path, serde_json::to_vec_pretty(self)?)?;
-        // The file holds API keys — restrict it to the owner.
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
-        }
-        Ok(())
+        write_owner_only(path, &serde_json::to_vec_pretty(self)?)
     }
+}
+
+/// Write a secrets file that is owner-only from the moment it exists. Creating
+/// it first and chmod'ing after would leave the contents world-readable for the
+/// window in between.
+pub fn write_owner_only(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    let mut f = opts.open(path)?;
+    f.write_all(bytes)?;
+    // `mode` only applies on create; an existing file keeps its old permissions.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = f.set_permissions(std::fs::Permissions::from_mode(0o600));
+    }
+    Ok(())
 }
 
 #[cfg(test)]

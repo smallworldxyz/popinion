@@ -3,14 +3,14 @@
 //! reports, and survey templates each hold their own typed static instance;
 //! the locking/lifecycle logic lives only here.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
 /// Shared lifecycle vocabulary for registry entries. `Running` replaces the
 /// old `Processing`/`Generating` synonyms; wire value is `"running"` (the
 /// frontend only branches on `"completed"`/`"failed"`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum JobStatus {
     Pending,
@@ -35,8 +35,12 @@ impl<T> Registry<T> {
 
 impl<T: Clone> Registry<T> {
 
+    /// Recovers from poisoning rather than propagating it. These registries live
+    /// for the process, so one panic under the lock would otherwise brick every
+    /// later read and write - a far worse outcome than reading state a panicking
+    /// writer left behind.
     fn map(&self) -> MutexGuard<'_, HashMap<String, T>> {
-        self.0.get_or_init(Default::default).lock().unwrap()
+        self.0.get_or_init(Default::default).lock().unwrap_or_else(|e| e.into_inner())
     }
 
     pub fn insert(&self, id: String, value: T) {

@@ -28,6 +28,7 @@ pub use state::AppState;
 pub async fn build_app(cfg: Config) -> Router {
     let static_dir = cfg.static_dir.clone();
     let state = AppState::new(cfg).await;
+    restore_reports(&state);
 
     // Scope CORS to the local dev frontend origin only. The desktop app is
     // same-origin (served from static_dir) and Vite proxies /api server-side,
@@ -55,6 +56,29 @@ pub async fn build_app(cfg: Config) -> Router {
     }
 
     app.layer(cors).layer(TraceLayer::new_for_http()).with_state(state)
+}
+
+/// Reload previously generated reports into the in-process registry, so a
+/// finished run still answers /api/report/check after a restart instead of
+/// silently offering to regenerate.
+fn restore_reports(state: &AppState) {
+    let mgr = state.sim_manager();
+    let mut n = 0;
+    for meta in mgr.list() {
+        let path = mgr.report_path(&meta.simulation_id);
+        if path.exists()
+            && services::report::registry::restore(
+                &path,
+                mgr.db_path(&meta.simulation_id).to_string_lossy().into_owned(),
+            )
+            .is_some()
+        {
+            n += 1;
+        }
+    }
+    if n > 0 {
+        tracing::info!("restored {n} report(s) from disk");
+    }
 }
 
 /// Serve the app on an already-bound listener until shutdown.

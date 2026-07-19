@@ -43,7 +43,7 @@ fn masked(slot: &LlmSlot) -> Value {
 }
 
 async fn get_llm(State(st): State<AppState>) -> AppResult<Success<Value>> {
-    let s = st.llm_settings.read().unwrap();
+    let s = st.llm_settings.read().unwrap_or_else(|e| e.into_inner());
     Ok(Success(json!({ "bulk": masked(&s.bulk), "boost": masked(&s.boost) })))
 }
 
@@ -77,13 +77,13 @@ fn apply(slot: &mut LlmSlot, upd: Option<SlotUpdate>) {
 
 async fn put_llm(State(st): State<AppState>, Json(req): Json<LlmUpdate>) -> AppResult<Success<Value>> {
     {
-        let mut s = st.llm_settings.write().unwrap();
+        let mut s = st.llm_settings.write().unwrap_or_else(|e| e.into_inner());
         apply(&mut s.bulk, req.bulk);
         apply(&mut s.boost, req.boost);
         s.save(std::path::Path::new(&st.cfg.settings_path))
             .map_err(|e| AppError::Other(e.into()))?;
     }
-    let s = st.llm_settings.read().unwrap();
+    let s = st.llm_settings.read().unwrap_or_else(|e| e.into_inner());
     Ok(Success(json!({ "bulk": masked(&s.bulk), "boost": masked(&s.boost) })))
 }
 
@@ -116,7 +116,7 @@ async fn test_llm(State(st): State<AppState>, Json(req): Json<TestReq>) -> AppRe
 /// unlike `Llm::chat` (300s timeout, 10 retries with backoff) which would hang
 /// the landing page on a dead endpoint.
 async fn llm_status(State(st): State<AppState>) -> AppResult<Success<Value>> {
-    let slot = st.llm_settings.read().unwrap().bulk.clone();
+    let slot = st.llm_settings.read().unwrap_or_else(|e| e.into_inner()).bulk.clone();
     // The ChatGPT subscription slot has no /chat/completions to probe — its
     // readiness is simply whether we hold OAuth credentials.
     let reason = if crate::chatgpt_auth::is_chatgpt_backend(&slot.base_url) {
@@ -452,6 +452,23 @@ struct OllamaPullReq {
     base_url: Option<String>,
 }
 
+/// This endpoint only ever manages the LOCAL Ollama, so the caller-supplied
+/// host must resolve to loopback. Without this the caller could aim the pull at
+/// any internal address and read the reply back off the task status — a
+/// request-and-read SSRF primitive (e.g. the cloud metadata service).
+fn local_host(host: &str) -> AppResult<String> {
+    let url = reqwest::Url::parse(host).map_err(|e| AppError::BadRequest(format!("invalid base_url: {e}")))?;
+    let loopback = matches!(url.scheme(), "http" | "https")
+        && matches!(url.host_str(), Some("127.0.0.1" | "localhost" | "[::1]"))
+        && url.username().is_empty();
+    if !loopback {
+        return Err(AppError::BadRequest(
+            "base_url must point at a local Ollama (127.0.0.1, ::1 or localhost)".into(),
+        ));
+    }
+    Ok(host.to_string())
+}
+
 /// Pull an Ollama model (e.g. "gemma4:e4b") via its native /api/pull, which
 /// streams progress. Runs as a background task; poll /ollama/pull/status.
 async fn ollama_pull(Json(req): Json<OllamaPullReq>) -> AppResult<Success<Value>> {
@@ -463,6 +480,7 @@ async fn ollama_pull(Json(req): Json<OllamaPullReq>) -> AppResult<Success<Value>
     // OpenAI-compat base_url (http://host:11434/v1) resolves to http://host:11434.
     let base = req.base_url.unwrap_or_else(|| "http://127.0.0.1:11434".into());
     let host = base.trim().trim_end_matches('/').trim_end_matches("/v1").trim_end_matches('/');
+    let host = local_host(host)?;
     let url = format!("{host}/api/pull");
 
     let task_id = crate::services::graph::tasks::create("ollama_pull", json!({ "model": model }));
@@ -479,7 +497,12 @@ async fn ollama_pull(Json(req): Json<OllamaPullReq>) -> AppResult<Success<Value>
 
 /// Stream Ollama's /api/pull NDJSON, updating task progress from total/completed.
 async fn run_ollama_pull(url: &str, model: &str, tid: &str) -> Result<(), String> {
-    let client = reqwest::Client::builder().build().map_err(|e| e.to_string())?;
+    // No redirects: following one would let a local service bounce the request
+    // back out to a non-loopback host, undoing the `local_host` check.
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|e| e.to_string())?;
     let mut resp = client
         .post(url)
         .json(&json!({ "name": model, "stream": true }))
@@ -487,9 +510,7 @@ async fn run_ollama_pull(url: &str, model: &str, tid: &str) -> Result<(), String
         .await
         .map_err(|e| format!("Ollama not reachable — is it running? ({e})"))?;
     if !resp.status().is_success() {
-        let code = resp.status();
-        let body = resp.text().await.unwrap_or_default();
-        return Err(format!("Ollama returned {code}: {}", body.chars().take(120).collect::<String>()));
+        return Err(format!("Ollama returned {}", resp.status()));
     }
     let mut buf: Vec<u8> = Vec::new();
     let mut last_pct: u8 = 0;
@@ -537,6 +558,18 @@ mod tests {
         assert_eq!(unreachable_reason("http://127.0.0.1:1234/v1", true), "LM Studio did not answer in time — is the model loaded?");
         assert!(unreachable_reason("https://api.example.com/v1", true).contains("did not respond"));
         assert!(unreachable_reason("https://api.example.com/v1", false).contains("not reachable"));
+    }
+
+    #[test]
+    fn ollama_pull_host_must_be_loopback() {
+        assert!(local_host("http://127.0.0.1:11434").is_ok());
+        assert!(local_host("http://localhost:11434").is_ok());
+        assert!(local_host("http://[::1]:11434").is_ok());
+        // The SSRF cases: cloud metadata, an internal host, a non-HTTP scheme.
+        assert!(local_host("http://169.254.169.254").is_err());
+        assert!(local_host("http://internal.corp:8080").is_err());
+        assert!(local_host("file:///etc/passwd").is_err());
+        assert!(local_host("http://127.0.0.1@evil.com").is_err());
     }
 
     #[test]

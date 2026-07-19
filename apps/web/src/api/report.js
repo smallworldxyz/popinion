@@ -9,11 +9,13 @@ export const generateReport = (data) => {
 }
 
 /**
- * Get report generation status
- * @param {string} reportId
+ * Does this run already have a report? Cheap read - lets a run link straight to
+ * its report instead of routing the user back through the setup screens.
+ * @param {string} simulationId
+ * @returns {Promise} { has_report, report_id, report_status }
  */
-export const getReportStatus = (reportId) => {
-  return service.get(`/api/report/generate/status`, { params: { report_id: reportId } })
+export const checkReport = (simulationId) => {
+  return service.get(`/api/report/check/${simulationId}`)
 }
 
 /**

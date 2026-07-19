@@ -131,7 +131,7 @@ fn now() -> String {
 /// Create the graph metadata row; returns the new graph_id.
 pub async fn create_graph(db: &GraphDb, name: &str) -> Result<String> {
     let graph_id = format!("popinion_{}", &uuid::Uuid::new_v4().simple().to_string()[..16]);
-    let c = db.conn.lock().unwrap();
+    let c = db.conn.lock().unwrap_or_else(|e| e.into_inner());
     c.execute(
         "INSERT INTO graph_meta (graph_id, name, uuid, description, created_at)
          VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -148,7 +148,7 @@ pub async fn create_graph(db: &GraphDb, name: &str) -> Result<String> {
 
 /// Store the ontology JSON on the metadata row.
 pub async fn set_ontology(db: &GraphDb, graph_id: &str, ontology: &Value) -> Result<()> {
-    let c = db.conn.lock().unwrap();
+    let c = db.conn.lock().unwrap_or_else(|e| e.into_inner());
     c.execute(
         "UPDATE graph_meta SET ontology = ?1 WHERE graph_id = ?2",
         params![ontology.to_string(), graph_id],
@@ -169,7 +169,7 @@ pub async fn upsert_entity(
     let mut props = attributes.clone();
     props.remove("uuid");
 
-    let c = db.conn.lock().unwrap();
+    let c = db.conn.lock().unwrap_or_else(|e| e.into_inner());
     let existing: Option<(String, String)> = c
         .query_row(
             "SELECT entity_types, properties FROM graph_node WHERE graph_id = ?1 AND name = ?2",
@@ -227,7 +227,7 @@ pub async fn upsert_relationship(
     // valid_at marks the fact as currently valid for downstream memory queries.
     props.insert("valid_at".into(), json!(now()));
 
-    let c = db.conn.lock().unwrap();
+    let c = db.conn.lock().unwrap_or_else(|e| e.into_inner());
     let existing: Option<String> = c
         .query_row(
             "SELECT properties FROM graph_edge
@@ -273,7 +273,7 @@ pub struct GraphInfo {
 }
 
 pub async fn graph_info(db: &GraphDb, graph_id: &str) -> Result<GraphInfo> {
-    let c = db.conn.lock().unwrap();
+    let c = db.conn.lock().unwrap_or_else(|e| e.into_inner());
     let node_count: i64 =
         c.query_row("SELECT COUNT(*) FROM graph_node WHERE graph_id = ?1", params![graph_id], |r| r.get(0))?;
     let edge_count: i64 =
@@ -292,7 +292,7 @@ pub async fn graph_info(db: &GraphDb, graph_id: &str) -> Result<GraphInfo> {
 /// Read the whole graph back as typed `GraphData` — the shape the frontend
 /// d3 viz and `sim::persona::build_bundles` consume.
 pub async fn get_graph_data(db: &GraphDb, graph_id: &str) -> Result<GraphData> {
-    let c = db.conn.lock().unwrap();
+    let c = db.conn.lock().unwrap_or_else(|e| e.into_inner());
 
     let mut nodes = Vec::new();
     let mut stmt = c.prepare(
@@ -349,7 +349,7 @@ pub async fn get_graph_data(db: &GraphDb, graph_id: &str) -> Result<GraphData> {
 
 /// Delete a graph's nodes, edges and metadata row.
 pub async fn delete_graph(db: &GraphDb, graph_id: &str) -> Result<()> {
-    let c = db.conn.lock().unwrap();
+    let c = db.conn.lock().unwrap_or_else(|e| e.into_inner());
     c.execute("DELETE FROM graph_node WHERE graph_id = ?1", params![graph_id])?;
     c.execute("DELETE FROM graph_edge WHERE graph_id = ?1", params![graph_id])?;
     c.execute("DELETE FROM graph_meta WHERE graph_id = ?1", params![graph_id])?;

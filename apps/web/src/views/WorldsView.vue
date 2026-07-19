@@ -35,6 +35,7 @@
 import { ref, onMounted } from 'vue'
 import { listSimulations } from '../api/simulation'
 import { listProjects } from '../api/graph'
+import { worldName } from '../worldName'
 
 const loading = ref(true)
 const worlds = ref([])
@@ -64,15 +65,6 @@ onMounted(async () => {
       groups.get(s.graph_id).push(s)
     }
 
-    // A World's name: the project name, unless it's the legacy "Unnamed Project"
-    // placeholder, in which case fall back to the scenario it was built to test.
-    const worldName = (p) => {
-      const n = (p?.name || '').trim()
-      if (n && n !== 'Unnamed Project') return n
-      const req = (p?.simulation_requirement || '').trim()
-      if (req) return req.length > 70 ? req.slice(0, 70) + '…' : req
-      return 'Untitled world'
-    }
     worlds.value = [...groups.entries()].map(([graphId, runs]) => {
       const p = byGraph.get(graphId)
       const entities = p?.node_count
@@ -93,24 +85,27 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.worlds { max-width: 820px; margin: 0 auto; padding: 40px 20px; color: #1a1a2e; }
-.head h1 { margin: 0 0 8px; font-size: 28px; }
-.sub { color: #555; line-height: 1.55; max-width: 620px; margin: 0 0 4px; }
-.back { display: inline-block; margin-top: 10px; color: #2563eb; text-decoration: none; font-size: 14px; }
+.worlds { min-height: 100vh; background: var(--color-bg); color: var(--color-text); }
+.head, .list, .note { max-width: 820px; margin-left: auto; margin-right: auto; }
+.head { padding: 40px 20px 0; }
+.head h1 { margin: 0 0 8px; font-size: var(--fs-xl); }
+.sub { color: var(--color-text-muted); line-height: 1.55; max-width: 620px; margin: 0 0 4px; }
+.back { display: inline-block; margin-top: 10px; color: var(--color-accent-text); text-decoration: none; font-size: var(--fs-sm); }
 .back:hover { text-decoration: underline; }
-.note { margin-top: 32px; color: #6b7280; }
-.note a { color: #2563eb; }
-.list { list-style: none; padding: 0; margin: 28px 0 0; display: flex; flex-direction: column; gap: 10px; }
+.note { padding: 32px 20px; color: var(--color-text-muted); }
+.note a { color: var(--color-accent-text); }
+.list { list-style: none; padding: 28px 20px 40px; display: flex; flex-direction: column; gap: 10px; }
 .world-link {
   display: flex; align-items: center; justify-content: space-between; gap: 16px;
-  padding: 16px 18px; border: 1px solid #e5e7eb; border-radius: 12px;
-  background: #fff; text-decoration: none; color: inherit; transition: border-color .15s, background .15s;
+  padding: 16px 18px; border: 1px solid var(--color-border); border-radius: var(--radius);
+  background: var(--color-surface); text-decoration: none; color: inherit;
+  transition: border-color .15s, background .15s;
 }
-.world-link:hover { border-color: #c7d2fe; background: #fafbff; }
+.world-link:hover { border-color: var(--color-accent); background: color-mix(in srgb, var(--color-accent) 7%, var(--color-surface)); }
 .world-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.world-name { font-weight: 650; font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.world-meta { font-size: 12.5px; color: #6b7280; }
+.world-name { font-weight: 650; font-size: var(--fs-md); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.world-meta { font-size: var(--fs-xs); color: var(--color-text-muted); }
 .world-stats { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; flex: none; }
-.runs { font-weight: 600; font-size: 14px; color: #374151; }
-.last { font-size: 12px; color: #9ca3af; }
+.runs { font-weight: 600; font-size: var(--fs-sm); }
+.last { font-size: var(--fs-2xs); color: var(--color-text-muted); }
 </style>

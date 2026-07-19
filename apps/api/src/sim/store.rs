@@ -110,7 +110,7 @@ impl Store {
         bio: &str,
         persona: &str,
     ) -> Result<()> {
-        let c = self.conn.lock().unwrap();
+        let c = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         c.execute(
             "INSERT OR REPLACE INTO user (user_id, name, user_name, bio, persona, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
@@ -127,7 +127,7 @@ impl Store {
         stance: Option<&str>,
         sentiment: Option<f64>,
     ) -> Result<i64> {
-        let c = self.conn.lock().unwrap();
+        let c = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         c.execute(
             "INSERT INTO post (user_id, content, created_at, round, stance, sentiment)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
@@ -145,7 +145,7 @@ impl Store {
         stance: Option<&str>,
         sentiment: Option<f64>,
     ) -> Result<i64> {
-        let c = self.conn.lock().unwrap();
+        let c = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         c.execute(
             "INSERT INTO comment (post_id, user_id, content, created_at, round, stance, sentiment)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
@@ -155,7 +155,7 @@ impl Store {
     }
 
     pub fn like_post(&self, post_id: i64, user_id: i64, is_dislike: bool) -> Result<()> {
-        let c = self.conn.lock().unwrap();
+        let c = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         // One reaction per (post, user): a repeat like/dislike is ignored so a
         // single agent can't inflate num_likes across the run's many rounds.
         let inserted = c.execute(
@@ -173,7 +173,7 @@ impl Store {
     }
 
     pub fn follow(&self, follower_id: i64, followee_id: i64) -> Result<()> {
-        let c = self.conn.lock().unwrap();
+        let c = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         // One edge per (follower, followee): a repeat follow is ignored so
         // num_followers stays a distinct count and re-seeding can't double it.
         let inserted = c.execute(
@@ -190,7 +190,7 @@ impl Store {
     }
 
     pub fn trace(&self, user_id: i64, action: &str, info: &Value, round: i64) -> Result<()> {
-        let c = self.conn.lock().unwrap();
+        let c = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         c.execute(
             "INSERT INTO trace (user_id, action, info, round, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
             params![user_id, action, info.to_string(), round, now()],
@@ -201,7 +201,7 @@ impl Store {
     // ---- reads used by the API ----
 
     pub fn list_posts(&self, limit: i64, offset: i64) -> Result<Vec<Value>> {
-        let c = self.conn.lock().unwrap();
+        let c = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let mut stmt = c.prepare(
             "SELECT p.post_id, p.user_id, u.user_name, p.content, p.created_at, p.round,
                     p.num_likes, p.num_dislikes, p.stance, p.sentiment
@@ -233,7 +233,7 @@ impl Store {
     /// influence and engagement shape what each agent sees, enabling echo
     /// chambers and cascades instead of one shared global timeline.
     pub fn feed_for(&self, user_id: i64, limit: i64) -> Result<Vec<Value>> {
-        let c = self.conn.lock().unwrap();
+        let c = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let mut stmt = c.prepare(
             "SELECT p.post_id, p.user_id, u.user_name, p.content, p.num_likes, p.num_dislikes,
                     p.stance,
@@ -264,7 +264,7 @@ impl Store {
     /// An agent's own most-recent posts — context for in-character interviews
     /// so answers reflect what the agent actually said in the simulation.
     pub fn posts_by_user(&self, user_id: i64, limit: i64) -> Result<Vec<Value>> {
-        let c = self.conn.lock().unwrap();
+        let c = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let mut stmt = c.prepare(
             "SELECT post_id, content, round, stance, sentiment
              FROM post WHERE user_id = ?1 ORDER BY post_id DESC LIMIT ?2",
@@ -286,7 +286,7 @@ impl Store {
     /// An agent's own most-recent comments — interview context alongside posts,
     /// so agents who only commented aren't treated as silent.
     pub fn comments_by_user(&self, user_id: i64, limit: i64) -> Result<Vec<Value>> {
-        let c = self.conn.lock().unwrap();
+        let c = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let mut stmt = c.prepare(
             "SELECT comment_id, post_id, content, round, stance
              FROM comment WHERE user_id = ?1 ORDER BY comment_id DESC LIMIT ?2",
@@ -306,12 +306,12 @@ impl Store {
     }
 
     pub fn count_posts(&self) -> Result<i64> {
-        let c = self.conn.lock().unwrap();
+        let c = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         Ok(c.query_row("SELECT COUNT(*) FROM post", [], |r| r.get(0))?)
     }
 
     pub fn list_comments(&self, post_id: i64) -> Result<Vec<Value>> {
-        let c = self.conn.lock().unwrap();
+        let c = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let mut stmt = c.prepare(
             "SELECT comment_id, post_id, user_id, content, created_at, num_likes, num_dislikes, stance, sentiment
              FROM comment WHERE post_id = ?1 ORDER BY comment_id ASC",
@@ -336,7 +336,7 @@ impl Store {
 
     /// Posts + comments per round — feeds the frontend timeline view.
     pub fn timeline(&self) -> Result<Vec<Value>> {
-        let c = self.conn.lock().unwrap();
+        let c = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let mut stmt = c.prepare(
             // Count-weighted mean sentiment: sum every non-null sentiment across
             // posts+comments and divide by their count. Averaging the two
@@ -362,7 +362,7 @@ impl Store {
 
     /// Per-agent activity summary.
     pub fn agent_stats(&self) -> Result<Vec<Value>> {
-        let c = self.conn.lock().unwrap();
+        let c = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let mut stmt = c.prepare(
             "SELECT u.user_id, u.user_name, u.num_followers,
                     (SELECT COUNT(*) FROM post p WHERE p.user_id = u.user_id) posts,
@@ -389,7 +389,7 @@ impl Store {
     /// are instrumentation (who was served what), not agent actions — they would
     /// flood the feed at one row per active agent per round.
     pub fn list_actions(&self, limit: i64) -> Result<Vec<Value>> {
-        let c = self.conn.lock().unwrap();
+        let c = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let mut stmt = c.prepare(
             "SELECT user_id, action, info, round, created_at FROM trace
              WHERE action != 'exposed' ORDER BY id DESC LIMIT ?1",
@@ -412,7 +412,7 @@ impl Store {
     /// All stance-bearing acts (posts + comments, seed excluded) — the raw rows
     /// for sim::stance math (agent distribution, exposure shift).
     pub fn stance_acts(&self) -> Result<Vec<super::stance::StanceAct>> {
-        let c = self.conn.lock().unwrap();
+        let c = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let mut stmt = c.prepare(
             "SELECT user_id, stance, round, created_at FROM post
              WHERE stance IS NOT NULL AND stance != 'seed'
@@ -445,7 +445,7 @@ impl Store {
     /// ids). Parsed in Rust — the volume is bounded (one row per active agent
     /// per round), so no SQL JSON support is needed.
     pub fn exposures(&self) -> Result<Vec<(i64, i64, Vec<i64>)>> {
-        let c = self.conn.lock().unwrap();
+        let c = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let mut stmt = c.prepare("SELECT user_id, round, info FROM trace WHERE action = 'exposed'")?;
         let rows = stmt
             .query_map([], |r| {
@@ -471,7 +471,7 @@ impl Store {
     /// The seed/injected posts (or one specific post) with engagement counts —
     /// the subjects of the /spread readout.
     pub fn spread_posts(&self, post_id: Option<i64>) -> Result<Vec<Value>> {
-        let c = self.conn.lock().unwrap();
+        let c = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let base = "SELECT p.post_id, p.user_id, p.content, p.round, p.num_likes, p.num_dislikes,
                     (SELECT COUNT(*) FROM comment cm WHERE cm.post_id = p.post_id) AS num_comments
              FROM post p";
@@ -500,7 +500,7 @@ impl Store {
     /// Aggregate stance distribution across posts — a first-class "better
     /// opinion analysis" metric that OASIS could only produce via a later pass.
     pub fn stance_distribution(&self) -> Result<Value> {
-        let c = self.conn.lock().unwrap();
+        let c = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         // Exclude seed posts: 'seed' marks the injected event, not an opinion.
         // Counting it inflates every run's shared mass and biases the honesty
         // metrics toward "no effect".
@@ -527,7 +527,7 @@ impl Store {
     /// empty while the real split lives in the comments. Any "what did the public
     /// think" read (the report especially) should use this, not `stance_distribution`.
     pub fn content_stance_distribution(&self) -> Result<Value> {
-        let c = self.conn.lock().unwrap();
+        let c = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let mut stmt = c.prepare(
             "SELECT COALESCE(stance,'unknown') s, COUNT(*) n, AVG(sentiment) avg FROM (
                  SELECT stance, sentiment FROM post WHERE stance IS NULL OR stance != 'seed'
@@ -551,7 +551,7 @@ impl Store {
     /// reader can search and quote the actual arguments. Comments are where the
     /// opinion usually lives, so a posts-only search misses the discussion.
     pub fn all_content(&self, limit: i64) -> Result<Vec<Value>> {
-        let c = self.conn.lock().unwrap();
+        let c = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let mut stmt = c.prepare(
             "SELECT x.kind, x.id, u.user_name, x.content, x.round, x.num_likes, x.stance, x.sentiment
              FROM (
@@ -582,7 +582,7 @@ impl Store {
 
     /// Count of non-seed comments (the reply volume the report should mention).
     pub fn count_comments(&self) -> Result<i64> {
-        let c = self.conn.lock().unwrap();
+        let c = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         Ok(c.query_row(
             "SELECT COUNT(*) FROM comment WHERE stance IS NULL OR stance != 'seed'",
             [],
@@ -595,7 +595,7 @@ impl Store {
     /// Posts/comments not yet independently labelled (seed excluded), for the
     /// classifier to process. Returns kind, ref_id, user_id, content, self_stance.
     pub fn unlabeled_content(&self, limit: i64) -> Result<Vec<Value>> {
-        let c = self.conn.lock().unwrap();
+        let c = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let mut stmt = c.prepare(
             "SELECT 'post' AS kind, p.post_id AS ref_id, p.user_id, p.content, p.stance
              FROM post p
@@ -630,7 +630,7 @@ impl Store {
         self_stance: Option<&str>,
         ind_stance: &str,
     ) -> Result<()> {
-        let c = self.conn.lock().unwrap();
+        let c = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         c.execute(
             "INSERT OR REPLACE INTO independent_stance (kind, ref_id, user_id, self_stance, ind_stance, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
@@ -643,7 +643,7 @@ impl Store {
     /// Low agreement means the self-reports (and headline numbers) are unreliable.
     /// The store only reads the raw labels; the math lives in sim::stance.
     pub fn stance_agreement(&self) -> Result<Value> {
-        let c = self.conn.lock().unwrap();
+        let c = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let mut stmt = c.prepare("SELECT self_stance, ind_stance FROM independent_stance")?;
         let labels = stmt
             .query_map([], |r| {
