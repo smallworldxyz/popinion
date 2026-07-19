@@ -773,6 +773,10 @@ async fn credibility(State(st): State<AppState>, Path(id): Path<String>) -> AppR
         "total": grounded + synthetic,
         "post_weighted": store.stance_distribution()?,
         "agent_weighted": store.agent_stance_distribution()?,
+        // The headline reading: synthetic agents were built during setup to
+        // populate each camp, so counting them reports a setup decision as a
+        // finding. They still argue and still move the agents around them.
+        "grounded_weighted": store.grounded_stance_distribution()?,
     })))
 }
 

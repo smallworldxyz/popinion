@@ -36,7 +36,7 @@ fn tools_description() -> &'static str {
     r#"Available tools (query the simulation's social data; every claim in the report must be grounded in tool results):
 - search_posts: find posts AND comments (replies) matching keywords - the population often voices its opinion in replies, so this covers both. parameters: {"query": "keywords", "limit": 10}
 - statistics: overall numbers - post and comment counts, both stance readings (see stance_distribution), most-liked items, round range. parameters: {}
-- stance_distribution: TWO readings of the same run. `by_agent` counts each agent ONCE by its latest stance - this is the population reading and the ONLY one to quote as the headline distribution. `by_volume` counts every post and comment, so a handful of prolific agents can dominate it; use it ONLY to describe how loud each camp was, never as the share of opinion. parameters: {}
+- stance_distribution: THREE readings of the same run. `by_grounded_agent` counts ONCE per agent compiled from a real entity in the source material - this is the ONLY one to quote as the headline distribution. `by_agent` adds the synthetic agents, which were constructed during setup to populate each camp and are therefore not evidence of anyone's opinion. `by_volume` counts every post and comment, so a few prolific agents can dominate it; use it ONLY to say how loud a camp was. parameters: {}
 - web_search: look up current real-world context outside the simulation (news, facts, background). parameters: {"query": "search terms", "max_results": 5}
 
 To call a tool, emit exactly:
@@ -103,6 +103,7 @@ pub fn execute_tool(store: &Store, name: &str, params: &Value) -> anyhow::Result
             // One agent, one vote: the population reading, and the same measure
             // /validate and /compare use, so the noise floor bounds the number
             // the report actually quotes.
+            let by_grounded = store.grounded_stance_distribution()?;
             let by_agent = store.agent_stance_distribution()?;
             // Volume, kept for "how loud was each camp" - not a share of opinion.
             let by_volume = store.content_stance_distribution()?;
@@ -139,6 +140,7 @@ pub fn execute_tool(store: &Store, name: &str, params: &Value) -> anyhow::Result
             Ok(serde_json::to_string_pretty(&json!({
                 "total_posts": total_posts,
                 "total_comments": total_comments,
+                "stance_by_grounded_agent": by_grounded,
                 "stance_by_agent": by_agent,
                 "stance_by_volume": by_volume,
                 "round_min": rounds.iter().min(),
@@ -148,6 +150,7 @@ pub fn execute_tool(store: &Store, name: &str, params: &Value) -> anyhow::Result
             }))?)
         }
         "stance_distribution" => Ok(serde_json::to_string_pretty(&json!({
+            "by_grounded_agent": store.grounded_stance_distribution()?,
             "by_agent": store.agent_stance_distribution()?,
             "by_volume": store.content_stance_distribution()?,
         }))?),
@@ -360,11 +363,14 @@ async fn generate(st: &AppState, report_id: &str) -> anyhow::Result<()> {
          Section requirements:\n\
          - Executive Summary: a 3-sentence overview of the general public mood.\n\
          - Sentiment Breakdown: the distribution across Favorable, Unfavorable, Neutral (and Mixed if warranted) \
-           with PERCENTAGES computed from `by_agent` ONLY - one agent, one vote. NEVER compute the headline \
-           percentages from `by_volume` or from raw comment counts: a few prolific agents can dominate volume, \
-           so a volume share describes who talked most, not what the population thinks. State the agent count \
-           the percentages are drawn from. You may separately note that one camp was louder than its numbers, \
-           citing `by_volume` explicitly as volume. For each category name the top 2-3 emotional \
+           with PERCENTAGES computed from `by_grounded_agent` ONLY - one vote per agent that was compiled \
+           from a real entity in the source material. State that count explicitly. NEVER compute the headline \
+           percentages from `by_volume` (a few prolific agents dominate it, so it says who talked most) nor \
+           from `by_agent` (it includes synthetic agents built during setup to populate each camp, so their \
+           stance was decided before the run began, not by it). You MUST add one sentence disclosing how many \
+           synthetic agents took part and that they are excluded from the percentages. You may separately note \
+           that a camp was louder or larger than its grounded numbers, citing the other readings by name. \
+           For each category name the top 2-3 emotional \
            drivers (anger, fear, hope, satisfaction, distrust, etc.) inferred from the actual arguments.\n\
          - Theme Analysis: extract the top ~5 recurring themes as a Markdown TABLE with columns \
            `Theme | Sentiment Association | Key Keywords`, where sentiment association is mostly favorable, \
@@ -541,8 +547,8 @@ mod tests {
         let path = dir.join("s.db");
         std::fs::remove_file(&path).ok();
         let s = Store::open(&path).unwrap();
-        s.add_user(1, "Alice", "alice", "", "activist").unwrap();
-        s.add_user(2, "Bob", "bob", "", "skeptic").unwrap();
+        s.add_user(1, "Alice", "alice", "", "activist", false).unwrap();
+        s.add_user(2, "Bob", "bob", "", "skeptic", false).unwrap();
         let p1 = s.add_post(1, "I fully support the new climate policy", 0, Some("support"), Some(0.8)).unwrap();
         s.add_post(2, "This climate policy will ruin the economy", 1, Some("oppose"), Some(-0.6)).unwrap();
         s.add_post(1, "Everyone should read the climate policy details", 2, Some("support"), Some(0.5)).unwrap();
@@ -594,6 +600,43 @@ mod tests {
         std::fs::remove_dir_all(dir).ok();
     }
 
+    /// Synthetic agents are built during setup to populate each camp, so their
+    /// stance was decided before the run started. Counting them can invert the
+    /// answer: here the real entities oppose 3 to 1, and the constructed public
+    /// turns that into a majority in favour.
+    #[test]
+    fn synthetic_agents_can_invert_the_reading_and_are_excluded_from_it() {
+        let dir = std::env::temp_dir().join(format!("popinion-report-synth-{}", std::process::id()));
+        let path = dir.join("s.db");
+        std::fs::remove_file(&path).ok();
+        let s = Store::open(&path).unwrap();
+
+        s.add_user(1, "Ministry", "ministry", "", "official", false).unwrap();
+        s.add_post(1, "We back it", 0, Some("support"), Some(0.6)).unwrap();
+        for uid in 2..5 {
+            s.add_user(uid, "Residents", &format!("res{uid}"), "", "resident", false).unwrap();
+            s.add_post(uid, "We are against it", 0, Some("oppose"), Some(-0.5)).unwrap();
+        }
+        for uid in 10..16 {
+            s.add_user(uid, "Supporter", &format!("sup{uid}"), "", "citizen", true).unwrap();
+            s.add_post(uid, "Sounds good to me", 0, Some("support"), Some(0.5)).unwrap();
+        }
+
+        let v: Value =
+            serde_json::from_str(&execute_tool(&s, "stance_distribution", &json!({})).unwrap()).unwrap();
+        // Everyone: support leads 7 to 3.
+        assert_eq!(count_of(&v["by_agent"], "support"), Some(7));
+        assert_eq!(count_of(&v["by_agent"], "oppose"), Some(3));
+        // Real entities only: opposition leads 3 to 1. Opposite conclusion.
+        assert_eq!(count_of(&v["by_grounded_agent"], "support"), Some(1));
+        assert_eq!(count_of(&v["by_grounded_agent"], "oppose"), Some(3));
+
+        let stats: Value =
+            serde_json::from_str(&execute_tool(&s, "statistics", &json!({})).unwrap()).unwrap();
+        assert!(stats["stance_by_grounded_agent"].is_array(), "the writer gets the headline reading");
+        std::fs::remove_dir_all(dir).ok();
+    }
+
     /// The reason the report must quote `by_agent`: volume answers "who talked
     /// most", not "what does the population think". One tireless supporter
     /// against three quiet opponents reads as 77% support by volume and 25% by
@@ -604,12 +647,12 @@ mod tests {
         let path = dir.join("s.db");
         std::fs::remove_file(&path).ok();
         let s = Store::open(&path).unwrap();
-        s.add_user(1, "Loud", "loud", "", "activist").unwrap();
+        s.add_user(1, "Loud", "loud", "", "activist", false).unwrap();
         for r in 0..10 {
             s.add_post(1, "Backing this all the way", r, Some("support"), Some(0.7)).unwrap();
         }
         for uid in 2..5 {
-            s.add_user(uid, "Quiet", &format!("quiet{uid}"), "", "resident").unwrap();
+            s.add_user(uid, "Quiet", &format!("quiet{uid}"), "", "resident", false).unwrap();
             s.add_post(uid, "I am against it", 0, Some("oppose"), Some(-0.5)).unwrap();
         }
 

@@ -24,6 +24,9 @@ CREATE TABLE IF NOT EXISTS user (
     bio         TEXT DEFAULT '',
     persona     TEXT DEFAULT '',
     num_followers INTEGER DEFAULT 0,
+    -- Was this agent compiled from a graph entity, or constructed to fill out
+    -- a camp? A constructed agent is not evidence of anyone's opinion.
+    synthetic   INTEGER DEFAULT 0,
     created_at  TEXT
 );
 CREATE TABLE IF NOT EXISTS post (
@@ -99,6 +102,14 @@ impl Store {
         // failing immediately with SQLITE_BUSY.
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA busy_timeout=5000;")?;
         conn.execute_batch(SCHEMA)?;
+        // Simulations created before provenance was recorded have no such
+        // column; their agents read as grounded, which is what they were.
+        let has_synthetic = conn
+            .prepare("SELECT 1 FROM pragma_table_info('user') WHERE name = 'synthetic'")?
+            .exists([])?;
+        if !has_synthetic {
+            conn.execute_batch("ALTER TABLE user ADD COLUMN synthetic INTEGER DEFAULT 0;")?;
+        }
         Ok(Store { conn: Mutex::new(conn) })
     }
 
@@ -109,12 +120,13 @@ impl Store {
         user_name: &str,
         bio: &str,
         persona: &str,
+        synthetic: bool,
     ) -> Result<()> {
         let c = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         c.execute(
-            "INSERT OR REPLACE INTO user (user_id, name, user_name, bio, persona, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![user_id, name, user_name, bio, persona, now()],
+            "INSERT OR REPLACE INTO user (user_id, name, user_name, bio, persona, synthetic, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![user_id, name, user_name, bio, persona, synthetic as i64, now()],
         )?;
         Ok(())
     }
@@ -411,15 +423,32 @@ impl Store {
 
     /// All stance-bearing acts (posts + comments, seed excluded) — the raw rows
     /// for sim::stance math (agent distribution, exposure shift).
+    /// Stance acts by agents compiled from real graph entities only.
+    ///
+    /// A synthetic agent was constructed to populate a camp, so counting it as
+    /// opinion measures a decision made during setup rather than anything the
+    /// run discovered. It still argues, and still moves the agents around it —
+    /// it just is not evidence of what anyone thinks.
+    pub fn grounded_stance_acts(&self) -> Result<Vec<super::stance::StanceAct>> {
+        self.stance_acts_where("AND u.synthetic = 0")
+    }
+
     pub fn stance_acts(&self) -> Result<Vec<super::stance::StanceAct>> {
+        self.stance_acts_where("")
+    }
+
+    fn stance_acts_where(&self, extra: &str) -> Result<Vec<super::stance::StanceAct>> {
         let c = self.conn.lock().unwrap_or_else(|e| e.into_inner());
-        let mut stmt = c.prepare(
-            "SELECT user_id, stance, round, created_at FROM post
-             WHERE stance IS NOT NULL AND stance != 'seed'
+        // `extra` is a literal from this module, never caller input.
+        let mut stmt = c.prepare(&format!(
+            "SELECT p.user_id, p.stance, p.round, p.created_at FROM post p
+             JOIN user u ON u.user_id = p.user_id
+             WHERE p.stance IS NOT NULL AND p.stance != 'seed' {extra}
              UNION ALL
-             SELECT user_id, stance, round, created_at FROM comment
-             WHERE stance IS NOT NULL AND stance != 'seed'",
-        )?;
+             SELECT m.user_id, m.stance, m.round, m.created_at FROM comment m
+             JOIN user u ON u.user_id = m.user_id
+             WHERE m.stance IS NOT NULL AND m.stance != 'seed' {extra}"
+        ))?;
         let acts = stmt
             .query_map([], |r| {
                 Ok(super::stance::StanceAct {
@@ -437,6 +466,12 @@ impl Store {
     /// stance-bearing action (post or comment). This is the honest population
     /// metric — post-weighted counts let one hyperactive agent dominate.
     /// The store only reads the raw acts; the math lives in sim::stance.
+    /// The same reading over grounded agents only — the constituencies the
+    /// graph actually found, with the constructed public left out.
+    pub fn grounded_stance_distribution(&self) -> Result<Value> {
+        Ok(super::stance::agent_distribution(&self.grounded_stance_acts()?))
+    }
+
     pub fn agent_stance_distribution(&self) -> Result<Value> {
         Ok(super::stance::agent_distribution(&self.stance_acts()?))
     }
@@ -670,7 +705,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("popinion-test-{}", std::process::id()));
         let path = dir.join("s.db");
         let s = Store::open(&path).unwrap();
-        s.add_user(1, "Alice", "alice", "bio", "persona").unwrap();
+        s.add_user(1, "Alice", "alice", "bio", "persona", false).unwrap();
         let p = s.add_post(1, "I support the policy", 0, Some("support"), Some(0.8)).unwrap();
         s.add_comment(p, 1, "agreed", 0, Some("support"), Some(0.6)).unwrap();
         s.like_post(p, 1, false).unwrap();
@@ -690,8 +725,8 @@ mod tests {
     fn follow_and_like_are_idempotent() {
         let dir = std::env::temp_dir().join(format!("popinion-idem-{}", std::process::id()));
         let s = Store::open(&dir.join("s.db")).unwrap();
-        s.add_user(1, "A", "a", "", "").unwrap();
-        s.add_user(2, "B", "b", "", "").unwrap();
+        s.add_user(1, "A", "a", "", "", false).unwrap();
+        s.add_user(2, "B", "b", "", "", false).unwrap();
         let p = s.add_post(2, "hi", 0, None, None).unwrap();
 
         // Repeated follow / like from the same agent must not inflate counts.
@@ -711,7 +746,7 @@ mod tests {
     fn independent_labels_drive_distribution_and_agreement() {
         let dir = std::env::temp_dir().join(format!("popinion-indep-{}", std::process::id()));
         let s = Store::open(&dir.join("s.db")).unwrap();
-        s.add_user(1, "u", "u", "", "").unwrap();
+        s.add_user(1, "u", "u", "", "", false).unwrap();
         let p1 = s.add_post(1, "I back the plan", 0, Some("support"), None).unwrap();
         let p2 = s.add_post(1, "actually this is terrible", 0, Some("support"), None).unwrap();
         // Independent classifier agrees on p1, disagrees on p2 (self=support, indep=oppose).
@@ -742,7 +777,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("popinion-feed-{}", std::process::id()));
         let s = Store::open(&dir.join("s.db")).unwrap();
         for id in 1..=3 {
-            s.add_user(id, "u", "u", "", "").unwrap();
+            s.add_user(id, "u", "u", "", "", false).unwrap();
         }
         let p_followee = s.add_post(2, "from someone I follow", 0, Some("support"), None).unwrap();
         let p_trending = s.add_post(3, "popular but not followed", 0, Some("oppose"), None).unwrap();
@@ -764,8 +799,8 @@ mod tests {
     fn exposure_rows_and_spread_posts_roundtrip() {
         let dir = std::env::temp_dir().join(format!("popinion-spread-{}", std::process::id()));
         let s = Store::open(&dir.join("s.db")).unwrap();
-        s.add_user(1, "A", "a", "", "").unwrap();
-        s.add_user(2, "B", "b", "", "").unwrap();
+        s.add_user(1, "A", "a", "", "", false).unwrap();
+        s.add_user(2, "B", "b", "", "", false).unwrap();
         let seed = s.add_post(-1, "the event", 0, Some("seed"), None).unwrap();
         let normal = s.add_post(1, "a reaction", 1, Some("support"), None).unwrap();
         s.add_comment(seed, 2, "reply on the event", 1, Some("oppose"), None).unwrap();
@@ -796,8 +831,8 @@ mod tests {
     fn agent_weighted_counts_one_vote_per_agent() {
         let dir = std::env::temp_dir().join(format!("popinion-agentw-{}", std::process::id()));
         let s = Store::open(&dir.join("s.db")).unwrap();
-        s.add_user(1, "A", "a", "", "").unwrap();
-        s.add_user(2, "B", "b", "", "").unwrap();
+        s.add_user(1, "A", "a", "", "", false).unwrap();
+        s.add_user(2, "B", "b", "", "", false).unwrap();
         // Agent 1 is hyperactive: 3 support posts. Agent 2: one oppose comment.
         for _ in 0..3 {
             s.add_post(1, "yes", 0, Some("support"), Some(0.5)).unwrap();
