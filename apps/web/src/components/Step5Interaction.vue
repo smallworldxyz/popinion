@@ -218,7 +218,7 @@
                   <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
                   <circle cx="12" cy="7" r="4"></circle>
                 </svg>
-                <span>{{ selectedAgent ? selectedAgent.username : 'Chat with any agent in the world' }}</span>
+                <span>{{ selectedAgent ? agentDisplayName(selectedAgent) : 'Chat with any agent in the world' }}</span>
                 <svg class="dropdown-arrow" :class="{ open: showAgentDropdown }" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
                   <polyline points="6 9 12 15 18 9"></polyline>
                 </svg>
@@ -231,10 +231,10 @@
                   class="dropdown-item"
                   @click="selectAgent(agent, idx)"
                 >
-                  <div class="agent-avatar">{{ (agent.username || 'A')[0] }}</div>
+                  <div class="agent-avatar">{{ (agent.name || agent.user_name || 'A')[0] }}</div>
                   <div class="agent-info">
-                    <span class="agent-name">{{ agent.username }}</span>
-                    <span class="agent-role">{{ agent.profession || 'Unknown Profession' }}</span>
+                    <span class="agent-name">{{ agentDisplayName(agent) }}</span>
+                    <span class="agent-role">{{ agentRole(agent) }}</span>
                   </div>
                 </div>
               </div>
@@ -329,12 +329,12 @@
           <!-- Agent Profile Card -->
           <div v-if="chatTarget === 'agent' && selectedAgent" class="agent-profile-card">
             <div class="profile-card-header">
-              <div class="profile-card-avatar">{{ (selectedAgent.username || 'A')[0] }}</div>
+              <div class="profile-card-avatar">{{ (selectedAgent.name || selectedAgent.user_name || 'A')[0] }}</div>
               <div class="profile-card-info">
-                <div class="profile-card-name">{{ selectedAgent.username }}</div>
+                <div class="profile-card-name">{{ agentDisplayName(selectedAgent) }}</div>
                 <div class="profile-card-meta">
-                  <span v-if="selectedAgent.name" class="profile-card-handle">@{{ selectedAgent.name }}</span>
-                  <span class="profile-card-profession">{{ selectedAgent.profession || 'Unknown Profession' }}</span>
+                  <span v-if="selectedAgent.user_name" class="profile-card-handle">@{{ selectedAgent.user_name }}</span>
+                  <span class="profile-card-profession">{{ agentRole(selectedAgent) }}</span>
                 </div>
               </div>
               <!-- Injection badge for single agent -->
@@ -380,12 +380,12 @@
             >
               <div class="message-avatar">
                 <span v-if="msg.role === 'user'">U</span>
-                <span v-else>{{ msg.role === 'assistant' && chatTarget === 'report_agent' ? 'R' : (selectedAgent?.username?.[0] || 'A') }}</span>
+                <span v-else>{{ msg.role === 'assistant' && chatTarget === 'report_agent' ? 'R' : (selectedAgent?.name?.[0] || selectedAgent?.user_name?.[0] || 'A') }}</span>
               </div>
               <div class="message-content">
                 <div class="message-header">
                   <span class="sender-name">
-                    {{ msg.role === 'user' ? 'You' : (chatTarget === 'report_agent' ? 'Report Agent' : (selectedAgent?.username || 'Agent')) }}
+                    {{ msg.role === 'user' ? 'You' : (chatTarget === 'report_agent' ? 'Report Agent' : (agentDisplayName(selectedAgent) || 'Agent')) }}
                   </span>
                   <span class="message-time">{{ formatTime(msg.timestamp) }}</span>
                 </div>
@@ -394,7 +394,7 @@
             </div>
             <div v-if="isSending" class="chat-message assistant">
               <div class="message-avatar">
-                <span>{{ chatTarget === 'report_agent' ? 'R' : (selectedAgent?.username?.[0] || 'A') }}</span>
+                <span>{{ chatTarget === 'report_agent' ? 'R' : (selectedAgent?.name?.[0] || selectedAgent?.user_name?.[0] || 'A') }}</span>
               </div>
               <div class="message-content">
                 <div class="typing-indicator">
@@ -457,8 +457,8 @@
                   class="participant-chip"
                   :class="{ muted: mutedParticipants.has(idx) }"
                 >
-                  <span class="chip-avatar">{{ (profiles[idx]?.username || 'A')[0] }}</span>
-                  <span class="chip-name">{{ profiles[idx]?.username || `Agent ${idx}` }}</span>
+                  <span class="chip-avatar">{{ (profiles[idx]?.name || profiles[idx]?.user_name || 'A')[0] }}</span>
+                  <span class="chip-name">{{ agentDisplayName(profiles[idx]) || `Agent ${idx}` }}</span>
                   <!-- Injection badge (clickable) -->
                   <button 
                     v-if="getAgentInjectionCount(idx) > 0" 
@@ -671,6 +671,13 @@ const cleanAgentName = (name) => {
     .join(' ')
 }
 
+// Persona field helpers — profiles carry `user_name` (handle), `name` (display),
+// `profession`, and `faction`. Grounded entities have no profession, so fall
+// back to a faction label (matches Step2EnvSetup).
+const factionLabel = (faction) => faction === 'pro' ? 'Supporter' : faction === 'con' ? 'Opponent' : 'Neutral'
+const agentDisplayName = (a) => a?.name || cleanAgentName(a?.user_name)
+const agentRole = (a) => a?.profession || factionLabel(a?.faction)
+
 // Refs
 const leftPanel = ref(null)
 const rightPanel = ref(null)
@@ -753,7 +760,7 @@ const selectAgent = (agent, idx) => {
   
   // Restore this Agent's chat history
   chatHistory.value = chatHistoryCache.value[`agent_${idx}`] || []
-  addLog(`Select Chat Target: ${agent.username}`)
+  addLog(`Select Chat Target: ${agentDisplayName(agent)}`)
 }
 
 const formatTime = (timestamp) => {
@@ -906,7 +913,7 @@ const sendToAgent = async (message) => {
     throw new Error('Please select a simulation agent first')
   }
   
-  addLog(`Sending to ${selectedAgent.value.username}: ${message.substring(0, 50)}...`)
+  addLog(`Sending to ${agentDisplayName(selectedAgent.value)}: ${message.substring(0, 50)}...`)
   
   // Build prompt with chat history
   let prompt = message
@@ -956,7 +963,7 @@ const sendToAgent = async (message) => {
         content: responseContent,
         timestamp: new Date().toISOString()
       })
-      addLog(`${selectedAgent.value.username} has replied`)
+      addLog(`${agentDisplayName(selectedAgent.value)} has replied`)
     } else {
       throw new Error('No response data')
     }
@@ -980,8 +987,8 @@ const panelThreadRef = ref(null)
 const profilesAsEntities = computed(() => {
   return profiles.value.map((p, idx) => ({
     uuid: String(idx),  // Use uuid to match EntitySelectionModal expectations
-    name: p.username || `Agent ${idx}`,
-    type: p.profession || 'Participant',
+    name: agentDisplayName(p) || `Agent ${idx}`,
+    type: agentRole(p),
     relationship_count: 0
   }))
 })
@@ -990,14 +997,14 @@ const profilesAsEntities = computed(() => {
 const profilesByType = computed(() => {
   const grouped = {}
   profiles.value.forEach((p, idx) => {
-    const type = p.profession || 'Other'
+    const type = agentRole(p) || 'Other'
     if (!grouped[type]) {
       grouped[type] = { count: 0, entities: [] }
     }
     grouped[type].count++
     grouped[type].entities.push({
       uuid: String(idx),  // Use uuid to match EntitySelectionModal expectations
-      name: p.username || `Agent ${idx}`,
+      name: agentDisplayName(p) || `Agent ${idx}`,
       type: type
     })
   })
@@ -1062,10 +1069,10 @@ const toggleMute = (idx) => {
   const newSet = new Set(mutedParticipants.value)
   if (newSet.has(idx)) {
     newSet.delete(idx)  // Unmute
-    addLog(`Unmuted ${profiles.value[idx]?.username || 'Agent'}`)
+    addLog(`Unmuted ${agentDisplayName(profiles.value[idx]) || 'Agent'}`)
   } else {
     newSet.add(idx)     // Mute
-    addLog(`Muted ${profiles.value[idx]?.username || 'Agent'}`)
+    addLog(`Muted ${agentDisplayName(profiles.value[idx]) || 'Agent'}`)
   }
   mutedParticipants.value = newSet
 }
@@ -1119,7 +1126,7 @@ const checkSelection = () => {
     if (chatMsg) {
       const isUser = chatMsg.classList.contains('user')
       if (!isUser) {
-        source = { agent: chatTarget.value === 'report_agent' ? 'Report Agent' : (selectedAgent.value?.username || 'Agent'), context: chatTarget.value === 'report_agent' ? 'report_chat' : 'agent_chat' }
+        source = { agent: chatTarget.value === 'report_agent' ? 'Report Agent' : (agentDisplayName(selectedAgent.value) || 'Agent'), context: chatTarget.value === 'report_agent' ? 'report_chat' : 'agent_chat' }
       }
     }
     
@@ -1311,8 +1318,8 @@ const sendPanelMessage = async () => {
         
         responses.push({
           agent_id: agentIdx,
-          agent_name: agent?.username || `Agent ${agentIdx}`,
-          profession: agent?.profession,
+          agent_name: agentDisplayName(agent) || `Agent ${agentIdx}`,
+          profession: agentRole(agent),
           answer: responseContent
         })
       }
