@@ -183,12 +183,11 @@ test.describe('Settings — model selection', () => {
     await expect(page.locator('.card')).toHaveCount(1)
   })
 
-  test('remote and local providers are separated by tab', async ({ page }) => {
+  test('only remote/hosted providers are offered — nothing local', async ({ page }) => {
     await openSettings(page)
-    await page.getByRole('tab', { name: 'Local' }).click()
-    await expect(page.locator('.prov')).toHaveText([/Ollama/, /LM Studio/])
+    // No tab switcher survives: everything shown is a hosted provider.
+    await expect(page.getByRole('tab')).toHaveCount(0)
 
-    await page.getByRole('tab', { name: 'Remote' }).click()
     const labels = await page.locator('.prov-label').allInnerTexts()
     expect(labels).toEqual(expect.arrayContaining(['Moonshot (Kimi)', 'DeepSeek', 'Anthropic']))
     // Same vendor, two products — the label must say which is which, for both
@@ -197,6 +196,9 @@ test.describe('Settings — model selection', () => {
     expect(labels).toContain('OpenAI (API key)')
     expect(labels).toContain('Z.ai GLM (coding plan)')
     expect(labels).toContain('Z.ai GLM (pay per token)')
+    // Local providers must not be selectable anymore.
+    expect(labels).not.toContain('Ollama')
+    expect(labels).not.toContain('LM Studio')
   })
 
   test('the Z.ai coding plan points at the subscription endpoint, not the wallet one', async ({ page }) => {
@@ -205,7 +207,6 @@ test.describe('Settings — model selection', () => {
 
     // Same key authenticates on both; the wrong base_url silently bills wallet
     // balance instead of the plan, so the two must not be confusable.
-    await page.getByRole('tab', { name: 'Remote' }).click()
     await page.locator('.prov', { hasText: 'Z.ai GLM (coding plan)' }).click()
     await expect(baseUrl).toHaveValue('https://api.z.ai/api/coding/paas/v4')
 
@@ -216,7 +217,6 @@ test.describe('Settings — model selection', () => {
   test('picking ChatGPT needs no key and no typing', async ({ page }) => {
     await stubChatgptSession(page, false)
     await openSettings(page)
-    await page.getByRole('tab', { name: 'Remote' }).click()
     await page.locator('.prov', { hasText: 'ChatGPT (subscription)' }).click()
 
     // A model is preselected, so a working setup needs no typing. It must be one
@@ -232,22 +232,11 @@ test.describe('Settings — model selection', () => {
   test('a signed-in ChatGPT session shows the account, not a sign-in prompt', async ({ page }) => {
     await stubChatgptSession(page, true)
     await openSettings(page)
-    await page.getByRole('tab', { name: 'Remote' }).click()
     await page.locator('.prov', { hasText: 'ChatGPT (subscription)' }).click()
 
     await expect(page.getByText('someone@example.com · plus')).toBeVisible()
     await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible()
     await expect(page.getByRole('button', { name: /Sign in with ChatGPT/ })).toHaveCount(0)
-  })
-
-  test('the Ollama pull control stays out of the Remote tab', async ({ page }) => {
-    await openSettings(page)
-    await page.getByRole('tab', { name: 'Local' }).click()
-    await page.locator('.prov', { hasText: 'Ollama' }).click()
-    await expect(page.getByText('Pull a model')).toBeVisible()
-
-    await page.getByRole('tab', { name: 'Remote' }).click()
-    await expect(page.getByText('Pull a model')).toHaveCount(0)
   })
 
   test('the close button and the readiness badge never collide', async ({ page }) => {

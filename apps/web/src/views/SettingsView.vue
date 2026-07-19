@@ -6,8 +6,8 @@
       <button class="close" aria-label="Close settings" @click="closeSettings">✕</button>
       <h1>Model Settings</h1>
       <p class="sub">
-        Pick the model Popinion runs on. One model does everything — local providers need no key,
-        and signing in with ChatGPT needs no key either.
+        Pick the model Popinion runs on. One model does everything — pick a hosted provider and add
+        its API key, or sign in with ChatGPT and skip the key entirely.
       </p>
       <div class="head-row">
         <div v-if="ready" class="ready-line" :class="ready.ready ? 'ready-ok' : 'ready-warn'">
@@ -22,38 +22,16 @@
         <h3>{{ c.title }}</h3>
         <p class="card-hint">{{ c.hint }}</p>
 
-        <div class="tabs" role="tablist">
-          <button
-            v-for="t in ['remote', 'local']" :key="t"
-            class="tab" :class="{ on: tabOf(c.key) === t }"
-            role="tab" :aria-selected="tabOf(c.key) === t"
-            @click="tabs[c.key] = t"
-          >
-            {{ t === 'remote' ? 'Remote' : 'Local' }}
-          </button>
-        </div>
-        <p class="tab-hint">
-          {{ tabOf(c.key) === 'remote'
-            ? 'Hosted providers — a subscription or an API key. Fast enough to finish a run.'
-            : 'Runs on this machine — free and private, but needs a GPU to be practical.' }}
-        </p>
-
         <div class="prov-grid">
           <button
-            v-for="p in providersFor(tabOf(c.key))" :key="p.id"
+            v-for="p in providers" :key="p.id"
             class="prov" :class="{ on: sameUrl(c.state.base_url, p.base_url) }"
             @click="pickProvider(c.state, p)"
           >
             <span class="prov-label">{{ p.label }}</span>
-            <span v-if="p.kind === 'local'" class="dot" :class="p.running ? 'up' : 'down'"
-                  :title="p.running ? 'running' : 'not running'"></span>
           </button>
         </div>
-        <p v-if="inTab(c)" class="prov-hint">{{ pickedFor(c.state).hint }}</p>
-        <p v-else-if="pickedFor(c.state)" class="prov-hint other">
-          This slot currently uses <b>{{ pickedFor(c.state).label }}</b>
-          ({{ pickedFor(c.state).kind }}) — pick one above to switch it.
-        </p>
+        <p v-if="pickedFor(c.state)" class="prov-hint">{{ pickedFor(c.state).hint }}</p>
 
         <label>Base URL</label>
         <input class="input" v-model="c.state.base_url" placeholder="https://…/v1" />
@@ -66,44 +44,6 @@
             class="chip" :class="{ on: c.state.model === m }"
             @click="c.state.model = m"
           >{{ m }}</button>
-        </div>
-
-        <!-- LM Studio: manage local models (list → load/unload → download). -->
-        <div v-if="isLmStudio(c.state) && inTab(c)" class="lms">
-          <div class="lms-head">
-            <span>LM Studio models</span>
-            <button class="mini" @click="refreshLms">↻</button>
-          </div>
-          <div v-if="!lmModels.length" class="lms-empty">No models downloaded yet.</div>
-          <div v-for="m in lmModels" :key="m.id" class="lms-row" :class="{ sel: c.state.model === m.id }">
-            <span class="lms-name" @click="c.state.model = m.id" title="Use for this slot">{{ m.id }}</span>
-            <span class="badge" :class="m.state">{{ m.state === 'loaded' ? 'loaded' : 'idle' }}</span>
-            <button v-if="m.state !== 'loaded'" class="mini" :disabled="busy[m.id]" @click="loadModel(m.id)">
-              {{ busy[m.id] ? '…' : 'Load' }}
-            </button>
-            <button v-else class="mini" :disabled="busy[m.id]" @click="unloadModel(m.id)">
-              {{ busy[m.id] ? '…' : 'Unload' }}
-            </button>
-          </div>
-          <div class="lms-dl">
-            <input class="input" v-model="dlModel" placeholder="download hub id, e.g. openai/gpt-oss-20b" />
-            <button class="mini" :disabled="dlBusy" @click="downloadModel">{{ dlBusy ? '…' : 'Get' }}</button>
-          </div>
-          <div v-if="dlStatus" class="lms-status" :class="{ err: dlStatus.err }">{{ dlStatus.msg }}</div>
-        </div>
-
-        <!-- Ollama: pull a model and enable it, or pick an already-installed one. -->
-        <div v-if="isOllama(c.state) && inTab(c)" class="lms">
-          <div class="lms-head">
-            <span>Pull a model</span>
-            <button class="mini" @click="reloadProviders" title="Rescan installed models">↻</button>
-          </div>
-          <div v-if="!ollamaModels.length" class="lms-empty">No models installed yet — pull one below.</div>
-          <div class="lms-dl">
-            <input class="input" v-model="pullModel" placeholder="model to pull, e.g. gemma4:e4b" />
-            <button class="mini" :disabled="pullBusy" @click="pullOllama(c.state)">{{ pullBusy ? '…' : 'Pull' }}</button>
-          </div>
-          <div v-if="pullStatus" class="lms-status" :class="{ err: pullStatus.err }">{{ pullStatus.msg }}</div>
         </div>
 
         <!-- ChatGPT subscription: OAuth sign-in instead of an API key. -->
@@ -124,7 +64,7 @@
         </div>
 
         <template v-else>
-          <label>{{ c.state.has_key ? 'API key (leave blank to keep current)' : 'API key (optional for local)' }}</label>
+          <label>{{ c.state.has_key ? 'API key (leave blank to keep current)' : 'API key' }}</label>
           <input class="input" type="password" v-model="c.state.key"
                  :placeholder="c.state.has_key ? '•••••••• saved' : ''" />
 
@@ -160,11 +100,19 @@
 import { reactive, ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import {
   getLlmSettings, getLlmStatus, updateLlmSettings, testLlm, getProviders,
-  lmsModels, lmsLoad, lmsUnload, lmsDownload, lmsDownloadStatus,
-  ollamaPull, ollamaPullStatus,
   chatgptLogin, chatgptStatus, chatgptLogout,
 } from '../api/settings'
 import { settingsOpen, closeSettings } from '../settingsDrawer'
+
+// In Tauri, window.open won't reach the system browser; use the opener plugin.
+const openExternal = async (url) => {
+  if (typeof window !== 'undefined' && ('__TAURI_INTERNALS__' in window || '__TAURI__' in window)) {
+    const { openUrl } = await import('@tauri-apps/plugin-opener')
+    await openUrl(url)
+  } else {
+    window.open(url, '_blank')
+  }
+}
 
 const bulk = reactive({ base_url: '', model: '', has_key: false, key: '' })
 const boost = reactive({ base_url: '', model: '', has_key: false, key: '' })
@@ -196,22 +144,12 @@ const status = reactive({ bulk: null, boost: null })
 const saving = ref(false)
 const savedMsg = ref('')
 
-// Which tab a card shows. Unset → inferred from the slot's saved base_url, so a
-// card configured for Ollama opens on Local.
-const tabs = reactive({ bulk: null, boost: null })
-const isLocalUrl = (u) => /127\.0\.0\.1|localhost/.test(u || '')
-const tabOf = (key) => tabs[key] ?? (isLocalUrl((key === 'bulk' ? bulk : boost).base_url) ? 'local' : 'remote')
-
 // localhost and 127.0.0.1 are the same server; a saved slot may use either.
 const normUrl = (u) => (u || '').trim().replace(/\/+$/, '').replace('://localhost', '://127.0.0.1')
 const sameUrl = (a, b) => normUrl(a) === normUrl(b)
 
-const providersFor = (kind) => providers.value.filter(p => p.kind === kind)
 const pickedFor = (state) => providers.value.find(p => sameUrl(p.base_url, state.base_url))
 const modelsFor = (state) => pickedFor(state)?.models || []
-// Is the slot's provider the one this tab is showing? Keeps local-only controls
-// (Ollama pull, LM Studio loader) out of the Remote tab.
-const inTab = (c) => pickedFor(c.state)?.kind === tabOf(c.key)
 
 // Readiness of the saved bulk slot (what Start Engine uses); null while probing.
 const ready = ref(null)
@@ -223,64 +161,6 @@ async function refreshReady() {
 function pickProvider(state, p) {
   state.base_url = p.base_url
   state.model = p.models?.[0] || ''
-}
-
-// ---- LM Studio model management ----
-const lmModels = ref([])
-const busy = reactive({})
-const dlModel = ref('')
-const dlBusy = ref(false)
-const dlStatus = ref(null)
-
-const isLmStudio = (state) => (state.base_url || '').includes(':1234')
-
-async function refreshLms() {
-  try {
-    const r = await lmsModels()
-    lmModels.value = r.data.models || []
-  } catch (e) { lmModels.value = [] }
-}
-async function loadModel(id) {
-  busy[id] = true
-  try {
-    const r = await lmsLoad(id)
-    if (!r.data.ok) dlStatus.value = { err: true, msg: r.data.error || 'load failed' }
-  } finally { busy[id] = false; await refreshLms(); refreshReady() }
-}
-async function unloadModel(id) {
-  busy[id] = true
-  try { await lmsUnload(id) } finally { busy[id] = false; await refreshLms(); refreshReady() }
-}
-async function downloadModel() {
-  const id = dlModel.value.trim()
-  if (!id) return
-  dlBusy.value = true
-  dlStatus.value = { err: false, msg: 'starting…' }
-  try {
-    const r = await lmsDownload(id)
-    pollDownload(r.data.task_id)
-  } catch (e) {
-    dlBusy.value = false
-    dlStatus.value = { err: true, msg: 'failed to start' }
-  }
-}
-async function pollDownload(taskId) {
-  try {
-    const t = (await lmsDownloadStatus(taskId)).data
-    if (t.status === 'completed') {
-      dlStatus.value = { err: false, msg: 'downloaded ✓' }
-      dlBusy.value = false; dlModel.value = ''; await refreshLms()
-    } else if (t.status === 'failed') {
-      dlStatus.value = { err: true, msg: t.error || 'download failed' }
-      dlBusy.value = false
-    } else {
-      dlStatus.value = { err: false, msg: t.message || 'downloading…' }
-      setTimeout(() => pollDownload(taskId), 3000)
-    }
-  } catch (e) {
-    dlStatus.value = { err: true, msg: 'status check failed' }
-    dlBusy.value = false
-  }
 }
 
 // ---- ChatGPT subscription sign-in (OAuth) ----
@@ -298,7 +178,7 @@ async function cgLogin() {
   cgBusy.value = true; cgErr.value = false; cgMsg.value = 'Opening browser…'
   try {
     const { auth_url } = (await chatgptLogin()).data
-    window.open(auth_url, '_blank')
+    await openExternal(auth_url)
     cgMsg.value = 'Complete sign-in in the opened tab…'
     pollChatgpt()
   } catch (e) {
@@ -324,57 +204,12 @@ async function cgLogout() {
   refreshReady()
 }
 
-// ---- Ollama model management (native pull; enables the model on success) ----
-const ollamaModels = ref([])
-const pullModel = ref('gemma4:e4b')
-const pullBusy = ref(false)
-const pullStatus = ref(null)
-
-const isOllama = (state) => (state.base_url || '').includes(':11434')
-
-function refreshOllama() {
-  const o = providers.value.find(d => d.id === 'ollama')
-  ollamaModels.value = o ? (o.models || []) : []
-}
+// Remote/hosted providers only — filter out any local providers the backend
+// still advertises so nothing local is selectable.
 async function reloadProviders() {
   try {
-    providers.value = (await getProviders()).data.providers || []
+    providers.value = ((await getProviders()).data.providers || []).filter(p => p.kind !== 'local')
   } catch (e) { /* best-effort */ }
-  refreshOllama()
-}
-async function pullOllama(state) {
-  const m = pullModel.value.trim()
-  if (!m) return
-  pullBusy.value = true
-  pullStatus.value = { err: false, msg: 'starting…' }
-  try {
-    const r = await ollamaPull(m, state.base_url)
-    pollPull(r.data.task_id, state)
-  } catch (e) {
-    pullBusy.value = false
-    pullStatus.value = { err: true, msg: 'failed to start — is Ollama running?' }
-  }
-}
-async function pollPull(taskId, state) {
-  try {
-    const t = (await ollamaPullStatus(taskId)).data
-    if (t.status === 'completed') {
-      state.model = pullModel.value.trim()   // enable the pulled model in this slot
-      await save()                           // persist + activate immediately
-      pullStatus.value = { err: false, msg: 'downloaded & enabled ✓' }
-      pullBusy.value = false
-      await reloadProviders()
-    } else if (t.status === 'failed') {
-      pullStatus.value = { err: true, msg: t.error || 'pull failed' }
-      pullBusy.value = false
-    } else {
-      pullStatus.value = { err: false, msg: t.message || 'downloading…' }
-      setTimeout(() => pollPull(taskId, state), 1500)
-    }
-  } catch (e) {
-    pullStatus.value = { err: true, msg: 'status check failed' }
-    pullBusy.value = false
-  }
 }
 
 // Every success response is `{ success: true, data: <payload> }` — read `.data`.
@@ -388,7 +223,6 @@ async function load() {
   // duplicated bulk into boost, which isn't a split — it just looked like one.
   useBoost.value = !!(boost.base_url || '').trim() &&
     !(sameUrl(boost.base_url, bulk.base_url) && boost.model === bulk.model)
-  refreshLms() // best-effort; only shown when a slot uses LM Studio
   refreshChatgpt() // best-effort; only shown when a slot uses ChatGPT
   refreshReady()
 }
@@ -500,21 +334,13 @@ async function save() {
 .card-hint { color: #6b7280; font-size: 13px; margin: 0 0 14px; }
 .card label { display: block; font-size: 12px; color: #374151; margin: 12px 0 4px; font-weight: 600; }
 
-/* Remote vs local tabs */
-.tabs { display: flex; gap: 4px; background: #f3f4f6; padding: 3px; border-radius: 8px; }
-.tab { flex: 1; padding: 6px 10px; border: none; background: transparent; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; color: #6b7280; font-family: inherit; }
-.tab.on { background: #fff; color: #111827; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
-.tab-hint { font-size: 11px; color: #9ca3af; margin: 8px 0 10px; line-height: 1.4; }
-.prov-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+/* Hosted provider picker */
+.prov-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 4px; }
 .prov { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 8px 10px; border: 1px solid #e5e7eb; background: #fff; border-radius: 8px; cursor: pointer; font-size: 12px; font-family: inherit; color: #374151; }
 .prov:hover { border-color: #d1d5db; background: #fafafa; }
 .prov.on { border-color: #2563eb; background: #eff6ff; color: #1d4ed8; font-weight: 600; }
 .prov-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dot { width: 6px; height: 6px; border-radius: 999px; flex: none; }
-.dot.up { background: #10b981; }
-.dot.down { background: #d1d5db; }
 .prov-hint { font-size: 11px; color: #6b7280; margin: 8px 0 0; line-height: 1.4; }
-.prov-hint.other { color: #92400e; background: #fef3c7; padding: 6px 8px; border-radius: 6px; }
 .model-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
 .chip { padding: 3px 8px; border: 1px solid #e5e7eb; background: #fff; border-radius: 999px; cursor: pointer; font-size: 11px; font-family: inherit; color: #6b7280; }
 .chip.on { border-color: #2563eb; background: #eff6ff; color: #1d4ed8; font-weight: 600; }
@@ -528,21 +354,13 @@ async function save() {
 .save:disabled { opacity: .6; cursor: default; }
 .saved { color: #059669; }
 
-/* LM Studio model manager */
+/* ChatGPT subscription panel */
 .lms { margin-top: 12px; border: 1px dashed #d1d5db; border-radius: 8px; padding: 10px; background: #fafafa; }
 .lms-head { display: flex; justify-content: space-between; align-items: center; font-size: 12px; font-weight: 600; color: #374151; margin-bottom: 8px; }
-.lms-empty { font-size: 12px; color: #9ca3af; padding: 4px 0; }
-.lms-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
-.lms-name { flex: 1; font-size: 12px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lms-name:hover { text-decoration: underline; }
-.lms-row.sel .lms-name { font-weight: 700; color: #2563eb; }
 .badge { font-size: 10px; padding: 1px 6px; border-radius: 999px; }
 .badge.loaded { background: #d1fae5; color: #065f46; }
-.badge.not-loaded { background: #f3f4f6; color: #6b7280; }
 .mini { font-size: 11px; padding: 3px 8px; border: 1px solid #d1d5db; background: #fff; border-radius: 6px; cursor: pointer; }
 .mini:disabled { opacity: .5; cursor: default; }
-.lms-dl { display: flex; gap: 6px; margin-top: 8px; }
-.lms-dl .input { font-size: 12px; padding: 5px 8px; }
 .lms-status { font-size: 11px; color: #059669; margin-top: 6px; }
 .lms-status.err { color: #dc2626; }
 .cg-in { display: flex; align-items: center; gap: 8px; }

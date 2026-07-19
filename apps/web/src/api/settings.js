@@ -14,14 +14,3 @@ export const getProviders = () => service.get('/api/settings/llm/providers')
 export const chatgptLogin = () => service.post('/api/settings/llm/chatgpt/login')
 export const chatgptStatus = () => service.get('/api/settings/llm/chatgpt/status')
 export const chatgptLogout = () => service.post('/api/settings/llm/chatgpt/logout')
-
-// LM Studio local model management
-export const lmsModels = () => service.get('/api/settings/lmstudio/models')
-export const lmsLoad = (model) => service.post('/api/settings/lmstudio/load', { model })
-export const lmsUnload = (model) => service.post('/api/settings/lmstudio/unload', { model })
-export const lmsDownload = (model) => service.post('/api/settings/lmstudio/download', { model })
-export const lmsDownloadStatus = (taskId) => service.post('/api/settings/lmstudio/download/status', { task_id: taskId })
-
-// Ollama local model management (native pull — no CLI needed)
-export const ollamaPull = (model, base_url) => service.post('/api/settings/ollama/pull', { model, base_url })
-export const ollamaPullStatus = (taskId) => service.post('/api/settings/ollama/pull/status', { task_id: taskId })
