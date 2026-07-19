@@ -1,0 +1,189 @@
+/* Baray design foundation — global, non-scoped token layer.
+ *
+ * One source of truth for colour, type, and the reusable chrome primitives.
+ * Loaded once from main.js so the custom properties resolve app-wide (the old
+ * :root lived inside a `<style scoped>` block and resolved to nothing).
+ *
+ * Fonts are self-hosted woff2 (latin subset) — no CDN — so the offline Tauri
+ * build renders without a network. Chrome is Baray gold + purple + navy; the
+ * stance DATA ramp below is deliberately NOT the brand pair (see "Stance").
+ */
+
+/* ─── Self-hosted type ────────────────────────────────────────────────────── */
+@font-face { font-family: 'Fraunces'; font-style: normal; font-weight: 500; font-display: swap; src: url('./fonts/fraunces-500.woff2') format('woff2'); }
+@font-face { font-family: 'Fraunces'; font-style: normal; font-weight: 600; font-display: swap; src: url('./fonts/fraunces-600.woff2') format('woff2'); }
+@font-face { font-family: 'Fraunces'; font-style: normal; font-weight: 700; font-display: swap; src: url('./fonts/fraunces-700.woff2') format('woff2'); }
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 400; font-display: swap; src: url('./fonts/inter-400.woff2') format('woff2'); }
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 500; font-display: swap; src: url('./fonts/inter-500.woff2') format('woff2'); }
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 600; font-display: swap; src: url('./fonts/inter-600.woff2') format('woff2'); }
+@font-face { font-family: 'JetBrains Mono'; font-style: normal; font-weight: 400; font-display: swap; src: url('./fonts/jetbrains-mono-400.woff2') format('woff2'); }
+@font-face { font-family: 'JetBrains Mono'; font-style: normal; font-weight: 600; font-display: swap; src: url('./fonts/jetbrains-mono-600.woff2') format('woff2'); }
+
+/* ─── Primitives (Baray palette) ──────────────────────────────────────────── */
+:root {
+  --gold:        #F2B01E;
+  --gold-hover:  #D9990F;
+  --gold-bright: #F5C243;   /* gold text/fill on navy */
+  --gold-deep:   #9C6F00;   /* gold text on light */
+  --gold-soft:   #FBE7BF;
+
+  --purple:        #6F4D9F;
+  --purple-hover:  #5C3F86;
+  --purple-bright: #A98BD6;  /* purple text on navy */
+  --purple-soft:   #E7DEF0;
+
+  --navy:        #0E2340;
+  --navy-raised: #16345C;
+
+  --surface-light:  #FFFFFF;
+  --surface-light2: #F4F6F9;
+
+  --ink:       #1A2433;
+  --ink-muted: #5D6B7C;
+
+  --on-dark:       #FFFFFF;
+  --on-dark-muted: #C9D6E5;
+
+  --border-light: #D9E0E8;
+  --border-dark:  #2C4A70;
+
+  /* Type families */
+  --font-display: 'Fraunces', 'Iowan Old Style', Georgia, serif;
+  --font-body: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+
+  /* Type scale — ratio 1.333, 16px root: 11 / 13 / 15 / 20 / 27 / 36 / 48. */
+  --fs-2xs: 0.6875rem;  /* 11 — tick / eyebrow */
+  --fs-xs:  0.8125rem;  /* 13 — caption / label */
+  --fs-sm:  0.9375rem;  /* 15 — body / UI (base) */
+  --fs-md:  1.25rem;    /* 20 — lead */
+  --fs-lg:  1.6875rem;  /* 27 — section head */
+  --fs-xl:  2.25rem;    /* 36 — page head */
+  --fs-2xl: 3rem;       /* 48 — display verdict */
+
+  --radius:    8px;
+  --radius-sm: 6px;
+
+  /* Stance DATA ramp — functional diverging luminance+hue on the blue↔amber
+   * axis (tritan-safe, reads in greyscale). NOT the brand gold/purple pair;
+   * purple is chrome only. Redundant channels: hue + lightness + mark shape. */
+  --stance-support:        oklch(0.66 0.14 78);   /* amber, upward chevron */
+  --stance-support-strong: oklch(0.55 0.16 66);
+  --stance-neutral:        oklch(0.74 0.02 265);  /* lightest, flat bar */
+  --stance-oppose:         oklch(0.60 0.15 250);  /* cool blue, downward chevron */
+  --stance-oppose-strong:  oklch(0.48 0.17 255);
+}
+
+/* ─── Semantic map — DARK is the primary theme (plan §3.1) ────────────────── */
+:root {
+  --color-bg:            var(--navy);
+  --color-surface:       var(--navy-raised);
+  --color-text:          var(--on-dark);
+  --color-text-muted:    var(--on-dark-muted);
+  --color-border:        var(--border-dark);
+  --color-accent:        var(--gold);          /* fills */
+  --color-accent-text:   var(--gold-bright);   /* gold as text/icon */
+  --color-accent-hover:  var(--gold-hover);
+  --color-accent-2:      var(--purple);
+  --color-accent-2-text: var(--purple-bright);
+  --color-on-accent:     var(--navy);          /* text on a gold fill */
+  --color-on-accent-2:   #FFFFFF;              /* text on a purple fill */
+}
+
+/* Light alternate. The app currently paints its views white, so index.html
+ * sets data-theme="light" during migration; remove that attribute to activate
+ * the primary dark theme once the views are skinned (Phase 4). */
+:root[data-theme='light'] {
+  --color-bg:            var(--surface-light2);
+  --color-surface:       var(--surface-light);
+  --color-text:          var(--ink);
+  --color-text-muted:    var(--ink-muted);
+  --color-border:        var(--border-light);
+  --color-accent:        var(--gold);
+  --color-accent-text:   var(--gold-deep);     /* gold text on light needs the deep tone */
+  --color-accent-hover:  var(--gold-hover);
+  --color-accent-2:      var(--purple);
+  --color-accent-2-text: var(--purple);
+  --color-on-accent:     var(--navy);
+  --color-on-accent-2:   #FFFFFF;
+}
+
+/* ─── Base elements ───────────────────────────────────────────────────────── */
+body {
+  font-family: var(--font-body);
+  font-size: var(--fs-sm);
+  color: var(--color-text);
+  background: var(--color-bg);
+}
+h1, h2, h3, h4, h5, h6 { font-family: var(--font-display); font-weight: 600; line-height: 1.15; }
+
+/* Mono is a measured-truth signal: every number, id, tick, endpoint. */
+.mono, code, kbd, samp { font-family: var(--font-mono); }
+
+/* ─── Reusable chrome primitives ──────────────────────────────────────────── */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 9px 18px; border: 1px solid transparent; border-radius: var(--radius);
+  font-family: var(--font-body); font-size: var(--fs-sm); font-weight: 600;
+  line-height: 1; cursor: pointer; transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+/* Gold primary — contrast rule: gold fill takes navy text. */
+.btn-primary { background: var(--color-accent); color: var(--color-on-accent); }
+.btn-primary:hover:not(:disabled) { background: var(--color-accent-hover); }
+/* Purple secondary — purple fill takes white text. */
+.btn-secondary { background: var(--color-accent-2); color: var(--color-on-accent-2); }
+.btn-secondary:hover:not(:disabled) { background: var(--purple-hover); }
+.btn-outline { background: transparent; border-color: var(--color-border); color: var(--color-text); }
+.btn-outline:hover:not(:disabled) { border-color: var(--color-accent); color: var(--color-accent-text); }
+.btn-ghost { background: transparent; color: var(--color-text-muted); }
+.btn-ghost:hover:not(:disabled) { color: var(--color-text); }
+.btn-danger { background: transparent; border-color: var(--color-border); color: var(--color-text); }
+.btn-danger:hover:not(:disabled) { border-color: var(--stance-oppose); color: var(--stance-oppose); }
+
+/* Eyebrow chip — small tracked label above a heading. */
+.eyebrow {
+  font-family: var(--font-mono); font-size: var(--fs-2xs); font-weight: 600;
+  letter-spacing: 0.1em; text-transform: uppercase; color: var(--color-text-muted);
+}
+
+/* Number badge — gold and purple variants. */
+.badge {
+  display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 999px;
+  font-family: var(--font-mono); font-size: var(--fs-2xs); font-weight: 600;
+}
+.badge-gold   { background: var(--color-accent);   color: var(--color-on-accent); }
+.badge-purple { background: var(--color-accent-2); color: var(--color-on-accent-2); }
+
+/* Trust pill — a measured claim, outlined not filled. */
+.pill {
+  display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px;
+  border: 1px solid var(--color-border); border-radius: 999px;
+  font-family: var(--font-mono); font-size: var(--fs-2xs); color: var(--color-text-muted);
+}
+
+/* Sheet — a flush surface, no floating cards (plan bans the card grid). */
+.sheet { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius); }
+
+/* Stat tile — a count with its label; the number is mono. */
+.stat-num { font-family: var(--font-mono); font-size: var(--fs-md); font-weight: 600; line-height: 1.1; }
+.stat-label { font-size: var(--fs-2xs); letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-muted); }
+
+/* Input. */
+.field {
+  padding: 8px 12px; border: 1px solid var(--color-border); border-radius: var(--radius-sm);
+  font-family: var(--font-body); font-size: var(--fs-sm); color: var(--color-text); background: var(--color-surface);
+}
+.field:focus { outline: none; border-color: var(--color-accent); }
+
+/* Code block. */
+.code {
+  font-family: var(--font-mono); font-size: var(--fs-xs);
+  background: var(--color-surface); border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm); padding: 12px 14px; overflow-x: auto;
+}
+
+/* Stance helpers for non-canvas UI (bars, legends). */
+.stance-support { color: var(--stance-support); }
+.stance-neutral { color: var(--stance-neutral); }
+.stance-oppose  { color: var(--stance-oppose); }
