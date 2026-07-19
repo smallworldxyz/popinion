@@ -44,7 +44,8 @@ await page.evaluate((rounds) => {
 
 step('Starting the simulation — watch the agents post and react')
 await page.getByRole('button', { name: /Start Dual-World Parallel Simulation/ }).click({ timeout: MIN })
-await page.waitForURL(/\/start$/, { timeout: MIN })
+// Navigation + engine spawn can take a bit; wait for the run view to render.
+await page.getByText(/SIMULATION MONITOR/i).waitFor({ timeout: 3 * MIN })
 
 step('Simulation running… (letting rounds play out)')
 await page.getByRole('button', { name: /Generate Report/ }).click({ timeout: 8 * MIN })
