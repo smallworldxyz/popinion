@@ -26,7 +26,7 @@
         <div class="stat"><span class="stat-num mono">{{ total }}</span><span class="stat-label">Agents</span></div>
         <div class="stat"><span class="stat-num mono">{{ grounded }}</span><span class="stat-label">Grounded</span></div>
         <div class="stat"><span class="stat-num mono">{{ synthetic }}</span><span class="stat-label">Synthetic</span></div>
-        <div class="stat"><span class="stat-num mono">{{ postCount }}</span><span class="stat-label">Posts</span></div>
+        <div class="stat"><span class="stat-num mono">{{ contributions }}</span><span class="stat-label">Posts + Comments</span></div>
         <div class="stat"><span class="stat-num">{{ statusLabel }}</span><span class="stat-label">Status</span></div>
       </div>
 
@@ -62,7 +62,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { getSimulation, getSimulationProfiles, getCredibility, getRunStatus } from '../api/simulation'
+import { getSimulation, getSimulationProfiles, getCredibility, getAgentStats } from '../api/simulation'
 import { checkReport, generateReport } from '../api/report'
 import { runLifecycleStatus } from '../runStatus'
 
@@ -77,7 +77,7 @@ const loading = ref(true)
 const personas = ref([])
 const name = ref('Run')
 const cred = ref(null)
-const runStatus = ref(null)
+const agents = ref([])
 const runLifecycle = ref('')
 const reportId = ref(null)
 const reportBusy = ref(false)
@@ -105,7 +105,11 @@ const openReport = async () => {
 const total = computed(() => cred.value?.total ?? personas.value.length)
 const grounded = computed(() => cred.value?.grounded ?? 0)
 const synthetic = computed(() => cred.value?.synthetic ?? 0)
-const postCount = computed(() => runStatus.value?.post_count ?? 0)
+// Agents almost always reply rather than open a thread, so post_count alone
+// reads as 1 on a run that produced hundreds of comments.
+const contributions = computed(() =>
+  agents.value.reduce((n, a) => n + (a.posts || 0) + (a.comments || 0), 0)
+)
 
 const statusLabel = computed(() => runLifecycleStatus(runLifecycle.value).label)
 
@@ -131,13 +135,13 @@ onMounted(async () => {
     runLifecycle.value = meta?.data?.status || ''
     personas.value = profs?.data?.profiles || []
     if (personas.value.length) {
-      const [c, r, rep] = await Promise.all([
+      const [c, s, rep] = await Promise.all([
         getCredibility(props.simId).catch(() => null),
-        getRunStatus(props.simId).catch(() => null),
+        getAgentStats(props.simId).catch(() => null),
         checkReport(props.simId).catch(() => null),
       ])
       cred.value = c?.data || null
-      runStatus.value = r?.data || null
+      agents.value = s?.data?.agents || []
       reportId.value = rep?.data?.has_report ? rep.data.report_id : null
     }
   } finally {
