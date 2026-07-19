@@ -127,6 +127,18 @@ Extract ALL entities and relationships from the text below.
    into structural verbs such as COMMENTS_ON or QUESTIONS_BENEFITS_FROM. If the
    text contains disagreement and you emit no `OPPOSES` edge, the extraction is
    wrong.
+6. Set `"actor"` on every entity. `true` means the entity can HOLD AN OPINION
+   and speak: a person, an organisation, a company, an institution, or a
+   COLLECTIVE of people. Collectives are actors - "rooftop solar owners",
+   "residents of X province", a union, "small business owners" all count, and
+   they matter most, because they are the public.
+   `false` means the entity is a thing being talked ABOUT and cannot hold a
+   view: a law, a policy, a project, a budget, an investment package, a place
+   name, an event, a document, an abstract topic.
+   Still extract non-actors - they are what the actors take positions on, so
+   they must exist as the TARGET of `SUPPORTS` and `OPPOSES` edges. A law never
+   supports itself; if you are about to emit a stance edge whose SOURCE is a
+   non-actor, the source is wrong.
 
 **Text to Analyze:**
 {text}
@@ -137,6 +149,7 @@ Extract ALL entities and relationships from the text below.
     {{
       "name": "Entity Name",
       "entity_types": ["EntityType"],
+      "actor": true,
       "summary": "2-3 sentence description",
       "attributes": {{"attribute1": "value1"}}
     }}
@@ -184,6 +197,12 @@ pub fn normalize(raw: Value) -> Extraction {
             if !summary.is_empty() && !attributes.contains_key("summary") {
                 attributes.insert("summary".into(), json!(summary));
             }
+        }
+        // Can this entity hold an opinion? Absent means unknown, not false: a
+        // graph built before the flag existed must keep its agents, so the
+        // decision falls to the structural check in persona compilation.
+        if let Some(actor) = obj.get("actor").and_then(Value::as_bool) {
+            attributes.insert("actor".into(), json!(actor));
         }
         entities.push(ExtractedEntity { name, entity_types, attributes: sanitize_properties(attributes) });
     }

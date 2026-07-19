@@ -28,6 +28,9 @@ pub struct EvidenceBundle {
     /// at it (the debate subject is the *target* of everyone's stances).
     pub sourced_support: bool,
     pub sourced_oppose: bool,
+    /// Can this entity hold an opinion? A law, a project or a budget cannot,
+    /// and must never become an agent with a faction.
+    pub is_actor: bool,
 }
 
 impl EvidenceBundle {
@@ -137,10 +140,46 @@ impl StanceLexicon {
     }
 }
 
+/// How many stance edges must point AT an entity that authors none before it is
+/// treated as the thing under debate rather than a participant in it.
+const DEBATE_SUBJECT_STANCES: usize = 3;
+
+/// Which entities can hold an opinion, by uuid.
+///
+/// Extraction marks this per entity, but graphs built before that flag existed
+/// carry no mark, and a model can still mislabel one. The structural check is
+/// the backstop: an entity that everyone takes a position ON while taking none
+/// itself is the subject of the debate, not a party to it. A law does not
+/// support itself, and a policy given a voice and a faction votes for its own
+/// approval — which is how "Law covering 24 electricity investment projects"
+/// came to be counted as a supporter.
+fn actor_map(graph_data: &GraphData, lexicon: &StanceLexicon) -> HashMap<String, bool> {
+    let (mut targeted, mut authored) = (HashMap::new(), HashMap::new());
+    for e in &graph_data.edges {
+        if lexicon.polarity(&e.relation_type).is_none() {
+            continue;
+        }
+        *targeted.entry(e.target_node_uuid.clone()).or_insert(0usize) += 1;
+        *authored.entry(e.source_node_uuid.clone()).or_insert(0usize) += 1;
+    }
+    graph_data
+        .nodes
+        .iter()
+        .map(|n| {
+            let declared = n.attributes.get("actor").and_then(Value::as_bool);
+            let is_subject = targeted.get(&n.uuid).copied().unwrap_or(0) >= DEBATE_SUBJECT_STANCES
+                && authored.get(&n.uuid).copied().unwrap_or(0) == 0;
+            // Unmarked entities stay agents: absent means unknown, not false.
+            (n.uuid.clone(), declared.unwrap_or(true) && !is_subject)
+        })
+        .collect()
+}
+
 /// Build one evidence bundle per entity from `db::get_graph_data`'s typed
 /// `GraphData` (one struct shared with the producer — a renamed field breaks
 /// the build here instead of silently yielding empty facts).
 pub fn build_bundles(graph_data: &GraphData, lexicon: &StanceLexicon) -> Vec<EvidenceBundle> {
+    let actors = actor_map(graph_data, lexicon);
     let mut bundles: HashMap<String, EvidenceBundle> = HashMap::new();
     let mut order: Vec<String> = Vec::new();
     for n in &graph_data.nodes {
@@ -160,6 +199,7 @@ pub fn build_bundles(graph_data: &GraphData, lexicon: &StanceLexicon) -> Vec<Evi
                 stance_facts: Vec::new(),
                 sourced_support: false,
                 sourced_oppose: false,
+                is_actor: actors.get(&n.uuid).copied().unwrap_or(true),
             },
         );
     }
@@ -204,7 +244,7 @@ fn edge_fact_text(e: &crate::services::graph::db::GraphEdge) -> String {
 
 /// Does this entity clear the minimum-evidence bar to become a named agent?
 pub fn eligible(bundle: &EvidenceBundle, min_evidence: usize) -> bool {
-    bundle.evidence_score() >= min_evidence.max(1)
+    bundle.is_actor && bundle.evidence_score() >= min_evidence.max(1)
 }
 
 /// Cap on facts rendered into a persona prompt. A hub entity can have hundreds
@@ -306,9 +346,16 @@ pub fn synthesize_audience(
     if per_faction == 0 {
         return vec![];
     }
+    let actors = actor_map(graph_data, lexicon);
     let (mut pro, mut con): (Vec<String>, Vec<String>) = (Vec::new(), Vec::new());
     for e in &graph_data.edges {
         let Some(supports) = lexicon.polarity(&e.relation_type) else { continue };
+        // A camp is founded on positions its members took. A stance authored by
+        // a non-actor is an extraction error, and seeding a camp from it hands
+        // the synthetic public arguments nobody made.
+        if !actors.get(&e.source_node_uuid).copied().unwrap_or(true) {
+            continue;
+        }
         let fact = edge_fact_text(e);
         if supports {
             pro.push(fact);
@@ -432,6 +479,9 @@ pub fn preview(graph_data: &GraphData, lexicon: &StanceLexicon, min_evidence: us
             "stance_facts": b.stance_facts.len(),
             "evidence_score": b.evidence_score(),
             "eligible": ok,
+            // Distinguishes "too little evidence" from "cannot hold an opinion",
+            // so a well-evidenced law doesn't read as an unexplained exclusion.
+            "actor": b.is_actor,
         }));
     }
 
@@ -537,6 +587,12 @@ mod tests {
         }
     }
 
+    fn non_actor(uuid: &str, name: &str, entity_type: &str, summary: &str) -> GraphNode {
+        let mut n = node(uuid, name, entity_type, summary);
+        n.attributes.insert("actor".into(), json!(false));
+        n
+    }
+
     fn edge(rel: &str, fact: &str, src: (&str, &str), tgt: (&str, &str)) -> GraphEdge {
         GraphEdge {
             relation_type: rel.into(),
@@ -597,6 +653,63 @@ mod tests {
                 ),
             ],
         )
+    }
+
+    /// A law that "supports" its own approval became an agent with faction pro,
+    /// and its self-authored stance seeded the synthetic pro camp's arguments.
+    #[test]
+    fn a_non_actor_never_becomes_an_agent_or_founds_a_camp() {
+        let data = graph(
+            vec![
+                non_actor("l1", "Law covering 24 projects", "Policy", "The approval under debate."),
+                node("u1", "Residents", "Group", "Live near the site."),
+            ],
+            vec![
+                edge("SUPPORTS", "The law supports the approval.", ("l1", "Law"), ("l1", "Law")),
+                edge("OPPOSES", "Residents oppose it.", ("u1", "Residents"), ("l1", "Law")),
+            ],
+        );
+        let lex = StanceLexicon::keywords_only();
+
+        let bundles = build_bundles(&data, &lex);
+        let law = bundles.iter().find(|b| b.uuid == "l1").unwrap();
+        assert!(!law.is_actor, "a law cannot hold an opinion");
+        assert!(!eligible(law, 1), "and so cannot become an agent, however much evidence it has");
+
+        let residents = bundles.iter().find(|b| b.uuid == "u1").unwrap();
+        assert!(eligible(residents, 1), "a collective of people still can");
+
+        // The law's self-supporting edge must not found the pro camp.
+        let audience = synthesize_audience(&data, &lex, 3, 0);
+        assert_eq!(audience.iter().filter(|p| p.faction.as_deref() == Some("pro")).count(), 0);
+        assert_eq!(audience.iter().filter(|p| p.faction.as_deref() == Some("con")).count(), 3);
+    }
+
+    /// Graphs built before the flag existed carry no mark, so actorhood falls to
+    /// the structural read: everyone takes a position on it, it takes none.
+    #[test]
+    fn an_unmarked_debate_subject_is_recognised_structurally() {
+        let mut nodes = vec![node("p1", "The proposal", "Policy", "Under debate.")];
+        let mut edges = Vec::new();
+        for i in 0..DEBATE_SUBJECT_STANCES {
+            let id = format!("a{i}");
+            nodes.push(node(&id, &format!("Group {i}"), "Group", "A constituency."));
+            edges.push(edge("OPPOSES", "Opposes it.", (&id, "Group"), ("p1", "The proposal")));
+        }
+        let data = graph(nodes, edges);
+        let bundles = build_bundles(&data, &StanceLexicon::keywords_only());
+
+        let subject = bundles.iter().find(|b| b.uuid == "p1").unwrap();
+        assert!(!subject.is_actor, "targeted by every stance, author of none");
+        assert!(bundles.iter().filter(|b| b.uuid != "p1").all(|b| b.is_actor));
+    }
+
+    /// An unmarked entity that simply has no stance edges is still an agent —
+    /// absent means unknown, not disqualified.
+    #[test]
+    fn an_unmarked_entity_without_stances_stays_an_agent() {
+        let bundles = build_bundles(&fixture(), &StanceLexicon::keywords_only());
+        assert!(bundles.iter().find(|b| b.uuid == "u3").unwrap().is_actor);
     }
 
     #[test]
