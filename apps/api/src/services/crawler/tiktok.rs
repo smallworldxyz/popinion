@@ -18,7 +18,9 @@ const JS_WALL: &str =
 pub async fn crawl_user(username: &str, limit: usize) -> CrawlResult {
     let username = username.trim().trim_start_matches('@').to_string();
     let mut result = base_result(&format!("@{username}"));
-    match fetch_html(&format!("{BASE_URL}/@{username}")).await {
+    let mut url = reqwest::Url::parse(BASE_URL).expect("static base url");
+    url.path_segments_mut().expect("base url has a path").push(&format!("@{username}"));
+    match fetch_html(url.as_str()).await {
         Ok(html) => {
             result.posts = parse_videos(&html, limit);
             if result.posts.is_empty() {
