@@ -1,8 +1,8 @@
 <template>
   <div class="main-view">
     <AppSidebar
-      :step-num="currentStep"
-      :step-name="stepNames[currentStep - 1]"
+      :step-num="1"
+      step-name="Graph Building"
       :status-text="statusText"
       :status-class="statusClass"
       v-model="viewMode"
@@ -23,26 +23,14 @@
 
       <!-- Right Panel: Step Components -->
       <div class="panel-wrapper right" :style="rightPanelStyle">
-        <!-- Step 1: GraphBuilding -->
-        <Step1GraphBuild 
-          v-if="currentStep === 1"
+        <!-- Step 1 is all this view hosts; Step 2 lives at /simulation/:id. -->
+        <Step1GraphBuild
           :currentPhase="currentPhase"
           :projectData="projectData"
           :ontologyProgress="ontologyProgress"
           :buildProgress="buildProgress"
           :graphData="graphData"
           :systemLogs="systemLogs"
-          @next-step="handleNextStep"
-        />
-        <!-- Step 2: Environment Setup -->
-        <Step2EnvSetup
-          v-else-if="currentStep === 2"
-          :projectData="projectData"
-          :graphData="graphData"
-          :systemLogs="systemLogs"
-          @go-back="handleGoBack"
-          @next-step="handleNextStep"
-          @add-log="addLog"
         />
       </div>
     </main>
@@ -54,7 +42,6 @@ import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import GraphPanel from '../components/GraphPanel.vue'
 import Step1GraphBuild from '../components/Step1GraphBuild.vue'
-import Step2EnvSetup from '../components/Step2EnvSetup.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import { generateOntology, getProject, buildGraph, getTaskStatus, getGraphData } from '../api/graph'
 import { getPendingUpload, clearPendingUpload } from '../store/pendingUpload'
@@ -64,10 +51,6 @@ const router = useRouter()
 
 // Layout State
 const viewMode = ref('split') // graph | split | workbench
-
-// Step State
-const currentStep = ref(1) // 1: Graph Building, 2: Environment Setup, 3: Start Simulation, 4: Report Generating, 5: Deep Interactive
-const stepNames = ['Graph Building', 'Environment Setup', 'Start Simulation', 'Report Generating', 'Deep Interactive']
 
 // Data State
 const currentProjectId = ref(route.params.projectId)
@@ -129,25 +112,6 @@ const toggleMaximize = (target) => {
     viewMode.value = 'split'
   } else {
     viewMode.value = target
-  }
-}
-
-const handleNextStep = (params = {}) => {
-  if (currentStep.value < 5) {
-    currentStep.value++
-    addLog(`Entering Step ${currentStep.value}: ${stepNames[currentStep.value - 1]}`)
-    
-    // If entering Step 3 from Step 2, record simulation rounds count configuration
-    if (currentStep.value === 3 && params.maxRounds) {
-      addLog(`Custom simulation rounds: ${params.maxRounds} rounds`)
-    }
-  }
-}
-
-const handleGoBack = () => {
-  if (currentStep.value > 1) {
-    currentStep.value--
-    addLog(`Going back to Step ${currentStep.value}: ${stepNames[currentStep.value - 1]}`)
   }
 }
 
