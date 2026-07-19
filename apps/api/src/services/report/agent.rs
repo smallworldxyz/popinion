@@ -35,8 +35,8 @@ const REPORT_CONTEXT_LIMIT: usize = 15000;
 fn tools_description() -> &'static str {
     r#"Available tools (query the simulation's social data; every claim in the report must be grounded in tool results):
 - search_posts: find posts AND comments (replies) matching keywords - the population often voices its opinion in replies, so this covers both. parameters: {"query": "keywords", "limit": 10}
-- statistics: overall numbers - post and comment counts, stance distribution (posts + comments), most-liked items, round range. parameters: {}
-- stance_distribution: per-stance counts and average sentiment across posts AND comments. parameters: {}
+- statistics: overall numbers - post and comment counts, both stance readings (see stance_distribution), most-liked items, round range. parameters: {}
+- stance_distribution: TWO readings of the same run. `by_agent` counts each agent ONCE by its latest stance - this is the population reading and the ONLY one to quote as the headline distribution. `by_volume` counts every post and comment, so a handful of prolific agents can dominate it; use it ONLY to describe how loud each camp was, never as the share of opinion. parameters: {}
 - web_search: look up current real-world context outside the simulation (news, facts, background). parameters: {"query": "search terms", "max_results": 5}
 
 To call a tool, emit exactly:
@@ -100,8 +100,12 @@ pub fn execute_tool(store: &Store, name: &str, params: &Value) -> anyhow::Result
         "statistics" => {
             let total_posts = store.count_posts()?;
             let total_comments = store.count_comments()?;
-            // Comment-inclusive: opinion lives in replies as much as posts.
-            let dist = store.content_stance_distribution()?;
+            // One agent, one vote: the population reading, and the same measure
+            // /validate and /compare use, so the noise floor bounds the number
+            // the report actually quotes.
+            let by_agent = store.agent_stance_distribution()?;
+            // Volume, kept for "how loud was each camp" - not a share of opinion.
+            let by_volume = store.content_stance_distribution()?;
             let content = store.all_content(2000)?;
             let mut by_likes: Vec<&Value> = content.iter().collect();
             by_likes.sort_by_key(|p| -p["num_likes"].as_i64().unwrap_or(0));
@@ -135,14 +139,18 @@ pub fn execute_tool(store: &Store, name: &str, params: &Value) -> anyhow::Result
             Ok(serde_json::to_string_pretty(&json!({
                 "total_posts": total_posts,
                 "total_comments": total_comments,
-                "stance_distribution": dist,
+                "stance_by_agent": by_agent,
+                "stance_by_volume": by_volume,
                 "round_min": rounds.iter().min(),
                 "round_max": rounds.iter().max(),
                 "sentiment_by_round": sentiment_by_round,
                 "top_by_likes": top,
             }))?)
         }
-        "stance_distribution" => Ok(serde_json::to_string_pretty(&store.content_stance_distribution()?)?),
+        "stance_distribution" => Ok(serde_json::to_string_pretty(&json!({
+            "by_agent": store.agent_stance_distribution()?,
+            "by_volume": store.content_stance_distribution()?,
+        }))?),
         _ => Ok(format!(
             "Unknown tool: {name}. Available: search_posts, statistics, stance_distribution"
         )),
@@ -352,7 +360,11 @@ async fn generate(st: &AppState, report_id: &str) -> anyhow::Result<()> {
          Section requirements:\n\
          - Executive Summary: a 3-sentence overview of the general public mood.\n\
          - Sentiment Breakdown: the distribution across Favorable, Unfavorable, Neutral (and Mixed if warranted) \
-           with PERCENTAGES computed from the evidence counts; for each category name the top 2-3 emotional \
+           with PERCENTAGES computed from `by_agent` ONLY - one agent, one vote. NEVER compute the headline \
+           percentages from `by_volume` or from raw comment counts: a few prolific agents can dominate volume, \
+           so a volume share describes who talked most, not what the population thinks. State the agent count \
+           the percentages are drawn from. You may separately note that one camp was louder than its numbers, \
+           citing `by_volume` explicitly as volume. For each category name the top 2-3 emotional \
            drivers (anger, fear, hope, satisfaction, distrust, etc.) inferred from the actual arguments.\n\
          - Theme Analysis: extract the top ~5 recurring themes as a Markdown TABLE with columns \
            `Theme | Sentiment Association | Key Keywords`, where sentiment association is mostly favorable, \
@@ -563,22 +575,57 @@ mod tests {
         std::fs::remove_dir_all(dir).ok();
     }
 
+    fn count_of(rows: &Value, stance: &str) -> Option<i64> {
+        rows.as_array()?.iter().find(|r| r["stance"] == stance).map(|r| r["count"].as_i64().unwrap())
+    }
+
     #[test]
     fn stance_distribution_tool_works() {
         let (store, dir) = seeded_store("stance");
         let out = execute_tool(&store, "stance_distribution", &json!({})).unwrap();
         let v: Value = serde_json::from_str(&out).unwrap();
-        let count_of = |stance: &str| {
-            v.as_array()
-                .unwrap()
-                .iter()
-                .find(|r| r["stance"] == stance)
-                .map(|r| r["count"].as_i64().unwrap())
-        };
         // 2 support posts, and oppose = 1 post + 1 comment: the comment is
         // included, so a posts-only distribution (which would show oppose=1) is wrong.
-        assert_eq!(count_of("support"), Some(2));
-        assert_eq!(count_of("oppose"), Some(2));
+        assert_eq!(count_of(&v["by_volume"], "support"), Some(2));
+        assert_eq!(count_of(&v["by_volume"], "oppose"), Some(2));
+        // Two agents, one each way, regardless of how much either wrote.
+        assert_eq!(count_of(&v["by_agent"], "support"), Some(1));
+        assert_eq!(count_of(&v["by_agent"], "oppose"), Some(1));
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    /// The reason the report must quote `by_agent`: volume answers "who talked
+    /// most", not "what does the population think". One tireless supporter
+    /// against three quiet opponents reads as 77% support by volume and 25% by
+    /// head count — and only the latter is what /validate and /compare measure.
+    #[test]
+    fn volume_and_agent_readings_diverge_when_one_agent_dominates() {
+        let dir = std::env::temp_dir().join(format!("popinion-report-loud-{}", std::process::id()));
+        let path = dir.join("s.db");
+        std::fs::remove_file(&path).ok();
+        let s = Store::open(&path).unwrap();
+        s.add_user(1, "Loud", "loud", "", "activist").unwrap();
+        for r in 0..10 {
+            s.add_post(1, "Backing this all the way", r, Some("support"), Some(0.7)).unwrap();
+        }
+        for uid in 2..5 {
+            s.add_user(uid, "Quiet", &format!("quiet{uid}"), "", "resident").unwrap();
+            s.add_post(uid, "I am against it", 0, Some("oppose"), Some(-0.5)).unwrap();
+        }
+
+        let v: Value =
+            serde_json::from_str(&execute_tool(&s, "stance_distribution", &json!({})).unwrap()).unwrap();
+        assert_eq!(count_of(&v["by_volume"], "support"), Some(10));
+        assert_eq!(count_of(&v["by_volume"], "oppose"), Some(3));
+        assert_eq!(count_of(&v["by_agent"], "support"), Some(1));
+        assert_eq!(count_of(&v["by_agent"], "oppose"), Some(3));
+
+        // Both readings must reach the writer, so it can report the population
+        // share and still say one camp was louder.
+        let stats: Value =
+            serde_json::from_str(&execute_tool(&s, "statistics", &json!({})).unwrap()).unwrap();
+        assert!(stats["stance_by_agent"].is_array());
+        assert!(stats["stance_by_volume"].is_array());
         std::fs::remove_dir_all(dir).ok();
     }
 
