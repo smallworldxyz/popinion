@@ -521,6 +521,75 @@ impl Store {
         Ok(json!(rows))
     }
 
+    /// Stance distribution across BOTH posts and comments (seed excluded). In
+    /// many runs the population expresses its opinion by *replying* to the seed
+    /// rather than creating standalone posts, so a posts-only distribution reads
+    /// empty while the real split lives in the comments. Any "what did the public
+    /// think" read (the report especially) should use this, not `stance_distribution`.
+    pub fn content_stance_distribution(&self) -> Result<Value> {
+        let c = self.conn.lock().unwrap();
+        let mut stmt = c.prepare(
+            "SELECT COALESCE(stance,'unknown') s, COUNT(*) n, AVG(sentiment) avg FROM (
+                 SELECT stance, sentiment FROM post WHERE stance IS NULL OR stance != 'seed'
+                 UNION ALL
+                 SELECT stance, sentiment FROM comment WHERE stance IS NULL OR stance != 'seed'
+             ) GROUP BY s ORDER BY n DESC",
+        )?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok(json!({
+                    "stance": r.get::<_, String>(0)?,
+                    "count": r.get::<_, i64>(1)?,
+                    "avg_sentiment": r.get::<_, Option<f64>>(2)?,
+                }))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(json!(rows))
+    }
+
+    /// Posts and comments as one stream (seed excluded), most recent first, so a
+    /// reader can search and quote the actual arguments. Comments are where the
+    /// opinion usually lives, so a posts-only search misses the discussion.
+    pub fn all_content(&self, limit: i64) -> Result<Vec<Value>> {
+        let c = self.conn.lock().unwrap();
+        let mut stmt = c.prepare(
+            "SELECT x.kind, x.id, u.user_name, x.content, x.round, x.num_likes, x.stance, x.sentiment
+             FROM (
+                 SELECT 'post' kind, post_id id, user_id, content, round, num_likes, stance, sentiment
+                     FROM post WHERE stance IS NULL OR stance != 'seed'
+                 UNION ALL
+                 SELECT 'comment' kind, comment_id id, user_id, content, round, num_likes, stance, sentiment
+                     FROM comment WHERE stance IS NULL OR stance != 'seed'
+             ) x LEFT JOIN user u ON u.user_id = x.user_id
+             ORDER BY x.round DESC, x.id DESC LIMIT ?1",
+        )?;
+        let rows = stmt
+            .query_map(params![limit], |r| {
+                Ok(json!({
+                    "kind": r.get::<_, String>(0)?,
+                    "id": r.get::<_, i64>(1)?,
+                    "user_name": r.get::<_, Option<String>>(2)?,
+                    "content": r.get::<_, String>(3)?,
+                    "round": r.get::<_, i64>(4)?,
+                    "num_likes": r.get::<_, i64>(5)?,
+                    "stance": r.get::<_, Option<String>>(6)?,
+                    "sentiment": r.get::<_, Option<f64>>(7)?,
+                }))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    /// Count of non-seed comments (the reply volume the report should mention).
+    pub fn count_comments(&self) -> Result<i64> {
+        let c = self.conn.lock().unwrap();
+        Ok(c.query_row(
+            "SELECT COUNT(*) FROM comment WHERE stance IS NULL OR stance != 'seed'",
+            [],
+            |r| r.get(0),
+        )?)
+    }
+
     // ---- independent stance measurement (monoculture check) ----
 
     /// Posts/comments not yet independently labelled (seed excluded), for the

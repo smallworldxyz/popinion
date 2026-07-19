@@ -34,9 +34,9 @@ const REPORT_CONTEXT_LIMIT: usize = 15000;
 
 fn tools_description() -> &'static str {
     r#"Available tools (query the simulation's social data; every claim in the report must be grounded in tool results):
-- search_posts: find posts matching keywords. parameters: {"query": "keywords", "limit": 10}
-- statistics: overall numbers - post count, stance distribution, most-liked posts, round range. parameters: {}
-- stance_distribution: per-stance post counts and average sentiment. parameters: {}
+- search_posts: find posts AND comments (replies) matching keywords - the population often voices its opinion in replies, so this covers both. parameters: {"query": "keywords", "limit": 10}
+- statistics: overall numbers - post and comment counts, stance distribution (posts + comments), most-liked items, round range. parameters: {}
+- stance_distribution: per-stance counts and average sentiment across posts AND comments. parameters: {}
 - web_search: look up current real-world context outside the simulation (news, facts, background). parameters: {"query": "search terms", "max_results": 5}
 
 To call a tool, emit exactly:
@@ -63,13 +63,15 @@ pub fn execute_tool(store: &Store, name: &str, params: &Value) -> anyhow::Result
         "search_posts" => {
             let query = params["query"].as_str().unwrap_or("").to_lowercase();
             let limit = params["limit"].as_i64().unwrap_or(10).clamp(1, 50) as usize;
-            let posts = store.list_posts(1000, 0)?;
+            // Posts AND comments: the population usually voices its opinion by
+            // replying to the seed, so a posts-only search returns almost nothing.
+            let content = store.all_content(2000)?;
             let keywords: Vec<&str> = query.split_whitespace().collect();
-            let mut scored: Vec<(usize, &Value)> = posts
+            let mut scored: Vec<(usize, &Value)> = content
                 .iter()
                 .map(|p| {
-                    let content = p["content"].as_str().unwrap_or("").to_lowercase();
-                    let score = keywords.iter().filter(|k| content.contains(**k)).count();
+                    let text = p["content"].as_str().unwrap_or("").to_lowercase();
+                    let score = keywords.iter().filter(|k| text.contains(**k)).count();
                     (score, p)
                 })
                 .filter(|(score, _)| keywords.is_empty() || *score > 0)
@@ -80,7 +82,7 @@ pub fn execute_tool(store: &Store, name: &str, params: &Value) -> anyhow::Result
                 .take(limit)
                 .map(|(_, p)| {
                     json!({
-                        "post_id": p["post_id"],
+                        "kind": p["kind"],
                         "user_name": p["user_name"],
                         "content": trim(p["content"].as_str().unwrap_or(""), 500),
                         "round": p["round"],
@@ -91,22 +93,24 @@ pub fn execute_tool(store: &Store, name: &str, params: &Value) -> anyhow::Result
                 })
                 .collect();
             if hits.is_empty() {
-                return Ok(format!("No posts matched query: {query}"));
+                return Ok(format!("No posts or comments matched query: {query}"));
             }
             Ok(serde_json::to_string_pretty(&hits)?)
         }
         "statistics" => {
-            let total = store.count_posts()?;
-            let dist = store.stance_distribution()?;
-            let posts = store.list_posts(1000, 0)?;
-            let mut by_likes: Vec<&Value> = posts.iter().collect();
+            let total_posts = store.count_posts()?;
+            let total_comments = store.count_comments()?;
+            // Comment-inclusive: opinion lives in replies as much as posts.
+            let dist = store.content_stance_distribution()?;
+            let content = store.all_content(2000)?;
+            let mut by_likes: Vec<&Value> = content.iter().collect();
             by_likes.sort_by_key(|p| -p["num_likes"].as_i64().unwrap_or(0));
             let top: Vec<Value> = by_likes
                 .iter()
                 .take(5)
                 .map(|p| {
                     json!({
-                        "post_id": p["post_id"],
+                        "kind": p["kind"],
                         "user_name": p["user_name"],
                         "num_likes": p["num_likes"],
                         "stance": p["stance"],
@@ -114,10 +118,10 @@ pub fn execute_tool(store: &Store, name: &str, params: &Value) -> anyhow::Result
                     })
                 })
                 .collect();
-            let rounds: Vec<i64> = posts.iter().filter_map(|p| p["round"].as_i64()).collect();
+            let rounds: Vec<i64> = content.iter().filter_map(|p| p["round"].as_i64()).collect();
             // Per-round average sentiment gives the writer a real trend line.
             let mut per_round: std::collections::BTreeMap<i64, (f64, usize)> = Default::default();
-            for p in &posts {
+            for p in &content {
                 if let (Some(r), Some(s)) = (p["round"].as_i64(), p["sentiment"].as_f64()) {
                     let e = per_round.entry(r).or_insert((0.0, 0));
                     e.0 += s;
@@ -126,18 +130,19 @@ pub fn execute_tool(store: &Store, name: &str, params: &Value) -> anyhow::Result
             }
             let sentiment_by_round: Vec<Value> = per_round
                 .into_iter()
-                .map(|(r, (sum, n))| json!({"round": r, "avg_sentiment": sum / n as f64, "posts": n}))
+                .map(|(r, (sum, n))| json!({"round": r, "avg_sentiment": sum / n as f64, "items": n}))
                 .collect();
             Ok(serde_json::to_string_pretty(&json!({
-                "total_posts": total,
+                "total_posts": total_posts,
+                "total_comments": total_comments,
                 "stance_distribution": dist,
                 "round_min": rounds.iter().min(),
                 "round_max": rounds.iter().max(),
                 "sentiment_by_round": sentiment_by_round,
-                "top_posts_by_likes": top,
+                "top_by_likes": top,
             }))?)
         }
-        "stance_distribution" => Ok(serde_json::to_string_pretty(&store.stance_distribution()?)?),
+        "stance_distribution" => Ok(serde_json::to_string_pretty(&store.content_stance_distribution()?)?),
         _ => Ok(format!(
             "Unknown tool: {name}. Available: search_posts, statistics, stance_distribution"
         )),
@@ -527,9 +532,11 @@ mod tests {
         let out = execute_tool(&store, "statistics", &json!({})).unwrap();
         let v: Value = serde_json::from_str(&out).unwrap();
         assert_eq!(v["total_posts"], 3);
+        // The reply is counted now — the opinion often lives in comments.
+        assert_eq!(v["total_comments"], 1);
         assert_eq!(v["round_max"], 2);
         assert_eq!(v["sentiment_by_round"].as_array().unwrap().len(), 3);
-        assert_eq!(v["top_posts_by_likes"][0]["num_likes"], 1);
+        assert_eq!(v["top_by_likes"][0]["num_likes"], 1);
         std::fs::remove_dir_all(dir).ok();
     }
 
@@ -538,8 +545,17 @@ mod tests {
         let (store, dir) = seeded_store("stance");
         let out = execute_tool(&store, "stance_distribution", &json!({})).unwrap();
         let v: Value = serde_json::from_str(&out).unwrap();
-        assert_eq!(v[0]["stance"], "support");
-        assert_eq!(v[0]["count"], 2);
+        let count_of = |stance: &str| {
+            v.as_array()
+                .unwrap()
+                .iter()
+                .find(|r| r["stance"] == stance)
+                .map(|r| r["count"].as_i64().unwrap())
+        };
+        // 2 support posts, and oppose = 1 post + 1 comment: the comment is
+        // included, so a posts-only distribution (which would show oppose=1) is wrong.
+        assert_eq!(count_of("support"), Some(2));
+        assert_eq!(count_of("oppose"), Some(2));
         std::fs::remove_dir_all(dir).ok();
     }
 
