@@ -121,7 +121,7 @@
               <span class="report-id">ID: {{ reportId || 'REF-2024-X92' }}</span>
             </div>
             <h1 class="main-title">{{ reportOutline.title }}</h1>
-            <p class="sub-title">{{ reportOutline.summary }}</p>
+            <p v-if="reportOutline.summary" class="sub-title">{{ reportOutline.summary }}</p>
             <div class="header-divider"></div>
           </div>
 
@@ -571,7 +571,7 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
-import { chatWithReport, getReport, getAgentLog } from '../api/report'
+import { chatWithReport, getReport } from '../api/report'
 import { interviewAgents, getSimulationProfilesRealtime } from '../api/simulation'
 import EntitySelectionModal from './EntitySelectionModal.vue'
 
@@ -1357,39 +1357,25 @@ const loadReportData = async () => {
   try {
     addLog(`Loading report data: ${props.reportId}`)
     
-    // Get report info
+    // The report itself is the source: it carries its sections, and unlike the
+    // generation log it survives a backend restart. Rebuilding this pane by
+    // replaying log events meant the panel sat on "Waiting for Report Agent"
+    // once the agent stopped emitting the plan/section events it once did.
     const reportRes = await getReport(props.reportId)
-    if (reportRes.success && reportRes.data) {
-      // Load agent logs to get report outline and sections
-      await loadAgentLogs()
+    const report = reportRes.success && reportRes.data
+    if (!report) return
+
+    const sections = report.sections || []
+    reportOutline.value = {
+      title: report.topic || 'Public Opinion Report',
+      summary: '',
+      sections: sections.map((s) => ({ title: s.title })),
     }
+    // Sections are keyed from 1 to match the template's idx + 1.
+    sections.forEach((s, i) => { generatedSections.value[i + 1] = s.content })
+    addLog(`Report data loading completed (${sections.length} sections)`)
   } catch (err) {
     addLog(`Failed to load report: ${err.message}`)
-  }
-}
-
-const loadAgentLogs = async () => {
-  if (!props.reportId) return
-  
-  try {
-    const res = await getAgentLog(props.reportId, 0)
-    if (res.success && res.data) {
-      const logs = res.data.logs || []
-      
-      logs.forEach(log => {
-        if (log.action === 'planning_complete' && log.details?.outline) {
-          reportOutline.value = log.details.outline
-        }
-        
-        if (log.action === 'section_complete' && log.section_index < 100 && log.details?.content) {
-          generatedSections.value[log.section_index] = log.details.content
-        }
-      })
-      
-      addLog('Report data loading completed')
-    }
-  } catch (err) {
-    addLog(`Failed to load report logs: ${err.message}`)
   }
 }
 
