@@ -19,60 +19,66 @@
 
     <div class="cards" :class="{ solo: !useBoost }">
       <div v-for="c in cards" :key="c.key" class="card">
-        <h3>{{ c.title }}</h3>
-        <p class="card-hint">{{ c.hint }}</p>
+        <div class="card-body">
+          <div class="card-left">
+            <h3>{{ c.title }}</h3>
+            <p class="card-hint">{{ c.hint }}</p>
 
-        <div class="prov-grid">
-          <button
-            v-for="p in providers" :key="p.id"
-            class="prov" :class="{ on: sameUrl(c.state.base_url, p.base_url) }"
-            @click="pickProvider(c.state, p)"
-          >
-            <span class="prov-label">{{ p.label }}</span>
-          </button>
-        </div>
-        <p v-if="pickedFor(c.state)" class="prov-hint">{{ pickedFor(c.state).hint }}</p>
-
-        <label>Base URL</label>
-        <input class="input" v-model="c.state.base_url" placeholder="https://…/v1" />
-
-        <label>Model</label>
-        <input class="input" v-model="c.state.model" placeholder="model name" />
-        <div v-if="modelsFor(c.state).length" class="model-chips">
-          <button
-            v-for="m in modelsFor(c.state)" :key="m"
-            class="chip" :class="{ on: c.state.model === m }"
-            @click="c.state.model = m"
-          >{{ m }}</button>
-        </div>
-
-        <!-- ChatGPT subscription: OAuth sign-in instead of an API key. -->
-        <div v-if="isChatgpt(c.state)" class="lms">
-          <div class="lms-head"><span>ChatGPT subscription</span></div>
-          <div v-if="chatgpt.logged_in" class="cg-in">
-            <span class="badge loaded">signed in</span>
-            <span class="cg-who">{{ chatgpt.email || '' }}<template v-if="chatgpt.plan"> · {{ chatgpt.plan }}</template></span>
-            <button class="mini" @click="cgLogout">Sign out</button>
+            <div class="prov-grid">
+              <button
+                v-for="p in providers" :key="p.id"
+                class="prov" :class="{ on: sameUrl(c.state.base_url, p.base_url) }"
+                @click="pickProvider(c.state, p)"
+              >
+                <span class="prov-label">{{ p.label }}</span>
+              </button>
+            </div>
+            <p v-if="pickedFor(c.state)" class="prov-hint">{{ pickedFor(c.state).hint }}</p>
           </div>
-          <div v-else>
-            <button class="mini" :disabled="cgBusy" @click="cgLogin">
-              {{ cgBusy ? 'Waiting for browser…' : 'Sign in with ChatGPT' }}
-            </button>
-            <div v-if="cgMsg" class="lms-status" :class="{ err: cgErr }">{{ cgMsg }}</div>
+
+          <div class="card-right">
+            <label>Base URL</label>
+            <input class="input" v-model="c.state.base_url" placeholder="https://…/v1" />
+
+            <label>Model</label>
+            <input class="input" v-model="c.state.model" placeholder="model name" />
+            <div v-if="modelsFor(c.state).length" class="model-chips">
+              <button
+                v-for="m in modelsFor(c.state)" :key="m"
+                class="chip" :class="{ on: c.state.model === m }"
+                @click="c.state.model = m"
+              >{{ m }}</button>
+            </div>
+
+            <!-- ChatGPT subscription: OAuth sign-in instead of an API key. -->
+            <div v-if="isChatgpt(c.state)" class="lms">
+              <div class="lms-head"><span>ChatGPT subscription</span></div>
+              <div v-if="chatgpt.logged_in" class="cg-in">
+                <span class="badge loaded">signed in</span>
+                <span class="cg-who">{{ chatgpt.email || '' }}<template v-if="chatgpt.plan"> · {{ chatgpt.plan }}</template></span>
+                <button class="mini" @click="cgLogout">Sign out</button>
+              </div>
+              <div v-else>
+                <button class="mini" :disabled="cgBusy" @click="cgLogin">
+                  {{ cgBusy ? 'Waiting for browser…' : 'Sign in with ChatGPT' }}
+                </button>
+                <div v-if="cgMsg" class="lms-status" :class="{ err: cgErr }">{{ cgMsg }}</div>
+              </div>
+              <p class="cg-note">Uses your ChatGPT plan via OpenAI's Codex backend - no API key, billed to your subscription. Unofficial; OpenAI may change it.</p>
+            </div>
+
+            <template v-else>
+              <label>{{ c.state.has_key ? 'API key (leave blank to keep current)' : 'API key' }}</label>
+              <input class="input" type="password" v-model="c.state.key"
+                     :placeholder="c.state.has_key ? '•••••••• saved' : ''" />
+
+              <div class="row">
+                <button class="test" @click="testSlot(c.key)">Test</button>
+                <span v-if="status[c.key]" :class="status[c.key].ok ? 'ok' : 'err'">{{ status[c.key].msg }}</span>
+              </div>
+            </template>
           </div>
-          <p class="cg-note">Uses your ChatGPT plan via OpenAI's Codex backend — no API key, billed to your subscription. Unofficial; OpenAI may change it.</p>
         </div>
-
-        <template v-else>
-          <label>{{ c.state.has_key ? 'API key (leave blank to keep current)' : 'API key' }}</label>
-          <input class="input" type="password" v-model="c.state.key"
-                 :placeholder="c.state.has_key ? '•••••••• saved' : ''" />
-
-          <div class="row">
-            <button class="test" @click="testSlot(c.key)">Test</button>
-            <span v-if="status[c.key]" :class="status[c.key].ok ? 'ok' : 'err'">{{ status[c.key].msg }}</span>
-          </div>
-        </template>
       </div>
     </div>
 
@@ -281,23 +287,43 @@ async function save() {
   position: fixed;
   inset: 0;
   z-index: 2000;
-  background: rgba(17, 17, 17, 0.35);
+  background: rgba(17, 17, 17, 0.45);
   display: flex;
-  justify-content: flex-start;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
 }
+/* Centered 16:9 modal (not a side drawer). Content fits without a scrollbar via
+   the two-column card body; a narrow fallback below keeps small screens usable. */
 .settings {
-  width: min(520px, 100vw);
-  height: 100%;
-  overflow-y: auto;
-  padding: 28px 24px 40px;
+  width: min(1040px, 94vw);
+  aspect-ratio: 16 / 9;
+  max-height: 92vh;
+  overflow: hidden;
+  padding: 22px 26px;
   background: #fff;
-  box-shadow: 8px 0 30px rgba(0, 0, 0, 0.18);
+  border-radius: 14px;
+  box-shadow: 0 24px 60px rgba(14, 35, 64, 0.28);
+  display: flex;
+  flex-direction: column;
 }
-/* Slide + fade the whole overlay in from the left. */
+.head { flex-shrink: 0; }
+.cards { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.split, .actions { flex-shrink: 0; }
+.card-body { display: flex; gap: 24px; align-items: flex-start; }
+.card-left { flex: 0 0 44%; min-width: 0; }
+.card-right { flex: 1 1 auto; min-width: 0; }
+/* Boost mode (two cards) or narrow: stack the body into one column. */
+.cards:not(.solo) .card-body { flex-direction: column; gap: 12px; }
+@media (max-width: 760px) {
+  .settings { aspect-ratio: auto; width: min(560px, 100%); max-height: 88vh; overflow-y: auto; }
+  .card-body { flex-direction: column; gap: 12px; }
+}
+/* Fade the backdrop; scale the modal up from the center. */
 .drawer-enter-active, .drawer-leave-active { transition: opacity 0.2s ease; }
-.drawer-enter-active .settings, .drawer-leave-active .settings { transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1); }
+.drawer-enter-active .settings, .drawer-leave-active .settings { transition: transform 0.22s cubic-bezier(0.34, 1.15, 0.64, 1), opacity 0.22s ease; }
 .drawer-enter-from, .drawer-leave-to { opacity: 0; }
-.drawer-enter-from .settings, .drawer-leave-to .settings { transform: translateX(-100%); }
+.drawer-enter-from .settings, .drawer-leave-to .settings { transform: translateY(10px) scale(0.97); opacity: 0; }
 .close {
   position: absolute;
   top: 18px;
@@ -314,29 +340,29 @@ async function save() {
 }
 .close:hover { background: #f3f4f6; color: #111; }
 .head { position: relative; }
-.head h1 { margin: 0 0 8px; }
-.sub { color: #555; line-height: 1.5; max-width: 720px; margin: 0; }
+.head h1 { margin: 0 0 5px; font-size: 22px; }
+.sub { color: #555; line-height: 1.45; max-width: 760px; margin: 0; font-size: 13px; }
 /* Back + readiness sit on one row: as inline-blocks they collided with no gap. */
-.head-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 14px; }
+.head-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 8px; }
 .back { color: #2563eb; text-decoration: none; font-size: 14px; }
 .back:hover { text-decoration: underline; }
 .ready-line { font-size: 13px; padding: 6px 10px; border-radius: 8px; }
 .ready-ok { color: #065f46; background: #d1fae5; }
 .ready-warn { color: #92400e; background: #fef3c7; }
 /* One column: the drawer is too narrow for a side-by-side split. */
-.cards { display: grid; grid-template-columns: 1fr; gap: 20px; margin: 24px 0; }
-.split { display: flex; gap: 10px; align-items: flex-start; margin: 0 0 20px; cursor: pointer; max-width: 620px; }
+.cards { display: grid; grid-template-columns: 1fr; gap: 16px; margin: 12px 0 10px; }
+.split { display: flex; gap: 10px; align-items: flex-start; margin: 0 0 6px; cursor: pointer; max-width: 620px; }
 .split input { margin-top: 3px; }
 .split b { display: block; font-size: 13px; color: #374151; font-weight: 600; }
 .split em { display: block; font-size: 11px; color: #9ca3af; font-style: normal; line-height: 1.5; margin-top: 2px; }
-.card { border: 1px solid #e5e7eb; border-radius: 12px; padding: 18px; background: #fff; }
+.card { border: 1px solid #e5e7eb; border-radius: 12px; padding: 14px 16px; background: #fff; }
 .card h3 { margin: 0 0 4px; }
-.card-hint { color: #6b7280; font-size: 13px; margin: 0 0 14px; }
+.card-hint { color: #6b7280; font-size: 12px; margin: 0 0 10px; }
 .card label { display: block; font-size: 12px; color: #374151; margin: 12px 0 4px; font-weight: 600; }
 
 /* Hosted provider picker */
 .prov-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 4px; }
-.prov { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 8px 10px; border: 1px solid #e5e7eb; background: #fff; border-radius: 8px; cursor: pointer; font-size: 12px; font-family: inherit; color: #374151; }
+.prov { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 6px 9px; border: 1px solid #e5e7eb; background: #fff; border-radius: 8px; cursor: pointer; font-size: 12px; font-family: inherit; color: #374151; }
 .prov:hover { border-color: #d1d5db; background: #fafafa; }
 .prov.on { border-color: #2563eb; background: #eff6ff; color: #1d4ed8; font-weight: 600; }
 .prov-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -355,7 +381,7 @@ async function save() {
 .saved { color: #059669; }
 
 /* ChatGPT subscription panel */
-.lms { margin-top: 12px; border: 1px dashed #d1d5db; border-radius: 8px; padding: 10px; background: #fafafa; }
+.lms { margin-top: 8px; border: 1px dashed #d1d5db; border-radius: 8px; padding: 8px 10px; background: #fafafa; }
 .lms-head { display: flex; justify-content: space-between; align-items: center; font-size: 12px; font-weight: 600; color: #374151; margin-bottom: 8px; }
 .badge { font-size: 10px; padding: 1px 6px; border-radius: 999px; }
 .badge.loaded { background: #d1fae5; color: #065f46; }
@@ -365,5 +391,5 @@ async function save() {
 .lms-status.err { color: #dc2626; }
 .cg-in { display: flex; align-items: center; gap: 8px; }
 .cg-who { flex: 1; font-size: 12px; color: #374151; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cg-note { font-size: 11px; color: #9ca3af; margin: 8px 0 0; line-height: 1.4; }
+.cg-note { font-size: 11px; color: #9ca3af; margin: 6px 0 0; line-height: 1.35; }
 </style>
