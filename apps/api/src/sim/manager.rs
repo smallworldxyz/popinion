@@ -6,7 +6,7 @@ use super::SimRegistry;
 use crate::llm::Llm;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
 /// Filesystem + registry lifecycle for simulations. Each sim owns a directory
@@ -48,13 +48,32 @@ fn default_kind() -> String {
     "canonical".into()
 }
 
+/// A sim id is one path component, never a path. Rejects separators, `..`,
+/// absolute paths and Windows drive/UNC prefixes (`\` and `:` are not
+/// separators on unix, so `Components` alone would let `C:\x` through).
+fn valid_sim_id(id: &str) -> bool {
+    !id.is_empty()
+        && !id.contains(['/', '\\', ':', '\0'])
+        && !id.contains("..")
+        && matches!(Path::new(id).components().next(), Some(Component::Normal(_)))
+        && Path::new(id).components().count() == 1
+}
+
 impl Manager {
     pub fn new(data_dir: impl Into<PathBuf>, registry: SimRegistry, llm: Llm) -> Self {
         Manager { data_dir: data_dir.into(), registry, llm }
     }
 
+    /// The sim's directory. Every path accessor goes through here, so the id
+    /// validation below is the single place traversal is stopped. An id that
+    /// could escape `data_dir` resolves to a path containing a NUL byte, which
+    /// every filesystem call rejects — a rejected id can never name a real file.
     fn dir(&self, id: &str) -> PathBuf {
-        self.data_dir.join(id)
+        if valid_sim_id(id) {
+            self.data_dir.join(id)
+        } else {
+            self.data_dir.join("\0")
+        }
     }
 
     // The on-disk layout is known ONLY here; callers get paths or parsed
@@ -241,7 +260,7 @@ impl Manager {
     /// doesn't exist, so read handlers 404 on a bogus id instead of silently
     /// materializing an empty social.db (and a directory) for it.
     pub fn store(&self, id: &str) -> Result<Arc<Store>> {
-        if id.is_empty() || id.contains('/') || id.contains('\\') || id.contains("..") {
+        if !valid_sim_id(id) {
             anyhow::bail!("invalid simulation id");
         }
         if !self.dir(id).exists() {
@@ -290,10 +309,10 @@ impl Manager {
     }
 
     /// Delete a simulation: stop it if live, then remove its directory to free
-    /// disk and declutter the runs list. Irreversible. The id is validated the
-    /// same way `store()` does so we can never remove a path outside data_dir.
+    /// disk and declutter the runs list. Irreversible. `stop()` awaits the
+    /// engine's exit, so the directory is never removed under a live writer.
     pub async fn delete(&self, id: &str) -> Result<()> {
-        if id.is_empty() || id.contains('/') || id.contains('\\') || id.contains("..") {
+        if !valid_sim_id(id) {
             anyhow::bail!("invalid simulation id");
         }
         if let Some(h) = self.registry.remove(id) {
@@ -383,6 +402,53 @@ mod tests {
         m.persist_status(&id, "completed");
         assert_eq!(m.meta(&id).unwrap().status, "completed");
 
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_hostile_id_cannot_escape_the_data_dir() {
+        let (m, dir) = test_manager();
+        let real = m.create("Fuel Levy", personas(1), SimConfig::default(), None, None).unwrap();
+        let outside = dir.parent().unwrap().join("popinion-outside-secret");
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(outside.join("config.json"), b"{}").unwrap();
+
+        for bad in [
+            outside.to_str().unwrap(),
+            "/etc",
+            "..",
+            "../popinion-outside-secret",
+            "a/../../b",
+            r"..\windows",
+            r"C:\windows",
+            "",
+        ] {
+            assert!(
+                m.config_path(bad).starts_with(&dir),
+                "{bad} escaped data_dir: {:?}",
+                m.config_path(bad)
+            );
+            assert!(m.load_config(bad).is_err(), "{bad} read a config outside data_dir");
+            assert!(m.store(bad).is_err(), "{bad} opened a store outside data_dir");
+            assert!(m.meta(bad).is_err(), "{bad} read metadata outside data_dir");
+        }
+
+        // The escape attempts left the real sim and the outside dir untouched.
+        assert!(m.load_config(&real).is_ok());
+        assert!(outside.join("config.json").exists());
+        let _ = std::fs::remove_dir_all(outside);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn delete_refuses_a_hostile_id_and_keeps_the_target() {
+        let (m, dir) = test_manager();
+        let outside = dir.parent().unwrap().join("popinion-outside-delete");
+        std::fs::create_dir_all(&outside).unwrap();
+        assert!(m.delete(outside.to_str().unwrap()).await.is_err());
+        assert!(m.delete("..").await.is_err());
+        assert!(outside.exists(), "delete must not reach outside data_dir");
+        let _ = std::fs::remove_dir_all(outside);
         let _ = std::fs::remove_dir_all(dir);
     }
 
