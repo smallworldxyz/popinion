@@ -413,11 +413,11 @@ onUnmounted(stopPolling)
 
 /* ─── Command bar ──────────────────────────────────────────────────────────── */
 .cmd-bar {
-  display: flex; align-items: center; gap: 32px; flex-shrink: 0;
+  display: flex; align-items: center; gap: 20px; row-gap: 12px; flex-wrap: wrap; flex-shrink: 0;
   padding: 12px 24px;
   background: var(--color-surface); border-bottom: 1px solid var(--color-border);
 }
-.cmd-status { display: flex; align-items: center; gap: 10px; min-width: 190px; }
+.cmd-status { display: flex; align-items: center; gap: 10px; min-width: 150px; }
 .status-meta { display: flex; flex-direction: column; gap: 1px; line-height: 1.1; }
 .status-text { font-size: var(--fs-sm); font-weight: 600; color: var(--color-text); }
 .status-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--color-text-muted); flex-shrink: 0; }
@@ -427,7 +427,7 @@ onUnmounted(stopPolling)
 .status-dot.err { background: var(--stance-oppose-strong); }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
 
-.cmd-stats { display: flex; gap: 30px; flex: 1; }
+.cmd-stats { display: flex; gap: 20px; flex: 1 1 auto; min-width: 0; }
 .rstat { display: flex; flex-direction: column; gap: 2px; }
 .rstat-num {
   font-family: var(--font-mono); font-size: var(--fs-md); font-weight: 600;
@@ -435,7 +435,7 @@ onUnmounted(stopPolling)
 }
 .rstat-den { font-size: var(--fs-xs); color: var(--color-text-muted); font-weight: 400; }
 
-.cmd-actions { display: flex; align-items: center; gap: 10px; }
+.cmd-actions { display: flex; align-items: center; gap: 10px; margin-left: auto; flex-shrink: 0; }
 .stop-btn { padding: 9px 16px; }
 .stop-glyph { width: 9px; height: 9px; border-radius: 2px; background: currentColor; }
 .report-btn .arrow { font-weight: 400; }

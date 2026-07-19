@@ -1,5 +1,5 @@
 <template>
-  <button v-if="!['Home', 'Process'].includes($route.name)" class="settings-fab" title="Model settings" @click="openSettings">⚙ Models</button>
+  <button v-if="!['Home', 'Process', 'Simulation', 'SimulationRun'].includes($route.name)" class="settings-fab" title="Model settings" @click="openSettings">⚙ Models</button>
   <router-view />
   <SettingsView />
 </template>

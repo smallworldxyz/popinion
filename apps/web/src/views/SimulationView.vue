@@ -30,6 +30,7 @@
           <span class="dot"></span>
           {{ statusText }}
         </span>
+        <button class="brand-models" @click="openSettings">⚙ Models</button>
       </div>
     </header>
 
@@ -67,6 +68,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import GraphPanel from '../components/GraphPanel.vue'
+import { openSettings } from '../settingsDrawer'
 import Step2EnvSetup from '../components/Step2EnvSetup.vue'
 import { getProject, getGraphData } from '../api/graph'
 import { getSimulation, stopSimulation, getEnvStatus, closeSimulationEnv } from '../api/simulation'
@@ -364,6 +366,23 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 16px;
+}
+
+.brand-models {
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  font-size: var(--fs-xs, 13px);
+  font-weight: 600;
+  color: var(--color-text, #1a2433);
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border, #d9e0e8);
+  border-radius: var(--radius, 8px);
+  padding: 6px 11px;
+  cursor: pointer;
+}
+.brand-models:hover {
+  background: var(--color-accent, #f2b01e);
+  color: var(--color-on-accent, #0e2340);
+  border-color: var(--color-accent, #f2b01e);
 }
 
 .workflow-step {
