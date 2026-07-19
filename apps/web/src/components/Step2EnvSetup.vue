@@ -1283,11 +1283,14 @@ const fetchConfigRealtime = async () => {
         }
       }
       
-      // if configuration Generated
-      if (data.config_generated && data.config) {
-        simulationConfig.value = data.config
+      // The backend's GET /:id/config returns the raw config object (with
+      // time_config/agent_configs), not a {config_generated, config} envelope.
+      // Accept either shape so a present, valid config completes the step.
+      const cfg = data.config_generated ? data.config : (data.time_config ? data : null)
+      if (cfg) {
+        simulationConfig.value = cfg
         addLog('✓ Simulation configuration Generation Completed')
-        
+
         // Show Detailed configuration summary
         if (data.summary) {
           addLog(`  ├─ Agent count: ${data.summary.total_agents} units`)
@@ -1296,16 +1299,16 @@ const fetchConfigRealtime = async () => {
           addLog(`  ├─ Hot Topic: ${data.summary.hot_topics_count} units`)
           addLog(`  └─ Platform configuration: Twitter ${data.summary.has_twitter_config ? '✓' : '✗'}, Reddit ${data.summary.has_reddit_config ? '✓' : '✗'}`)
         }
-        
+
         // Show time configuration Details
-        if (data.config.time_config) {
-          const tc = data.config.time_config
+        if (cfg.time_config) {
+          const tc = cfg.time_config
           addLog(`Time configuration: ${tc.minutes_per_round} minutes, total ${Math.floor((tc.total_simulation_hours * 60) / tc.minutes_per_round)} rounds`)
         }
-        
+
         // Show event configuration
-        if (data.config.event_config?.narrative_direction) {
-          const narrative = data.config.event_config.narrative_direction
+        if (cfg.event_config?.narrative_direction) {
+          const narrative = cfg.event_config.narrative_direction
           addLog(`Narrative Direction: ${narrative.length > 50 ? narrative.substring(0, 50) + '...' : narrative}`)
         }
         
@@ -1332,17 +1335,20 @@ const loadPreparedData = async () => {
   try {
     const res = await getSimulationConfigRealtime(props.simulationId)
     if (res.success && res.data) {
-      if (res.data.config_generated && res.data.config) {
-        simulationConfig.value = res.data.config
+      // Same contract fix as fetchConfigRealtime: the backend returns the raw
+      // config object, not a {config_generated, config} envelope.
+      const cfg = res.data.config_generated ? res.data.config : (res.data.time_config ? res.data : null)
+      if (cfg) {
+        simulationConfig.value = cfg
         addLog('✓ Simulation configuration loaded successfully')
-        
+
         // Show Detailed configuration summary
         if (res.data.summary) {
           addLog(`  ├─ Agent count: ${res.data.summary.total_agents} units`)
           addLog(`  ├─ Simulation Duration: ${res.data.summary.simulation_hours} Hours`)
           addLog(`  └─ Initial posts: ${res.data.summary.initial_posts_count} items`)
         }
-        
+
         addLog('✓ Environment setup complete, can start simulation')
         phase.value = 4
         emit('update-status', 'completed')

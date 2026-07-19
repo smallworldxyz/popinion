@@ -406,7 +406,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick, h, reactive } from 'vue'
 import { useRouter } from 'vue-router'
-import { getAgentLog, getConsoleLog } from '../api/report'
+import { getAgentLog, getConsoleLog, getReport } from '../api/report'
 import CredibilityPanel from './CredibilityPanel.vue'
 import RehearsalPanel from './RehearsalPanel.vue'
 import TrustChecksPanel from './TrustChecksPanel.vue'
@@ -1972,9 +1972,33 @@ const getLogLevelClass = (log) => {
 let agentLogTimer = null
 let consoleLogTimer = null
 
+// Populate the report body from the finished report when the agent log has no
+// per-section outline (the agent writes the report in a single pass). Idempotent.
+const hydrateFinalReport = async () => {
+  if (reportOutline.value?.sections?.length) return
+  try {
+    const res = await getReport(props.reportId)
+    const r = res?.data
+    const secs = r?.sections || []
+    if (secs.length) {
+      reportOutline.value = {
+        title: r.topic || 'Simulation Report',
+        summary: '',
+        sections: secs.map(s => ({ title: s.title })),
+      }
+      const g = {}
+      secs.forEach((s, i) => { g[i + 1] = s.content })
+      generatedSections.value = g
+      isComplete.value = true
+    }
+  } catch (err) {
+    console.warn('Failed to hydrate final report:', err)
+  }
+}
+
 const fetchAgentLog = async () => {
   if (!props.reportId) return
-  
+
   try {
     const res = await getAgentLog(props.reportId, agentLogLine.value)
     
@@ -2023,6 +2047,10 @@ const fetchAgentLog = async () => {
             currentSectionIndex.value = null  // Ensure clear loading status
             emit('update-status', 'completed')
             stopPolling()
+            // The report agent drafts in one pass, so the log carries no per-section
+            // outline/content entries — without this the body stays on "Waiting for
+            // Report Agent...". Render the finished report's sections directly.
+            hydrateFinalReport()
             // Scrolling logic unified in nextTick after loop end Process
           }
           
