@@ -37,6 +37,7 @@ fn tools_description() -> &'static str {
 - search_posts: find posts AND comments (replies) matching keywords - the population often voices its opinion in replies, so this covers both. parameters: {"query": "keywords", "limit": 10}
 - statistics: overall numbers - post and comment counts, both stance readings (see stance_distribution), most-liked items, round range. parameters: {}
 - stance_distribution: THREE readings of the same run. `by_grounded_agent` counts ONCE per agent compiled from a real entity in the source material - this is the ONLY one to quote as the headline distribution. `by_agent` adds the synthetic agents, which were constructed during setup to populate each camp and are therefore not evidence of anyone's opinion. `by_volume` counts every post and comment, so a few prolific agents can dominate it; use it ONLY to say how loud a camp was. parameters: {}
+- constituency_map: WHO holds which position - each named actor, the camp it was compiled into, where it ended, and whether it changed. Also reports how many agents changed position at all. This is the report's most defensible content: the graph found these constituencies, and the percentages are only a count of them. parameters: {}
 - web_search: look up current real-world context outside the simulation (news, facts, background). parameters: {"query": "search terms", "max_results": 5}
 
 To call a tool, emit exactly:
@@ -149,13 +150,14 @@ pub fn execute_tool(store: &Store, name: &str, params: &Value) -> anyhow::Result
                 "top_by_likes": top,
             }))?)
         }
+        "constituency_map" => Ok(serde_json::to_string_pretty(&store.constituency_map()?)?),
         "stance_distribution" => Ok(serde_json::to_string_pretty(&json!({
             "by_grounded_agent": store.grounded_stance_distribution()?,
             "by_agent": store.agent_stance_distribution()?,
             "by_volume": store.content_stance_distribution()?,
         }))?),
         _ => Ok(format!(
-            "Unknown tool: {name}. Available: search_posts, statistics, stance_distribution"
+            "Unknown tool: {name}. Available: search_posts, statistics, stance_distribution, constituency_map"
         )),
     }
 }
@@ -442,6 +444,12 @@ async fn generate(st: &AppState, report_id: &str) -> anyhow::Result<()> {
     let writer_system = format!(
         "You are an expert public-opinion analyst. Analyze the simulated public discussion about \
          \"{topic}\" to determine sentiment, identify key themes, and detect emerging trends.\n\n\
+         What this data is, and is not: entities were extracted from source material, compiled into \
+         camps from the positions they took there, and then simulated. The population is therefore \
+         whoever the source material named - not a sample of any real public - and each agent's \
+         starting camp was decided before the run. Never call the result a poll, a survey, or the \
+         opinion of a country or its citizens. It is the balance of the constituencies this source \
+         described, after they argued with each other.\n\n\
          Data source: a Popinion multi-agent simulation - AI personas grounded in real evidence, each \
          posting or replying with a recorded STANCE toward the topic (support / oppose / neutral) and a \
          SENTIMENT value from -1 to 1. Read stance as the primary opinion signal (support = favorable, \
@@ -450,7 +458,12 @@ async fn generate(st: &AppState, report_id: &str) -> anyhow::Result<()> {
          PRECISION: {precision_rule}\n\n\
          Write the report in Markdown with EXACTLY these five section headings, in this order:\n{section_list}\n\n\
          Section requirements:\n\
-         - Executive Summary: a 3-sentence overview of the general public mood.\n\
+         - Executive Summary: LEAD with WHICH constituencies hold which position and on what stated \
+           grounds, taken from constituency_map - that is what this system actually observed. The \
+           overall percentage comes second and is a count of those constituencies, not a poll of a \
+           population. If `changed_position` is 0 or near it, say so plainly in this section: the \
+           agents ended where they were compiled to start, so the run described its own setup and \
+           the distribution should be read as a map of the source material rather than a finding.\n\
          - Sentiment Breakdown: the distribution across Favorable, Unfavorable, Neutral (and Mixed if warranted) \
            with PERCENTAGES computed from `by_grounded_agent` ONLY - one vote per agent that was compiled \
            from a real entity in the source material. State that count explicitly. NEVER compute the headline \
@@ -636,8 +649,8 @@ mod tests {
         let path = dir.join("s.db");
         std::fs::remove_file(&path).ok();
         let s = Store::open(&path).unwrap();
-        s.add_user(1, "Alice", "alice", "", "activist", false).unwrap();
-        s.add_user(2, "Bob", "bob", "", "skeptic", false).unwrap();
+        s.add_user(1, "Alice", "alice", "", "activist", false, None).unwrap();
+        s.add_user(2, "Bob", "bob", "", "skeptic", false, None).unwrap();
         let p1 = s.add_post(1, "I fully support the new climate policy", 0, Some("support"), Some(0.8)).unwrap();
         s.add_post(2, "This climate policy will ruin the economy", 1, Some("oppose"), Some(-0.6)).unwrap();
         s.add_post(1, "Everyone should read the climate policy details", 2, Some("support"), Some(0.5)).unwrap();
@@ -686,6 +699,44 @@ mod tests {
         // Two agents, one each way, regardless of how much either wrote.
         assert_eq!(count_of(&v["by_agent"], "support"), Some(1));
         assert_eq!(count_of(&v["by_agent"], "oppose"), Some(1));
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    /// The map is what the system can defend, and it also exposes the central
+    /// risk: factions are assigned at compile time and the distribution is read
+    /// back out of the run, so a run where nobody moves has restated its setup.
+    #[test]
+    fn the_constituency_map_reports_who_moved_and_who_did_not() {
+        let dir = std::env::temp_dir().join(format!("popinion-report-map-{}", std::process::id()));
+        let path = dir.join("s.db");
+        std::fs::remove_file(&path).ok();
+        let s = Store::open(&path).unwrap();
+
+        // Compiled as an opponent, argued as one: the setup speaking.
+        s.add_user(1, "Residents", "res", "", "", false, Some("con")).unwrap();
+        s.add_post(1, "Still against it", 0, Some("oppose"), Some(-0.5)).unwrap();
+        // Compiled as an opponent, ended supporting: the run found something.
+        s.add_user(2, "Council", "council", "", "", false, Some("con")).unwrap();
+        s.add_post(2, "Against for now", 0, Some("oppose"), Some(-0.3)).unwrap();
+        s.add_post(2, "Persuaded, actually", 3, Some("support"), Some(0.4)).unwrap();
+        // Constructed, and with no prior at all.
+        s.add_user(3, "Supporter", "sup", "", "", true, Some("pro")).unwrap();
+        s.add_post(3, "For it", 0, Some("support"), Some(0.6)).unwrap();
+        s.add_user(4, "Observer", "obs", "", "", false, None).unwrap();
+        s.add_post(4, "Unsure", 0, Some("neutral"), Some(0.0)).unwrap();
+
+        let m: Value = serde_json::from_str(&execute_tool(&s, "constituency_map", &json!({})).unwrap()).unwrap();
+        assert_eq!(m["agents_with_a_prior"], 3, "the observer had no camp to depart from");
+        assert_eq!(m["changed_position"], 1, "only the council moved");
+
+        let member = |name: &str| {
+            m["members"].as_array().unwrap().iter().find(|x| x["name"] == name).unwrap().clone()
+        };
+        assert_eq!(member("Council")["changed_position"], json!(true));
+        assert_eq!(member("Council")["ended_at"], json!("support"));
+        assert_eq!(member("Residents")["changed_position"], json!(false));
+        assert_eq!(member("Supporter")["grounded"], json!(false), "provenance is visible per member");
+        assert_eq!(member("Observer")["compiled_into"], json!(null));
         std::fs::remove_dir_all(dir).ok();
     }
 
@@ -759,14 +810,14 @@ mod tests {
         std::fs::remove_file(&path).ok();
         let s = Store::open(&path).unwrap();
 
-        s.add_user(1, "Ministry", "ministry", "", "official", false).unwrap();
+        s.add_user(1, "Ministry", "ministry", "", "official", false, None).unwrap();
         s.add_post(1, "We back it", 0, Some("support"), Some(0.6)).unwrap();
         for uid in 2..5 {
-            s.add_user(uid, "Residents", &format!("res{uid}"), "", "resident", false).unwrap();
+            s.add_user(uid, "Residents", &format!("res{uid}"), "", "resident", false, None).unwrap();
             s.add_post(uid, "We are against it", 0, Some("oppose"), Some(-0.5)).unwrap();
         }
         for uid in 10..16 {
-            s.add_user(uid, "Supporter", &format!("sup{uid}"), "", "citizen", true).unwrap();
+            s.add_user(uid, "Supporter", &format!("sup{uid}"), "", "citizen", true, None).unwrap();
             s.add_post(uid, "Sounds good to me", 0, Some("support"), Some(0.5)).unwrap();
         }
 
@@ -795,12 +846,12 @@ mod tests {
         let path = dir.join("s.db");
         std::fs::remove_file(&path).ok();
         let s = Store::open(&path).unwrap();
-        s.add_user(1, "Loud", "loud", "", "activist", false).unwrap();
+        s.add_user(1, "Loud", "loud", "", "activist", false, None).unwrap();
         for r in 0..10 {
             s.add_post(1, "Backing this all the way", r, Some("support"), Some(0.7)).unwrap();
         }
         for uid in 2..5 {
-            s.add_user(uid, "Quiet", &format!("quiet{uid}"), "", "resident", false).unwrap();
+            s.add_user(uid, "Quiet", &format!("quiet{uid}"), "", "resident", false, None).unwrap();
             s.add_post(uid, "I am against it", 0, Some("oppose"), Some(-0.5)).unwrap();
         }
 

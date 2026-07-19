@@ -204,6 +204,7 @@ impl Engine {
             "",
             "The event under discussion.",
             false,
+            None,
         )?;
         let post_id = self.store.add_post(super::config::EVENT_AUTHOR_ID, content, round, Some("seed"), None)?;
         self.store.trace(
@@ -224,6 +225,7 @@ impl Engine {
                 &a.profile.bio,
                 &a.profile.persona,
                 a.profile.synthetic,
+                a.profile.faction.as_deref(),
             )?;
         }
         // Seed an influence network: the synthetic public follows the named
@@ -274,6 +276,7 @@ impl Engine {
                 "",
                 "The event under discussion.",
                 false,
+                None,
             )?;
         }
         // Seed the discussion with the configured initial posts (the "event").

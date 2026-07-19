@@ -27,6 +27,10 @@ CREATE TABLE IF NOT EXISTS user (
     -- Was this agent compiled from a graph entity, or constructed to fill out
     -- a camp? A constructed agent is not evidence of anyone's opinion.
     synthetic   INTEGER DEFAULT 0,
+    -- The camp this agent was compiled INTO, before the run began. Kept so the
+    -- run can be asked whether anyone actually moved, rather than only what the
+    -- setup already decided.
+    faction     TEXT,
     created_at  TEXT
 );
 CREATE TABLE IF NOT EXISTS post (
@@ -104,11 +108,15 @@ impl Store {
         conn.execute_batch(SCHEMA)?;
         // Simulations created before provenance was recorded have no such
         // column; their agents read as grounded, which is what they were.
-        let has_synthetic = conn
-            .prepare("SELECT 1 FROM pragma_table_info('user') WHERE name = 'synthetic'")?
-            .exists([])?;
-        if !has_synthetic {
-            conn.execute_batch("ALTER TABLE user ADD COLUMN synthetic INTEGER DEFAULT 0;")?;
+        for (col, decl) in
+            [("synthetic", "synthetic INTEGER DEFAULT 0"), ("faction", "faction TEXT")]
+        {
+            let present = conn
+                .prepare("SELECT 1 FROM pragma_table_info('user') WHERE name = ?1")?
+                .exists([col])?;
+            if !present {
+                conn.execute(&format!("ALTER TABLE user ADD COLUMN {decl}"), [])?;
+            }
         }
         Ok(Store { conn: Mutex::new(conn) })
     }
@@ -121,12 +129,13 @@ impl Store {
         bio: &str,
         persona: &str,
         synthetic: bool,
+        faction: Option<&str>,
     ) -> Result<()> {
         let c = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         c.execute(
-            "INSERT OR REPLACE INTO user (user_id, name, user_name, bio, persona, synthetic, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![user_id, name, user_name, bio, persona, synthetic as i64, now()],
+            "INSERT OR REPLACE INTO user (user_id, name, user_name, bio, persona, synthetic, faction, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![user_id, name, user_name, bio, persona, synthetic as i64, faction, now()],
         )?;
         Ok(())
     }
@@ -466,6 +475,79 @@ impl Store {
     /// stance-bearing action (post or comment). This is the honest population
     /// metric — post-weighted counts let one hyperactive agent dominate.
     /// The store only reads the raw acts; the math lives in sim::stance.
+    /// Who holds which position, and whether the run changed anyone's mind.
+    ///
+    /// This is the output the graph actually supports: named constituencies
+    /// with a stance and provenance. It also exposes the pipeline's central
+    /// risk. Factions are assigned at compile time from the graph's stance
+    /// edges, and the distribution is then read back out of the run — so if no
+    /// agent ever departs from the camp it was compiled into, the simulation
+    /// has restated its own setup and the percentages carry no information the
+    /// graph did not already contain.
+    pub fn constituency_map(&self) -> Result<Value> {
+        let latest: std::collections::HashMap<i64, String> = super::stance::latest_by_agent(&self.stance_acts()?);
+        let c = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let mut stmt = c.prepare(
+            "SELECT user_id, name, user_name, synthetic, faction FROM user ORDER BY synthetic, user_id",
+        )?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, Option<String>>(1)?.unwrap_or_default(),
+                    r.get::<_, Option<String>>(2)?.unwrap_or_default(),
+                    r.get::<_, i64>(3)? != 0,
+                    r.get::<_, Option<String>>(4)?,
+                ))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        drop(stmt);
+        drop(c);
+
+        let camp_of = |f: &str| match f {
+            "pro" => Some("support"),
+            "con" => Some("oppose"),
+            _ => None,
+        };
+        let (mut moved, mut comparable) = (0usize, 0usize);
+        let members: Vec<Value> = rows
+            .into_iter()
+            .filter(|(id, ..)| *id >= 0) // the Event account is not a constituent
+            .map(|(id, name, user_name, synthetic, faction)| {
+                let ended = latest.get(&id).cloned();
+                let started = faction.as_deref().and_then(camp_of);
+                let shifted = match (started, ended.as_deref()) {
+                    (Some(s), Some(e)) => {
+                        comparable += 1;
+                        if s != e {
+                            moved += 1;
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                    _ => false,
+                };
+                json!({
+                    "agent_id": id,
+                    "name": if name.is_empty() { user_name } else { name },
+                    "grounded": !synthetic,
+                    "compiled_into": faction,
+                    "ended_at": ended,
+                    "changed_position": shifted,
+                })
+            })
+            .collect();
+
+        Ok(json!({
+            "members": members,
+            "agents_with_a_prior": comparable,
+            "changed_position": moved,
+            "note": "changed_position counts agents that ended somewhere other than the camp they \
+                     were compiled into. Near zero means the run mostly restated its own setup.",
+        }))
+    }
+
     /// The same reading over grounded agents only — the constituencies the
     /// graph actually found, with the constructed public left out.
     pub fn grounded_stance_distribution(&self) -> Result<Value> {
@@ -705,7 +787,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("popinion-test-{}", std::process::id()));
         let path = dir.join("s.db");
         let s = Store::open(&path).unwrap();
-        s.add_user(1, "Alice", "alice", "bio", "persona", false).unwrap();
+        s.add_user(1, "Alice", "alice", "bio", "persona", false, None).unwrap();
         let p = s.add_post(1, "I support the policy", 0, Some("support"), Some(0.8)).unwrap();
         s.add_comment(p, 1, "agreed", 0, Some("support"), Some(0.6)).unwrap();
         s.like_post(p, 1, false).unwrap();
@@ -725,8 +807,8 @@ mod tests {
     fn follow_and_like_are_idempotent() {
         let dir = std::env::temp_dir().join(format!("popinion-idem-{}", std::process::id()));
         let s = Store::open(&dir.join("s.db")).unwrap();
-        s.add_user(1, "A", "a", "", "", false).unwrap();
-        s.add_user(2, "B", "b", "", "", false).unwrap();
+        s.add_user(1, "A", "a", "", "", false, None).unwrap();
+        s.add_user(2, "B", "b", "", "", false, None).unwrap();
         let p = s.add_post(2, "hi", 0, None, None).unwrap();
 
         // Repeated follow / like from the same agent must not inflate counts.
@@ -746,7 +828,7 @@ mod tests {
     fn independent_labels_drive_distribution_and_agreement() {
         let dir = std::env::temp_dir().join(format!("popinion-indep-{}", std::process::id()));
         let s = Store::open(&dir.join("s.db")).unwrap();
-        s.add_user(1, "u", "u", "", "", false).unwrap();
+        s.add_user(1, "u", "u", "", "", false, None).unwrap();
         let p1 = s.add_post(1, "I back the plan", 0, Some("support"), None).unwrap();
         let p2 = s.add_post(1, "actually this is terrible", 0, Some("support"), None).unwrap();
         // Independent classifier agrees on p1, disagrees on p2 (self=support, indep=oppose).
@@ -777,7 +859,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("popinion-feed-{}", std::process::id()));
         let s = Store::open(&dir.join("s.db")).unwrap();
         for id in 1..=3 {
-            s.add_user(id, "u", "u", "", "", false).unwrap();
+            s.add_user(id, "u", "u", "", "", false, None).unwrap();
         }
         let p_followee = s.add_post(2, "from someone I follow", 0, Some("support"), None).unwrap();
         let p_trending = s.add_post(3, "popular but not followed", 0, Some("oppose"), None).unwrap();
@@ -799,8 +881,8 @@ mod tests {
     fn exposure_rows_and_spread_posts_roundtrip() {
         let dir = std::env::temp_dir().join(format!("popinion-spread-{}", std::process::id()));
         let s = Store::open(&dir.join("s.db")).unwrap();
-        s.add_user(1, "A", "a", "", "", false).unwrap();
-        s.add_user(2, "B", "b", "", "", false).unwrap();
+        s.add_user(1, "A", "a", "", "", false, None).unwrap();
+        s.add_user(2, "B", "b", "", "", false, None).unwrap();
         let seed = s.add_post(-1, "the event", 0, Some("seed"), None).unwrap();
         let normal = s.add_post(1, "a reaction", 1, Some("support"), None).unwrap();
         s.add_comment(seed, 2, "reply on the event", 1, Some("oppose"), None).unwrap();
@@ -831,8 +913,8 @@ mod tests {
     fn agent_weighted_counts_one_vote_per_agent() {
         let dir = std::env::temp_dir().join(format!("popinion-agentw-{}", std::process::id()));
         let s = Store::open(&dir.join("s.db")).unwrap();
-        s.add_user(1, "A", "a", "", "", false).unwrap();
-        s.add_user(2, "B", "b", "", "", false).unwrap();
+        s.add_user(1, "A", "a", "", "", false, None).unwrap();
+        s.add_user(2, "B", "b", "", "", false, None).unwrap();
         // Agent 1 is hyperactive: 3 support posts. Agent 2: one oppose comment.
         for _ in 0..3 {
             s.add_post(1, "yes", 0, Some("support"), Some(0.5)).unwrap();

@@ -31,6 +31,16 @@ pub struct IndependentLabel {
 /// mix two id-spaces. On an exact (round, created_at) tie the first row seen
 /// wins (the SQL's pick among exact ties was likewise unspecified).
 pub fn agent_distribution(acts: &[StanceAct]) -> Value {
+    let mut counts: BTreeMap<&str, i64> = BTreeMap::new();
+    for a in latest_acts(acts).values() {
+        *counts.entry(a.stance.as_str()).or_insert(0) += 1;
+    }
+    stance_rows(counts)
+}
+
+/// Each agent's most recent stance-bearing action. The single definition of
+/// "an agent's position", so a second reader cannot drift from the first.
+fn latest_acts(acts: &[StanceAct]) -> HashMap<i64, &StanceAct> {
     let mut latest: HashMap<i64, &StanceAct> = HashMap::new();
     for act in acts {
         latest
@@ -42,11 +52,12 @@ pub fn agent_distribution(acts: &[StanceAct]) -> Value {
             })
             .or_insert(act);
     }
-    let mut counts: BTreeMap<&str, i64> = BTreeMap::new();
-    for a in latest.values() {
-        *counts.entry(a.stance.as_str()).or_insert(0) += 1;
-    }
-    stance_rows(counts)
+    latest
+}
+
+/// Each agent's final position, by id.
+pub fn latest_by_agent(acts: &[StanceAct]) -> HashMap<i64, String> {
+    latest_acts(acts).into_iter().map(|(id, a)| (id, a.stance.clone())).collect()
 }
 
 /// How often the agents' self-reported stance matched the independent label.

@@ -73,6 +73,7 @@ pub fn router() -> Router<AppState> {
         .route("/:id/spread", get(spread))
         .route("/:id/classify-stance", post(classify_stance_h))
         .route("/:id/credibility", get(credibility))
+        .route("/:id/constituencies", get(constituencies))
         .route("/:id/duplicate", post(duplicate))
 }
 
@@ -816,6 +817,14 @@ async fn interview_batch(
 
 // ---- deliberation (report subsystem, mounted here since the frontend calls
 //      them under /api/simulation) ----
+
+/// Who holds which position, and whether the run changed anyone's mind. The
+/// defensible output: the graph found these constituencies, and the headline
+/// percentage is only a count of them.
+async fn constituencies(State(st): State<AppState>, Path(id): Path<String>) -> AppResult<Success<Value>> {
+    let store = st.sim_manager().store(&id).map_err(|e| AppError::NotFound(e.to_string()))?;
+    Ok(Success(store.constituency_map().map_err(AppError::Other)?))
+}
 
 #[derive(Deserialize)]
 struct PanelChatReq {
